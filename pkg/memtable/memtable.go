@@ -5,7 +5,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/jer/kevo/pkg/wal"
+	"github.com/jeremytregunna/kevo/pkg/wal"
 )
 
 // MemTable is an in-memory table that stores key-value pairs

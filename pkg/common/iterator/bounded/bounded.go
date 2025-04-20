@@ -3,7 +3,7 @@ package bounded
 import (
 	"bytes"
 
-	"github.com/jer/kevo/pkg/common/iterator"
+	"github.com/jeremytregunna/kevo/pkg/common/iterator"
 )
 
 // BoundedIterator wraps an iterator and limits it to a specific key range

@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jer/kevo/pkg/config"
+	"github.com/jeremytregunna/kevo/pkg/config"
 )
 
 func createTestConfig() *config.Config {

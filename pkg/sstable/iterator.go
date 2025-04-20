@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/jer/kevo/pkg/sstable/block"
+	"github.com/jeremytregunna/kevo/pkg/sstable/block"
 )
 
 // Iterator iterates over key-value pairs in an SSTable

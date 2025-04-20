@@ -3,8 +3,8 @@ package memtable
 import (
 	"fmt"
 
-	"github.com/jer/kevo/pkg/config"
-	"github.com/jer/kevo/pkg/wal"
+	"github.com/jeremytregunna/kevo/pkg/config"
+	"github.com/jeremytregunna/kevo/pkg/wal"
 )
 
 // RecoveryOptions contains options for MemTable recovery

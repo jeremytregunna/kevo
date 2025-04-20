@@ -3,7 +3,7 @@ package compaction
 import (
 	"time"
 
-	"github.com/jer/kevo/pkg/config"
+	"github.com/jeremytregunna/kevo/pkg/config"
 )
 
 // NewCompactionManager creates a new compaction manager with the old API

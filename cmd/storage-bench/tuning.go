@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jer/kevo/pkg/config"
-	"github.com/jer/kevo/pkg/engine"
+	"github.com/jeremytregunna/kevo/pkg/config"
+	"github.com/jeremytregunna/kevo/pkg/engine"
 )
 
 // TuningResults stores the results of various configuration tuning runs

@@ -7,8 +7,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/jer/kevo/pkg/config"
-	"github.com/jer/kevo/pkg/sstable"
+	"github.com/jeremytregunna/kevo/pkg/config"
+	"github.com/jeremytregunna/kevo/pkg/sstable"
 )
 
 // BaseCompactionStrategy provides common functionality for compaction strategies

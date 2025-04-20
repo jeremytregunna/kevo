@@ -6,10 +6,10 @@ import (
 	"os"
 	"time"
 
-	"github.com/jer/kevo/pkg/common/iterator"
-	"github.com/jer/kevo/pkg/common/iterator/composite"
-	"github.com/jer/kevo/pkg/config"
-	"github.com/jer/kevo/pkg/sstable"
+	"github.com/jeremytregunna/kevo/pkg/common/iterator"
+	"github.com/jeremytregunna/kevo/pkg/common/iterator/composite"
+	"github.com/jeremytregunna/kevo/pkg/config"
+	"github.com/jeremytregunna/kevo/pkg/sstable"
 )
 
 // DefaultCompactionExecutor handles the actual compaction process

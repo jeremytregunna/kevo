@@ -10,12 +10,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/jer/kevo/pkg/common/iterator"
-	"github.com/jer/kevo/pkg/compaction"
-	"github.com/jer/kevo/pkg/config"
-	"github.com/jer/kevo/pkg/memtable"
-	"github.com/jer/kevo/pkg/sstable"
-	"github.com/jer/kevo/pkg/wal"
+	"github.com/jeremytregunna/kevo/pkg/common/iterator"
+	"github.com/jeremytregunna/kevo/pkg/compaction"
+	"github.com/jeremytregunna/kevo/pkg/config"
+	"github.com/jeremytregunna/kevo/pkg/memtable"
+	"github.com/jeremytregunna/kevo/pkg/sstable"
+	"github.com/jeremytregunna/kevo/pkg/wal"
 )
 
 const (

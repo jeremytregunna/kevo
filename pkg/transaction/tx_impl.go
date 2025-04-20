@@ -6,10 +6,10 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/jer/kevo/pkg/common/iterator"
-	"github.com/jer/kevo/pkg/engine"
-	"github.com/jer/kevo/pkg/transaction/txbuffer"
-	"github.com/jer/kevo/pkg/wal"
+	"github.com/jeremytregunna/kevo/pkg/common/iterator"
+	"github.com/jeremytregunna/kevo/pkg/engine"
+	"github.com/jeremytregunna/kevo/pkg/transaction/txbuffer"
+	"github.com/jeremytregunna/kevo/pkg/wal"
 )
 
 // Common errors for transaction operations

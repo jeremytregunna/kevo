@@ -1,4 +1,4 @@
-module git.canoozie.net/jer/kevo
+module github.com/jeremytregunna/kevo
 
 go 1.24.2
 

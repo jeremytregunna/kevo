@@ -7,8 +7,8 @@ import (
 	"os"
 	"sync"
 
-	"github.com/jer/kevo/pkg/sstable/block"
-	"github.com/jer/kevo/pkg/sstable/footer"
+	"github.com/jeremytregunna/kevo/pkg/sstable/block"
+	"github.com/jeremytregunna/kevo/pkg/sstable/footer"
 )
 
 // IOManager handles file I/O operations for SSTable

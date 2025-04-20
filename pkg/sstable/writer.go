@@ -7,8 +7,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/jer/kevo/pkg/sstable/block"
-	"github.com/jer/kevo/pkg/sstable/footer"
+	"github.com/jeremytregunna/kevo/pkg/sstable/block"
+	"github.com/jeremytregunna/kevo/pkg/sstable/footer"
 )
 
 // FileManager handles file operations for SSTable writing

@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/jer/kevo/pkg/engine"
+	"github.com/jeremytregunna/kevo/pkg/engine"
 )
 
 func setupTest(t *testing.T) (*engine.Engine, func()) {

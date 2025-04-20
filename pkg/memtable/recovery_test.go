@@ -4,8 +4,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/jer/kevo/pkg/config"
-	"github.com/jer/kevo/pkg/wal"
+	"github.com/jeremytregunna/kevo/pkg/config"
+	"github.com/jeremytregunna/kevo/pkg/wal"
 )
 
 func setupTestWAL(t *testing.T) (string, *wal.WAL, func()) {

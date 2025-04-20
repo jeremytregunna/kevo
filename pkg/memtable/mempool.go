@@ -5,7 +5,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/jer/kevo/pkg/config"
+	"github.com/jeremytregunna/kevo/pkg/config"
 )
 
 // MemTablePool manages a pool of MemTables

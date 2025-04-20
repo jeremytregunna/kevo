@@ -3,7 +3,7 @@ package sstable
 import (
 	"errors"
 
-	"github.com/jer/kevo/pkg/sstable/block"
+	"github.com/jeremytregunna/kevo/pkg/sstable/block"
 )
 
 const (

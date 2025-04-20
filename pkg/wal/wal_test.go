@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/jer/kevo/pkg/config"
+	"github.com/jeremytregunna/kevo/pkg/config"
 )
 
 func createTestConfig() *config.Config {

@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jer/kevo/pkg/config"
+	"github.com/jeremytregunna/kevo/pkg/config"
 )
 
 // CompactionCoordinatorOptions holds configuration options for the coordinator
