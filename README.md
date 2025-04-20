@@ -31,7 +31,7 @@ and practically useful for embedded storage needs.
 ### Installation
 
 ```bash
-go get git.canoozie.net/jer/kevo
+go get github.com/jer/kevo
 ```
 
 ### Basic Usage
@@ -43,7 +43,7 @@ import (
     "fmt"
     "log"
 
-    "git.canoozie.net/jer/kevo/pkg/engine"
+    "github.com/jer/kevo/pkg/engine"
 )
 
 func main() {
