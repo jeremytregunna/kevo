@@ -39,7 +39,7 @@ jobs:
         run: |
           curl -X POST \
           -H "Content-Type: text/plain" \
-          -d "✅ <b>go-storage</b> success! View run at: https://git.canoozie.net/${{ gitea.repository }}/actions/runs/${{ gitea.run_number }}" \
+          -d "✅ <b>kevo</b> success! View run at: https://git.canoozie.net/${{ gitea.repository }}/actions/runs/${{ gitea.run_number }}" \
           https://chat.canoozie.net/rooms/5/2-q6gKxqrTAfhd/messages
 
       - name: Send failure notification
@@ -47,5 +47,5 @@ jobs:
         run: |
           curl -X POST \
           -H "Content-Type: text/plain" \
-          -d "❌ <b>go-storage</b> failure! View run at: https://git.canoozie.net/${{ gitea.repository }}/actions/runs/${{ gitea.run_number }}" \
+          -d "❌ <b>kevo</b> failure! View run at: https://git.canoozie.net/${{ gitea.repository }}/actions/runs/${{ gitea.run_number }}" \
           https://chat.canoozie.net/rooms/5/2-q6gKxqrTAfhd/messages
