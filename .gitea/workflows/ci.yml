@@ -1,0 +1,51 @@
+name: Go Tests
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  ci-test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: [ '1.24.2' ]
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Go ${{ matrix.go-version }}
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+          check-latest: true
+
+      - name: Verify dependencies
+        run: go mod verify
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Run tests
+        run: go test -v ./...
+
+      - name: Send success notification
+        if: success()
+        run: |
+          curl -X POST \
+          -H "Content-Type: text/plain" \
+          -d "✅ <b>go-storage</b> success! View run at: https://git.canoozie.net/${{ gitea.repository }}/actions/runs/${{ gitea.run_number }}" \
+          https://chat.canoozie.net/rooms/5/2-q6gKxqrTAfhd/messages
+
+      - name: Send failure notification
+        if: failure()
+        run: |
+          curl -X POST \
+          -H "Content-Type: text/plain" \
+          -d "❌ <b>go-storage</b> failure! View run at: https://git.canoozie.net/${{ gitea.repository }}/actions/runs/${{ gitea.run_number }}" \
+          https://chat.canoozie.net/rooms/5/2-q6gKxqrTAfhd/messages
