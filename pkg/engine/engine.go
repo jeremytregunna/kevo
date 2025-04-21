@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -511,40 +510,34 @@ func (e *Engine) flushMemTable(mem *memtable.MemTable) error {
 	count := 0
 	var bytesWritten uint64
 	
-	// Create a map to deduplicate keys
-	// We only keep the latest value for each key
-	dedupMap := make(map[string][]byte)
+	// Since MemTable's skiplist iterator returns keys in sorted order,
+	// and the Find() method already returns the most recent entry for each key,
+	// we can deduplicate in a single pass by tracking the last seen key
+	var lastKey []byte
 	
-	// Collect all entries from the MemTable, deduplicating as we go
+	// Process entries in a single pass
 	for iter.SeekToFirst(); iter.Valid(); iter.Next() {
+		key := iter.Key()
+		
 		// Skip deletion markers, only add value entries
 		if value := iter.Value(); value != nil {
-			key := iter.Key()
-			keyStr := string(key) // Use string as map key
-			dedupMap[keyStr] = value
+			// Skip duplicate keys (only add each key once)
+			// The MemTable iterator returns multiple values for the same key
+			// but we only need the first one we encounter for each key, which is the latest
+			if lastKey != nil && bytes.Equal(key, lastKey) {
+				continue
+			}
+			
+			// Add to SSTable
+			bytesWritten += uint64(len(key) + len(value))
+			if err := writer.Add(key, value); err != nil {
+				writer.Abort()
+				e.stats.WriteErrors.Add(1)
+				return fmt.Errorf("failed to add entry to SSTable: %w", err)
+			}
+			count++
+			lastKey = append(lastKey[:0], key...)
 		}
-	}
-	
-	// Create a slice of keys for sorting
-	keys := make([]string, 0, len(dedupMap))
-	for k := range dedupMap {
-		keys = append(keys, k)
-	}
-	
-	// Sort the keys to ensure they are added in order
-	sort.Strings(keys)
-	
-	// Add the deduplicated entries to the SSTable in sorted order
-	for _, keyStr := range keys {
-		key := []byte(keyStr)
-		value := dedupMap[keyStr]
-		bytesWritten += uint64(len(key) + len(value))
-		if err := writer.Add(key, value); err != nil {
-			writer.Abort()
-			e.stats.WriteErrors.Add(1)
-			return fmt.Errorf("failed to add entry to SSTable: %w", err)
-		}
-		count++
 	}
 
 	if count == 0 {
