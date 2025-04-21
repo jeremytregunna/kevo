@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -509,20 +510,41 @@ func (e *Engine) flushMemTable(mem *memtable.MemTable) error {
 	iter := mem.NewIterator()
 	count := 0
 	var bytesWritten uint64
-
-	// Write all entries to the SSTable
+	
+	// Create a map to deduplicate keys
+	// We only keep the latest value for each key
+	dedupMap := make(map[string][]byte)
+	
+	// Collect all entries from the MemTable, deduplicating as we go
 	for iter.SeekToFirst(); iter.Valid(); iter.Next() {
 		// Skip deletion markers, only add value entries
 		if value := iter.Value(); value != nil {
 			key := iter.Key()
-			bytesWritten += uint64(len(key) + len(value))
-			if err := writer.Add(key, value); err != nil {
-				writer.Abort()
-				e.stats.WriteErrors.Add(1)
-				return fmt.Errorf("failed to add entry to SSTable: %w", err)
-			}
-			count++
+			keyStr := string(key) // Use string as map key
+			dedupMap[keyStr] = value
 		}
+	}
+	
+	// Create a slice of keys for sorting
+	keys := make([]string, 0, len(dedupMap))
+	for k := range dedupMap {
+		keys = append(keys, k)
+	}
+	
+	// Sort the keys to ensure they are added in order
+	sort.Strings(keys)
+	
+	// Add the deduplicated entries to the SSTable in sorted order
+	for _, keyStr := range keys {
+		key := []byte(keyStr)
+		value := dedupMap[keyStr]
+		bytesWritten += uint64(len(key) + len(value))
+		if err := writer.Add(key, value); err != nil {
+			writer.Abort()
+			e.stats.WriteErrors.Add(1)
+			return fmt.Errorf("failed to add entry to SSTable: %w", err)
+		}
+		count++
 	}
 
 	if count == 0 {

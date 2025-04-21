@@ -74,6 +74,128 @@ func TestEngine_BasicOperations(t *testing.T) {
 	}
 }
 
+func TestEngine_SameKeyMultipleOperationsFlush(t *testing.T) {
+	_, engine, cleanup := setupTest(t)
+	defer cleanup()
+
+	// Simulate exactly the bug scenario from the CLI
+	// Add the same key multiple times with different values
+	key := []byte("foo")
+	
+	// First add 
+	if err := engine.Put(key, []byte("23")); err != nil {
+		t.Fatalf("Failed to put first value: %v", err)
+	}
+
+	// Delete it
+	if err := engine.Delete(key); err != nil {
+		t.Fatalf("Failed to delete key: %v", err)
+	}
+	
+	// Add it again with different value
+	if err := engine.Put(key, []byte("42")); err != nil {
+		t.Fatalf("Failed to re-add key: %v", err)
+	}
+	
+	// Add another key
+	if err := engine.Put([]byte("bar"), []byte("23")); err != nil {
+		t.Fatalf("Failed to add another key: %v", err)
+	}
+	
+	// Add another key
+	if err := engine.Put([]byte("user:1"), []byte(`{"name":"John"}`)); err != nil {
+		t.Fatalf("Failed to add another key: %v", err)
+	}
+
+	// Verify before flush
+	value, err := engine.Get(key)
+	if err != nil {
+		t.Fatalf("Failed to get key before flush: %v", err)
+	}
+	if !bytes.Equal(value, []byte("42")) {
+		t.Errorf("Got incorrect value before flush. Expected: %s, Got: %s", "42", string(value))
+	}
+
+	// Force a flush of the memtable - this would have failed before the fix
+	tables := engine.memTablePool.GetMemTables()
+	if err := engine.flushMemTable(tables[0]); err != nil {
+		t.Fatalf("Error in flush with same key multiple operations: %v", err)
+	}
+
+	// Verify all keys after flush
+	value, err = engine.Get(key)
+	if err != nil {
+		t.Fatalf("Failed to get key after flush: %v", err)
+	}
+	if !bytes.Equal(value, []byte("42")) {
+		t.Errorf("Got incorrect value after flush. Expected: %s, Got: %s", "42", string(value))
+	}
+	
+	value, err = engine.Get([]byte("bar"))
+	if err != nil {
+		t.Fatalf("Failed to get 'bar' after flush: %v", err)
+	}
+	if !bytes.Equal(value, []byte("23")) {
+		t.Errorf("Got incorrect value for 'bar' after flush. Expected: %s, Got: %s", "23", string(value))
+	}
+	
+	value, err = engine.Get([]byte("user:1"))
+	if err != nil {
+		t.Fatalf("Failed to get 'user:1' after flush: %v", err)
+	}
+	if !bytes.Equal(value, []byte(`{"name":"John"}`)) {
+		t.Errorf("Got incorrect value for 'user:1' after flush. Expected: %s, Got: %s", `{"name":"John"}`, string(value))
+	}
+}
+
+func TestEngine_DuplicateKeysFlush(t *testing.T) {
+	_, engine, cleanup := setupTest(t)
+	defer cleanup()
+
+	// Test with a key that will be deleted and re-added multiple times
+	key := []byte("foo")
+	
+	// Add the key
+	if err := engine.Put(key, []byte("42")); err != nil {
+		t.Fatalf("Failed to put initial value: %v", err)
+	}
+
+	// Delete the key
+	if err := engine.Delete(key); err != nil {
+		t.Fatalf("Failed to delete key: %v", err)
+	}
+
+	// Re-add the key with a different value
+	if err := engine.Put(key, []byte("43")); err != nil {
+		t.Fatalf("Failed to re-add key: %v", err)
+	}
+
+	// Delete again
+	if err := engine.Delete(key); err != nil {
+		t.Fatalf("Failed to delete key again: %v", err)
+	}
+
+	// Re-add once more
+	if err := engine.Put(key, []byte("44")); err != nil {
+		t.Fatalf("Failed to re-add key again: %v", err)
+	}
+
+	// Force a flush of the memtable
+	tables := engine.memTablePool.GetMemTables()
+	if err := engine.flushMemTable(tables[0]); err != nil {
+		t.Fatalf("Error flushing with duplicate keys: %v", err)
+	}
+
+	// Verify the key has the latest value
+	value, err := engine.Get(key)
+	if err != nil {
+		t.Fatalf("Failed to get key after flush: %v", err)
+	}
+	if !bytes.Equal(value, []byte("44")) {
+		t.Errorf("Got incorrect value after flush. Expected: %s, Got: %s", "44", string(value))
+	}
+}
+
 func TestEngine_MemTableFlush(t *testing.T) {
 	dir, engine, cleanup := setupTest(t)
 	defer cleanup()
