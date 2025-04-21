@@ -509,26 +509,26 @@ func (e *Engine) flushMemTable(mem *memtable.MemTable) error {
 	iter := mem.NewIterator()
 	count := 0
 	var bytesWritten uint64
-	
-	// Since MemTable's skiplist iterator returns keys in sorted order,
-	// and the Find() method already returns the most recent entry for each key,
-	// we can deduplicate in a single pass by tracking the last seen key
-	var lastKey []byte
-	
-	// Process entries in a single pass
+
+	// Since memtable's skiplist returns keys in sorted order,
+	// but possibly with duplicates (newer versions of same key first),
+	// we need to track all processed keys (including tombstones)
+	var processedKeys = make(map[string]struct{})
+
 	for iter.SeekToFirst(); iter.Valid(); iter.Next() {
 		key := iter.Key()
+		keyStr := string(key) // Use as map key
 		
-		// Skip deletion markers, only add value entries
+		// Skip keys we've already processed (including tombstones)
+		if _, seen := processedKeys[keyStr]; seen {
+			continue
+		}
+		
+		// Mark this key as processed regardless of whether it's a value or tombstone
+		processedKeys[keyStr] = struct{}{}
+		
+		// Only write non-tombstone entries to the SSTable
 		if value := iter.Value(); value != nil {
-			// Skip duplicate keys (only add each key once)
-			// The MemTable iterator returns multiple values for the same key
-			// but we only need the first one we encounter for each key, which is the latest
-			if lastKey != nil && bytes.Equal(key, lastKey) {
-				continue
-			}
-			
-			// Add to SSTable
 			bytesWritten += uint64(len(key) + len(value))
 			if err := writer.Add(key, value); err != nil {
 				writer.Abort()
@@ -536,7 +536,6 @@ func (e *Engine) flushMemTable(mem *memtable.MemTable) error {
 				return fmt.Errorf("failed to add entry to SSTable: %w", err)
 			}
 			count++
-			lastKey = append(lastKey[:0], key...)
 		}
 	}
 

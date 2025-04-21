@@ -94,48 +94,54 @@ func (h *HierarchicalIterator) Seek(target []byte) bool {
 		iter.Seek(target)
 	}
 
-	// For seek, we need to treat it differently than findNextUniqueKey since we want
-	// keys >= target, not strictly > target
-	var minKey []byte
-	var minValue []byte
-	var seenKeys = make(map[string]bool)
+	// For seek, we need to find the smallest key >= target
+	var bestKey []byte
+	var bestValue []byte
+	var bestIterIdx int = -1
 	h.valid = false
 
-	// Find the smallest key >= target from all iterators
-	for _, iter := range h.iterators {
+	// First pass: find the smallest key >= target
+	for i, iter := range h.iterators {
 		if !iter.Valid() {
 			continue
 		}
 
 		key := iter.Key()
-		value := iter.Value()
 
 		// Skip keys < target (Seek should return keys >= target)
 		if bytes.Compare(key, target) < 0 {
 			continue
 		}
 
-		// Convert key to string for map lookup
-		keyStr := string(key)
-
-		// Only use this key if we haven't seen it from a newer iterator
-		if !seenKeys[keyStr] {
-			// Mark as seen
-			seenKeys[keyStr] = true
-
-			// Update min key if needed
-			if minKey == nil || bytes.Compare(key, minKey) < 0 {
-				minKey = key
-				minValue = value
-				h.valid = true
-			}
+		// If we haven't found a valid key yet, or this key is smaller than the current best key
+		if bestIterIdx == -1 || bytes.Compare(key, bestKey) < 0 {
+			// This becomes our best candidate so far
+			bestKey = key
+			bestValue = iter.Value()
+			bestIterIdx = i
 		}
 	}
 
-	// Set the found key/value
-	if h.valid {
-		h.key = minKey
-		h.value = minValue
+	// Now we need to check if any newer iterators have the same key
+	if bestIterIdx != -1 {
+		// Check all newer iterators (earlier in the slice) for the same key
+		for i := 0; i < bestIterIdx; i++ {
+			iter := h.iterators[i]
+			if !iter.Valid() {
+				continue
+			}
+			
+			// If a newer iterator has the same key, use its value
+			if bytes.Equal(iter.Key(), bestKey) {
+				bestValue = iter.Value()
+				break  // Since iterators are in newest-to-oldest order, we can stop at the first match
+			}
+		}
+		
+		// Set the found key/value
+		h.key = bestKey
+		h.value = bestValue
+		h.valid = true
 		return true
 	}
 
@@ -218,23 +224,20 @@ func (h *HierarchicalIterator) GetSourceIterators() []iterator.Iterator {
 // Returns true if a valid key was found
 func (h *HierarchicalIterator) findNextUniqueKey(prevKey []byte) bool {
 	// Find the smallest key among all iterators that is > prevKey
-	var minKey []byte
-	var minValue []byte
-	var seenKeys = make(map[string]bool)
+	var bestKey []byte
+	var bestValue []byte
+	var bestIterIdx int = -1
 	h.valid = false
 
-	// First pass: collect all valid keys and find min key > prevKey
-	for _, iter := range h.iterators {
+	// First pass: advance all iterators past prevKey and find the smallest next key
+	for i, iter := range h.iterators {
 		// Skip invalid iterators
 		if !iter.Valid() {
 			continue
 		}
 
-		key := iter.Key()
-		value := iter.Value()
-
 		// Skip keys <= prevKey if we're looking for the next key
-		if prevKey != nil && bytes.Compare(key, prevKey) <= 0 {
+		if prevKey != nil && bytes.Compare(iter.Key(), prevKey) <= 0 {
 			// Advance to find a key > prevKey
 			for iter.Valid() && bytes.Compare(iter.Key(), prevKey) <= 0 {
 				if !iter.Next() {
@@ -246,38 +249,40 @@ func (h *HierarchicalIterator) findNextUniqueKey(prevKey []byte) bool {
 			if !iter.Valid() {
 				continue
 			}
-
-			// Get the new key after advancing
-			key = iter.Key()
-			value = iter.Value()
-
-			// If key is still <= prevKey after advancing, skip this iterator
-			if bytes.Compare(key, prevKey) <= 0 {
-				continue
-			}
 		}
 
-		// Convert key to string for map lookup
-		keyStr := string(key)
-
-		// If this key hasn't been seen before, or this is a newer source for the same key
-		if !seenKeys[keyStr] {
-			// Mark this key as seen - it's from the newest source
-			seenKeys[keyStr] = true
-
-			// Check if this is a new minimum key
-			if minKey == nil || bytes.Compare(key, minKey) < 0 {
-				minKey = key
-				minValue = value
-				h.valid = true
-			}
+		// Get the current key
+		key := iter.Key()
+		
+		// If we haven't found a valid key yet, or this key is smaller than the current best key
+		if bestIterIdx == -1 || bytes.Compare(key, bestKey) < 0 {
+			// This becomes our best candidate so far
+			bestKey = key
+			bestValue = iter.Value()
+			bestIterIdx = i
 		}
 	}
 
-	// Set the key/value if we found a valid one
-	if h.valid {
-		h.key = minKey
-		h.value = minValue
+	// Now we need to check if any newer iterators have the same key
+	if bestIterIdx != -1 {
+		// Check all newer iterators (earlier in the slice) for the same key
+		for i := 0; i < bestIterIdx; i++ {
+			iter := h.iterators[i]
+			if !iter.Valid() {
+				continue
+			}
+			
+			// If a newer iterator has the same key, use its value
+			if bytes.Equal(iter.Key(), bestKey) {
+				bestValue = iter.Value()
+				break  // Since iterators are in newest-to-oldest order, we can stop at the first match
+			}
+		}
+		
+		// Set the found key/value
+		h.key = bestKey
+		h.value = bestValue
+		h.valid = true
 		return true
 	}
 

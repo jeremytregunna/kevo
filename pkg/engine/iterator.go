@@ -440,41 +440,23 @@ func (c *chainedIterator) SeekToFirst() {
 		iter.SeekToFirst()
 	}
 
-	// Maps to track the best (newest) source for each key
-	keyToSource := make(map[string]int) // Key -> best source index
-	keyToLevel := make(map[string]int)  // Key -> best source level (lower is better)
-	keyToPos := make(map[string][]byte) // Key -> binary key value (for ordering)
-
-	// First pass: Find the best source for each key
+	// Find the iterator with the smallest key from the newest source
+	c.current = -1
+	
+	// Find the smallest valid key
 	for i, iter := range c.iterators {
 		if !iter.Valid() {
 			continue
 		}
-
-		// Use string key for map
-		keyStr := string(iter.Key())
-		keyBytes := iter.Key()
-		level := c.sources[i].GetLevel()
-
-		// If we haven't seen this key yet, or this source is newer
-		bestLevel, seen := keyToLevel[keyStr]
-		if !seen || level < bestLevel {
-			keyToSource[keyStr] = i
-			keyToLevel[keyStr] = level
-			keyToPos[keyStr] = keyBytes
-		}
-	}
-
-	// Find the smallest key in our deduplicated set
-	c.current = -1
-	var smallestKey []byte
-
-	for keyStr, sourceIdx := range keyToSource {
-		keyBytes := keyToPos[keyStr]
-
-		if c.current == -1 || bytes.Compare(keyBytes, smallestKey) < 0 {
-			c.current = sourceIdx
-			smallestKey = keyBytes
+		
+		// If we haven't found a key yet, or this key is smaller than the current smallest
+		if c.current == -1 || bytes.Compare(iter.Key(), c.iterators[c.current].Key()) < 0 {
+			c.current = i
+		} else if bytes.Equal(iter.Key(), c.iterators[c.current].Key()) {
+			// If keys are equal, prefer the newer source (lower level)
+			if c.sources[i].GetLevel() < c.sources[c.current].GetLevel() {
+				c.current = i
+			}
 		}
 	}
 }
@@ -515,41 +497,23 @@ func (c *chainedIterator) Seek(target []byte) bool {
 		iter.Seek(target)
 	}
 
-	// Maps to track the best (newest) source for each key
-	keyToSource := make(map[string]int) // Key -> best source index
-	keyToLevel := make(map[string]int)  // Key -> best source level (lower is better)
-	keyToPos := make(map[string][]byte) // Key -> binary key value (for ordering)
-
-	// First pass: Find the best source for each key
+	// Find the iterator with the smallest key from the newest source
+	c.current = -1
+	
+	// Find the smallest valid key
 	for i, iter := range c.iterators {
 		if !iter.Valid() {
 			continue
 		}
-
-		// Use string key for map
-		keyStr := string(iter.Key())
-		keyBytes := iter.Key()
-		level := c.sources[i].GetLevel()
-
-		// If we haven't seen this key yet, or this source is newer
-		bestLevel, seen := keyToLevel[keyStr]
-		if !seen || level < bestLevel {
-			keyToSource[keyStr] = i
-			keyToLevel[keyStr] = level
-			keyToPos[keyStr] = keyBytes
-		}
-	}
-
-	// Find the smallest key in our deduplicated set
-	c.current = -1
-	var smallestKey []byte
-
-	for keyStr, sourceIdx := range keyToSource {
-		keyBytes := keyToPos[keyStr]
-
-		if c.current == -1 || bytes.Compare(keyBytes, smallestKey) < 0 {
-			c.current = sourceIdx
-			smallestKey = keyBytes
+		
+		// If we haven't found a key yet, or this key is smaller than the current smallest
+		if c.current == -1 || bytes.Compare(iter.Key(), c.iterators[c.current].Key()) < 0 {
+			c.current = i
+		} else if bytes.Equal(iter.Key(), c.iterators[c.current].Key()) {
+			// If keys are equal, prefer the newer source (lower level)
+			if c.sources[i].GetLevel() < c.sources[c.current].GetLevel() {
+				c.current = i
+			}
 		}
 	}
 
@@ -571,46 +535,28 @@ func (c *chainedIterator) Next() bool {
 		}
 	}
 
-	// Maps to track the best (newest) source for each key
-	keyToSource := make(map[string]int) // Key -> best source index
-	keyToLevel := make(map[string]int)  // Key -> best source level (lower is better)
-	keyToPos := make(map[string][]byte) // Key -> binary key value (for ordering)
-
-	// First pass: Find the best source for each key
+	// Find the iterator with the smallest key from the newest source
+	c.current = -1
+	
+	// Find the smallest valid key that is greater than the current key
 	for i, iter := range c.iterators {
 		if !iter.Valid() {
 			continue
 		}
-
-		// Use string key for map
-		keyStr := string(iter.Key())
-		keyBytes := iter.Key()
-		level := c.sources[i].GetLevel()
-
-		// If this key is the same as current, skip it
-		if bytes.Equal(keyBytes, currentKey) {
+		
+		// Skip if the key is the same as the current key (we've already advanced past it)
+		if bytes.Equal(iter.Key(), currentKey) {
 			continue
 		}
-
-		// If we haven't seen this key yet, or this source is newer
-		bestLevel, seen := keyToLevel[keyStr]
-		if !seen || level < bestLevel {
-			keyToSource[keyStr] = i
-			keyToLevel[keyStr] = level
-			keyToPos[keyStr] = keyBytes
-		}
-	}
-
-	// Find the smallest key in our deduplicated set
-	c.current = -1
-	var smallestKey []byte
-
-	for keyStr, sourceIdx := range keyToSource {
-		keyBytes := keyToPos[keyStr]
-
-		if c.current == -1 || bytes.Compare(keyBytes, smallestKey) < 0 {
-			c.current = sourceIdx
-			smallestKey = keyBytes
+		
+		// If we haven't found a key yet, or this key is smaller than the current smallest
+		if c.current == -1 || bytes.Compare(iter.Key(), c.iterators[c.current].Key()) < 0 {
+			c.current = i
+		} else if bytes.Equal(iter.Key(), c.iterators[c.current].Key()) {
+			// If keys are equal, prefer the newer source (lower level)
+			if c.sources[i].GetLevel() < c.sources[c.current].GetLevel() {
+				c.current = i
+			}
 		}
 	}
 
