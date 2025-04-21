@@ -40,10 +40,10 @@ var completer = readline.NewPrefixCompleter(
 )
 
 const helpText = `
-Kevo (gs) - SQLite-like interface for the storage engine
+Kevo (kevo) - A lightweight, minimalist, storage engine.
 
 Usage:
-  gs [database_path]      - Start with an optional database path
+  keco [database_path]      - Start with an optional database path
 
 Commands:
   .help                   - Show this help message
@@ -52,16 +52,16 @@ Commands:
   .exit                   - Exit the program
   .stats                  - Show database statistics
   .flush                  - Force flush memtables to disk
-  
+
   BEGIN [TRANSACTION]     - Begin a transaction (default: read-write)
   BEGIN READONLY          - Begin a read-only transaction
   COMMIT                  - Commit the current transaction
   ROLLBACK                - Rollback the current transaction
-  
+
   PUT key value           - Store a key-value pair
   GET key                 - Retrieve a value by key
   DELETE key              - Delete a key-value pair
-  
+
   SCAN                    - Scan all key-value pairs
   SCAN prefix             - Scan key-value pairs with given prefix
   SCAN RANGE start end    - Scan key-value pairs in range [start, end)
@@ -69,7 +69,7 @@ Commands:
 `
 
 func main() {
-	fmt.Println("Kevo (gs) version 1.0.0")
+	fmt.Println("Kevo (kevo) version 1.0.2")
 	fmt.Println("Enter .help for usage hints.")
 
 	// Initialize variables
@@ -90,9 +90,9 @@ func main() {
 	}
 
 	// Setup readline with history support
-	historyFile := filepath.Join(os.TempDir(), ".gs_history")
+	historyFile := filepath.Join(os.TempDir(), ".kevo_history")
 	rl, err := readline.NewEx(&readline.Config{
-		Prompt:          "gs> ",
+		Prompt:          "kevo> ",
 		HistoryFile:     historyFile,
 		InterruptPrompt: "^C",
 		EOFPrompt:       "exit",
@@ -109,22 +109,22 @@ func main() {
 		if tx != nil {
 			if tx.IsReadOnly() {
 				if dbPath != "" {
-					prompt = fmt.Sprintf("gs:%s[RO]> ", dbPath)
+					prompt = fmt.Sprintf("kevo:%s[RO]> ", dbPath)
 				} else {
-					prompt = "gs[RO]> "
+					prompt = "kevo[RO]> "
 				}
 			} else {
 				if dbPath != "" {
-					prompt = fmt.Sprintf("gs:%s[RW]> ", dbPath)
+					prompt = fmt.Sprintf("kevo:%s[RW]> ", dbPath)
 				} else {
-					prompt = "gs[RW]> "
+					prompt = "kevo[RW]> "
 				}
 			}
 		} else {
 			if dbPath != "" {
-				prompt = fmt.Sprintf("gs:%s> ", dbPath)
+				prompt = fmt.Sprintf("kevo:%s> ", dbPath)
 			} else {
-				prompt = "gs> "
+				prompt = "kevo> "
 			}
 		}
 		rl.SetPrompt(prompt)

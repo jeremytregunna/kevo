@@ -97,10 +97,10 @@ func main() {
 
 ### Interactive CLI Tool
 
-Included is an interactive CLI tool (`gs`) for exploring and manipulating databases:
+Included is an interactive CLI tool (`kevo`) for exploring and manipulating databases:
 
 ```bash
-go run ./cmd/gs/main.go [database_path]
+go run ./cmd/kevo/main.go [database_path]
 ```
 
 Will create a directory at the path you create (e.g., /tmp/foo.db will be a
@@ -109,22 +109,22 @@ directory called foo.db in /tmp where the database will live).
 Example session:
 
 ```
-gs> PUT user:1 {"name":"John","email":"john@example.com"}
+kevo> PUT user:1 {"name":"John","email":"john@example.com"}
 Value stored
 
-gs> GET user:1
+kevo> GET user:1
 {"name":"John","email":"john@example.com"}
 
-gs> BEGIN TRANSACTION
+kevo> BEGIN TRANSACTION
 Started read-write transaction
 
-gs> PUT user:2 {"name":"Jane","email":"jane@example.com"}
+kevo> PUT user:2 {"name":"Jane","email":"jane@example.com"}
 Value stored in transaction (will be visible after commit)
 
-gs> COMMIT
+kevo> COMMIT
 Transaction committed (0.53 ms)
 
-gs> SCAN user:
+kevo> SCAN user:
 user:1: {"name":"John","email":"john@example.com"}
 user:2: {"name":"Jane","email":"jane@example.com"}
 2 entries found

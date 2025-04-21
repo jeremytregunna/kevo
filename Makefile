@@ -3,7 +3,7 @@
 all: build
 
 build:
-	go build -o gs ./cmd/gs
+	go build -o kevo ./cmd/kevo
 
 clean:
-	rm -f gs
+	rm -f kevo
