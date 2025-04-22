@@ -5,14 +5,12 @@ import (
 	"errors"
 	"sync"
 	"time"
-
-	"github.com/jeremytregunna/kevo/pkg/transport"
 )
 
 var (
 	ErrPoolClosed      = errors.New("connection pool is closed")
 	ErrPoolFull        = errors.New("connection pool is full")
-	ErrPoolEmptyNoWait = errors.New("connection pool is empty and wait is disabled")
+	ErrPoolEmptyNoWait = errors.New("connection pool is empty")
 )
 
 // ConnectionPool manages a pool of gRPC connections
@@ -114,11 +112,11 @@ func (p *ConnectionPool) createConnection(ctx context.Context) (*GRPCConnection,
 		return nil, err
 	}
 
-	// Type assert to our concrete connection type
+	// Convert to our internal type
 	grpcConn, ok := conn.(*GRPCConnection)
 	if !ok {
 		conn.Close()
-		return nil, errors.New("received incorrect connection type from transport manager")
+		return nil, errors.New("invalid connection type")
 	}
 
 	return grpcConn, nil
@@ -171,11 +169,11 @@ func (p *ConnectionPool) Close() error {
 
 // ConnectionPoolManager manages multiple connection pools
 type ConnectionPoolManager struct {
-	manager       *GRPCTransportManager
-	pools         sync.Map // map[string]*ConnectionPool
-	defaultMaxIdle    int
-	defaultMaxActive  int
-	defaultIdleTime   time.Duration
+	manager          *GRPCTransportManager
+	pools            sync.Map // map[string]*ConnectionPool
+	defaultMaxIdle   int
+	defaultMaxActive int
+	defaultIdleTime  time.Duration
 }
 
 // NewConnectionPoolManager creates a new connection pool manager
@@ -209,70 +207,4 @@ func (m *ConnectionPoolManager) CloseAll() {
 		m.pools.Delete(key)
 		return true
 	})
-}
-
-// Client is a wrapper around the gRPC client that supports connection pooling and retries
-type Client struct {
-	pool      *ConnectionPool
-	maxRetries int
-	retryDelay time.Duration
-}
-
-// NewClient creates a new client with the given connection pool
-func NewClient(pool *ConnectionPool, maxRetries int, retryDelay time.Duration) *Client {
-	if maxRetries <= 0 {
-		maxRetries = 3
-	}
-	if retryDelay <= 0 {
-		retryDelay = 100 * time.Millisecond
-	}
-
-	return &Client{
-		pool:       pool,
-		maxRetries: maxRetries,
-		retryDelay: retryDelay,
-	}
-}
-
-// Execute executes the given function with a connection from the pool
-func (c *Client) Execute(ctx context.Context, fn func(ctx context.Context, client interface{}) (interface{}, error)) (interface{}, error) {
-	var conn *GRPCConnection
-	var err error
-	var result interface{}
-
-	// Get a connection from the pool
-	for i := 0; i < c.maxRetries; i++ {
-		if i > 0 {
-			// Wait before retrying
-			select {
-			case <-time.After(c.retryDelay):
-				// Continue with retry
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			}
-		}
-
-		conn, err = c.pool.Get(ctx, true)
-		if err != nil {
-			continue // Try to get another connection
-		}
-
-		// Execute the function with the connection
-		client := conn.GetClient()
-		result, err = fn(ctx, client)
-		
-		// Return connection to the pool regardless of error
-		putErr := c.pool.Put(conn)
-		if putErr != nil {
-			// Log the error but continue with the original error
-			transport.LogError("Failed to return connection to pool: %v", putErr)
-		}
-
-		if err == nil {
-			// Success, return the result
-			return result, nil
-		}
-	}
-
-	return nil, err
 }

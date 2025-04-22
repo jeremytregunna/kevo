@@ -673,8 +673,3 @@ func (s *GRPCScanStream) Close() error {
 	s.cancel()
 	return nil
 }
-
-// Register client factory with transport registry
-func init() {
-	transport.RegisterClientTransport("grpc", NewGRPCClient)
-}

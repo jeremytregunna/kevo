@@ -2,7 +2,6 @@ package transport
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"net"
 	"sync"
@@ -16,6 +15,7 @@ import (
 	"google.golang.org/grpc/keepalive"
 )
 
+// Constants for default timeout values
 const (
 	defaultDialTimeout     = 5 * time.Second
 	defaultConnectTimeout  = 5 * time.Second
@@ -25,29 +25,20 @@ const (
 	defaultMaxConnAge      = 5 * time.Minute
 )
 
+// GRPCTransportManager manages gRPC connections
 type GRPCTransportManager struct {
 	opts        *GRPCTransportOptions
 	server      *grpc.Server
 	listener    net.Listener
 	connections sync.Map // map[string]*grpc.ClientConn
 	mu          sync.RWMutex
-	metrics     *transport.Metrics
+	metrics     *transport.ExtendedMetricsCollector
 }
 
-type GRPCTransportOptions struct {
-	ListenAddr         string
-	TLSConfig          *tls.Config
-	ConnectionTimeout  time.Duration
-	DialTimeout        time.Duration
-	KeepAliveTime      time.Duration
-	KeepAliveTimeout   time.Duration
-	MaxConnectionIdle  time.Duration
-	MaxConnectionAge   time.Duration
-	MaxPoolConnections int
-}
-
+// Ensure GRPCTransportManager implements TransportManager
 var _ transport.TransportManager = (*GRPCTransportManager)(nil)
 
+// DefaultGRPCTransportOptions returns default transport options
 func DefaultGRPCTransportOptions() *GRPCTransportOptions {
 	return &GRPCTransportOptions{
 		ListenAddr:        ":50051",
@@ -60,6 +51,7 @@ func DefaultGRPCTransportOptions() *GRPCTransportOptions {
 	}
 }
 
+// NewGRPCTransportManager creates a new gRPC transport manager
 func NewGRPCTransportManager(opts *GRPCTransportOptions) (*GRPCTransportManager, error) {
 	if opts == nil {
 		opts = DefaultGRPCTransportOptions()
@@ -73,7 +65,21 @@ func NewGRPCTransportManager(opts *GRPCTransportOptions) (*GRPCTransportManager,
 	}, nil
 }
 
-func (g *GRPCTransportManager) Start(ctx context.Context) error {
+// Start starts the gRPC server
+// Serve starts the server and blocks until it's stopped
+func (g *GRPCTransportManager) Serve() error {
+	ctx := context.Background()
+	if err := g.Start(); err != nil {
+		return err
+	}
+	
+	// Block until server is stopped
+	<-ctx.Done()
+	return nil
+}
+
+// Start starts the server and returns immediately
+func (g *GRPCTransportManager) Start() error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
@@ -107,10 +113,6 @@ func (g *GRPCTransportManager) Start(ctx context.Context) error {
 	// Create and start the gRPC server
 	g.server = grpc.NewServer(serverOpts...)
 
-	// Register service implementations
-	// This will be implemented later once we have the service implementation
-	// pb.RegisterKevoServiceServer(g.server, &kevoServiceServer{})
-
 	// Start listening
 	listener, err := net.Listen("tcp", g.opts.ListenAddr)
 	if err != nil {
@@ -124,7 +126,6 @@ func (g *GRPCTransportManager) Start(ctx context.Context) error {
 		if err := g.server.Serve(listener); err != nil {
 			g.metrics.ServerErrored()
 			// Just log the error, as this is running in a goroutine
-			// and we can't return it
 			fmt.Printf("gRPC server stopped: %v\n", err)
 		}
 	}()
@@ -132,6 +133,7 @@ func (g *GRPCTransportManager) Start(ctx context.Context) error {
 	return nil
 }
 
+// Stop stops the gRPC server
 func (g *GRPCTransportManager) Stop(ctx context.Context) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -169,6 +171,7 @@ func (g *GRPCTransportManager) Stop(ctx context.Context) error {
 	return nil
 }
 
+// Connect creates a connection to the specified address
 func (g *GRPCTransportManager) Connect(ctx context.Context, address string) (transport.Connection, error) {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
@@ -176,9 +179,10 @@ func (g *GRPCTransportManager) Connect(ctx context.Context, address string) (tra
 	// Check if we already have a connection to this address
 	if conn, ok := g.connections.Load(address); ok {
 		return &GRPCConnection{
-			conn:    conn.(*grpc.ClientConn),
-			address: address,
-			metrics: g.metrics,
+			conn:     conn.(*grpc.ClientConn),
+			address:  address,
+			metrics:  g.metrics,
+			lastUsed: time.Now(),
 		}, nil
 	}
 
@@ -203,7 +207,7 @@ func (g *GRPCTransportManager) Connect(ctx context.Context, address string) (tra
 		PermitWithoutStream: true,
 	}))
 
-	// Set timeout for connection
+	// Connect with timeout
 	dialCtx, cancel := context.WithTimeout(ctx, g.opts.DialTimeout)
 	defer cancel()
 
@@ -219,12 +223,19 @@ func (g *GRPCTransportManager) Connect(ctx context.Context, address string) (tra
 	g.metrics.ConnectionOpened()
 
 	return &GRPCConnection{
-		conn:    conn,
-		address: address,
-		metrics: g.metrics,
+		conn:     conn,
+		address:  address,
+		metrics:  g.metrics,
+		lastUsed: time.Now(),
 	}, nil
 }
 
+// SetRequestHandler sets the request handler for the server
+func (g *GRPCTransportManager) SetRequestHandler(handler transport.RequestHandler) {
+	// This would be implemented in a real server
+}
+
+// RegisterService registers a service with the gRPC server
 func (g *GRPCTransportManager) RegisterService(service interface{}) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -243,48 +254,34 @@ func (g *GRPCTransportManager) RegisterService(service interface{}) error {
 	return nil
 }
 
-// GRPCConnection represents a gRPC client connection
-type GRPCConnection struct {
-	conn    *grpc.ClientConn
-	address string
-	metrics *transport.Metrics
-}
-
-func (c *GRPCConnection) Close() error {
-	err := c.conn.Close()
-	c.metrics.ConnectionClosed()
-	return err
-}
-
-func (c *GRPCConnection) GetClient() interface{} {
-	return pb.NewKevoServiceClient(c.conn)
-}
-
-func (c *GRPCConnection) Address() string {
-	return c.address
-}
-
+// Register the transport with the registry
 func init() {
-	transport.RegisterTransport("grpc", func(opts map[string]interface{}) (transport.TransportManager, error) {
-		// Convert generic options map to GRPCTransportOptions
-		options := DefaultGRPCTransportOptions()
-
-		if addr, ok := opts["listen_addr"].(string); ok {
-			options.ListenAddr = addr
+	transport.RegisterServerTransport("grpc", func(address string, options transport.TransportOptions) (transport.Server, error) {
+		// Convert the generic options to our specific options
+		grpcOpts := &GRPCTransportOptions{
+			ListenAddr:        address,
+			TLSConfig:         nil, // We'll set this up if TLS is enabled
+			ConnectionTimeout: options.Timeout,
+			DialTimeout:       options.Timeout,
+			KeepAliveTime:     defaultKeepAliveTime,
+			KeepAliveTimeout:  defaultKeepAlivePolicy,
+			MaxConnectionIdle: defaultMaxConnIdle,
+			MaxConnectionAge:  defaultMaxConnAge,
 		}
 
-		if timeout, ok := opts["connection_timeout"].(time.Duration); ok {
-			options.ConnectionTimeout = timeout
+		// Set up TLS if enabled
+		if options.TLSEnabled && options.CertFile != "" && options.KeyFile != "" {
+			tlsConfig, err := LoadServerTLSConfig(options.CertFile, options.KeyFile, options.CAFile)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load TLS config: %w", err)
+			}
+			grpcOpts.TLSConfig = tlsConfig
 		}
 
-		if timeout, ok := opts["dial_timeout"].(time.Duration); ok {
-			options.DialTimeout = timeout
-		}
+		return NewGRPCTransportManager(grpcOpts)
+	})
 
-		if tlsConfig, ok := opts["tls_config"].(*tls.Config); ok {
-			options.TLSConfig = tlsConfig
-		}
-
-		return NewGRPCTransportManager(options)
+	transport.RegisterClientTransport("grpc", func(endpoint string, options transport.TransportOptions) (transport.Client, error) {
+		return NewGRPCClient(endpoint, options)
 	})
 }
