@@ -121,6 +121,28 @@ func main() {
 
 // parseFlags parses command line flags and returns a Config
 func parseFlags() Config {
+	// Define custom usage message
+	flag.Usage = func() {
+		fmt.Fprintf(flag.CommandLine.Output(), "Kevo - A lightweight key-value storage engine\n\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "Usage: kevo [options] [database_path]\n\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "By default, kevo runs in interactive mode with a command-line interface.\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "If -server flag is provided, kevo runs as a server exposing a gRPC API.\n\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "Options:\n")
+		flag.PrintDefaults()
+		fmt.Fprintf(flag.CommandLine.Output(), "\nInteractive mode commands (when not using -server):\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "  PUT key value           - Store a key-value pair\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "  GET key                 - Retrieve a value by key\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "  DELETE key              - Delete a key-value pair\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "  SCAN                    - Scan all key-value pairs\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "  BEGIN TRANSACTION       - Begin a read-write transaction\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "  BEGIN READONLY          - Begin a read-only transaction\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "  COMMIT                  - Commit the current transaction\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "  ROLLBACK                - Rollback the current transaction\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "  .help                   - Show detailed help\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "  .exit                   - Exit the program\n\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "For more details, start kevo and type .help\n")
+	}
+
 	serverMode := flag.Bool("server", false, "Run in server mode, exposing a gRPC API")
 	daemonMode := flag.Bool("daemon", false, "Run in daemon mode (detached from terminal)")
 	listenAddr := flag.String("address", "localhost:50051", "Address to listen on in server mode")
