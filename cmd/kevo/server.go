@@ -2,12 +2,18 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net"
 	"sync"
 	"time"
 
 	"github.com/jeremytregunna/kevo/pkg/engine"
+	grpcservice "github.com/jeremytregunna/kevo/pkg/grpc/service"
+	pb "github.com/jeremytregunna/kevo/proto/kevo"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/keepalive"
 )
 
 // TransactionRegistry manages active transactions on the server
@@ -151,7 +157,8 @@ type Server struct {
 	eng        *engine.Engine
 	txRegistry *TransactionRegistry
 	listener   net.Listener
-	grpcServer interface{} // Will be replaced with actual gRPC server
+	grpcServer *grpc.Server
+	kevoService *grpcservice.KevoServiceServer
 	config     Config
 }
 
@@ -175,33 +182,97 @@ func (s *Server) Start() error {
 
 	fmt.Printf("Listening on %s\n", s.config.ListenAddr)
 
-	// TODO: Initialize gRPC server with our service implementation
-	// This will be implemented in Phase 3 when we add gRPC support
-	// For now, just hold the listener open
+	// Configure gRPC server options
+	var serverOpts []grpc.ServerOption
 
+	// Add TLS if configured
+	if s.config.TLSEnabled {
+		tlsConfig := &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		}
+
+		// Load server certificate if provided
+		if s.config.TLSCertFile != "" && s.config.TLSKeyFile != "" {
+			cert, err := tls.LoadX509KeyPair(s.config.TLSCertFile, s.config.TLSKeyFile)
+			if err != nil {
+				return fmt.Errorf("failed to load TLS certificate: %w", err)
+			}
+			tlsConfig.Certificates = []tls.Certificate{cert}
+		}
+
+		// Add credentials to server options
+		serverOpts = append(serverOpts, grpc.Creds(credentials.NewTLS(tlsConfig)))
+	}
+
+	// Configure keepalive parameters
+	kaProps := keepalive.ServerParameters{
+		MaxConnectionIdle:     60 * time.Second,
+		MaxConnectionAge:      5 * time.Minute,
+		MaxConnectionAgeGrace: 5 * time.Second,
+		Time:                  15 * time.Second,
+		Timeout:               5 * time.Second,
+	}
+
+	kaPolicy := keepalive.EnforcementPolicy{
+		MinTime:             5 * time.Second,
+		PermitWithoutStream: true,
+	}
+
+	serverOpts = append(serverOpts,
+		grpc.KeepaliveParams(kaProps),
+		grpc.KeepaliveEnforcementPolicy(kaPolicy),
+	)
+
+	// Create gRPC server with options
+	s.grpcServer = grpc.NewServer(serverOpts...)
+
+	// Create and register the Kevo service implementation
+	s.kevoService = grpcservice.NewKevoServiceServer(s.eng, s.txRegistry)
+	pb.RegisterKevoServiceServer(s.grpcServer, s.kevoService)
+
+	fmt.Println("gRPC server initialized")
 	return nil
 }
 
 // Serve starts serving requests (blocking)
 func (s *Server) Serve() error {
-	// TODO: Start the gRPC server
-	// This will be implemented in Phase 3 when we add gRPC support
+	if s.grpcServer == nil {
+		return fmt.Errorf("server not initialized, call Start() first")
+	}
 
-	// For now, just block until the listener is closed
-	select {}
+	fmt.Println("Starting gRPC server")
+	return s.grpcServer.Serve(s.listener)
 }
 
 // Shutdown gracefully shuts down the server
 func (s *Server) Shutdown(ctx context.Context) error {
-	// First, shut down the listener to stop accepting new connections
+	// First, gracefully stop the gRPC server if it exists
+	if s.grpcServer != nil {
+		fmt.Println("Gracefully stopping gRPC server...")
+		
+		// Create a channel to signal when the server has stopped
+		stopped := make(chan struct{})
+		go func() {
+			s.grpcServer.GracefulStop()
+			close(stopped)
+		}()
+		
+		// Wait for graceful stop or context deadline
+		select {
+		case <-stopped:
+			fmt.Println("gRPC server stopped gracefully")
+		case <-ctx.Done():
+			fmt.Println("Context deadline exceeded, forcing server stop")
+			s.grpcServer.Stop()
+		}
+	}
+	
+	// Shut down the listener if it's still open
 	if s.listener != nil {
 		if err := s.listener.Close(); err != nil {
 			return fmt.Errorf("failed to close listener: %w", err)
 		}
 	}
-
-	// TODO: Gracefully shutdown gRPC server
-	// This will be implemented in Phase 3 when we add gRPC support
 
 	// Clean up any active transactions
 	if err := s.txRegistry.GracefulShutdown(ctx); err != nil {

@@ -80,10 +80,14 @@ Commands (interactive mode only):
 
 // Config holds the application configuration
 type Config struct {
-	ServerMode bool
-	DaemonMode bool
-	ListenAddr string
-	DBPath     string
+	ServerMode   bool
+	DaemonMode   bool
+	ListenAddr   string
+	DBPath       string
+	TLSEnabled   bool
+	TLSCertFile  string
+	TLSKeyFile   string
+	TLSCAFile    string
 }
 
 func main() {
@@ -147,6 +151,12 @@ func parseFlags() Config {
 	daemonMode := flag.Bool("daemon", false, "Run in daemon mode (detached from terminal)")
 	listenAddr := flag.String("address", "localhost:50051", "Address to listen on in server mode")
 	
+	// TLS options
+	tlsEnabled := flag.Bool("tls", false, "Enable TLS for secure connections")
+	tlsCertFile := flag.String("cert", "", "TLS certificate file path")
+	tlsKeyFile := flag.String("key", "", "TLS private key file path")
+	tlsCAFile := flag.String("ca", "", "TLS CA certificate file for client verification")
+	
 	// Parse flags
 	flag.Parse()
 	
@@ -157,10 +167,14 @@ func parseFlags() Config {
 	}
 	
 	return Config{
-		ServerMode: *serverMode,
-		DaemonMode: *daemonMode,
-		ListenAddr: *listenAddr,
-		DBPath:     dbPath,
+		ServerMode:   *serverMode,
+		DaemonMode:   *daemonMode,
+		ListenAddr:   *listenAddr,
+		DBPath:       dbPath,
+		TLSEnabled:   *tlsEnabled,
+		TLSCertFile:  *tlsCertFile,
+		TLSKeyFile:   *tlsKeyFile,
+		TLSCAFile:    *tlsCAFile,
 	}
 }
 
