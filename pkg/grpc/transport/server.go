@@ -3,14 +3,11 @@ package transport
 import (
 	"context"
 	"crypto/tls"
-	"encoding/json"
 	"fmt"
-	"net"
 	"sync"
 	"time"
 
 	pb "github.com/jeremytregunna/kevo/proto/kevo"
-	"github.com/jeremytregunna/kevo/pkg/grpc/service"
 	"github.com/jeremytregunna/kevo/pkg/transport"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -19,23 +16,55 @@ import (
 
 // GRPCServer implements the transport.Server interface for gRPC
 type GRPCServer struct {
-	address   string
-	options   transport.TransportOptions
-	server    *grpc.Server
-	listener  net.Listener
-	handler   transport.RequestHandler
-	metrics   transport.MetricsCollector
-	mu        sync.Mutex
-	started   bool
-	kevoImpl  *service.KevoServiceServer
+	address       string
+	tlsConfig     *tls.Config
+	server        *grpc.Server
+	requestHandler transport.RequestHandler
+	started       bool
+	mu            sync.Mutex
+	metrics       *transport.ExtendedMetricsCollector
 }
 
 // NewGRPCServer creates a new gRPC server
 func NewGRPCServer(address string, options transport.TransportOptions) (transport.Server, error) {
+	// Create server options
+	var serverOpts []grpc.ServerOption
+	
+	// Configure TLS if enabled
+	if options.TLSEnabled {
+		tlsConfig, err := LoadServerTLSConfig(options.CertFile, options.KeyFile, options.CAFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load TLS config: %w", err)
+		}
+		
+		serverOpts = append(serverOpts, grpc.Creds(credentials.NewTLS(tlsConfig)))
+	}
+	
+	// Configure keepalive parameters
+	kaProps := keepalive.ServerParameters{
+		MaxConnectionIdle: 30 * time.Minute,
+		MaxConnectionAge:  5 * time.Minute,
+		Time:              15 * time.Second,
+		Timeout:           5 * time.Second,
+	}
+	
+	kaPolicy := keepalive.EnforcementPolicy{
+		MinTime:             10 * time.Second,
+		PermitWithoutStream: true,
+	}
+	
+	serverOpts = append(serverOpts,
+		grpc.KeepaliveParams(kaProps),
+		grpc.KeepaliveEnforcementPolicy(kaPolicy),
+	)
+	
+	// Create the server
+	server := grpc.NewServer(serverOpts...)
+	
 	return &GRPCServer{
 		address: address,
-		options: options,
-		metrics: transport.NewMetricsCollector(),
+		server:  server,
+		metrics: transport.NewMetrics("grpc"),
 	}, nil
 }
 
@@ -48,65 +77,9 @@ func (s *GRPCServer) Start() error {
 		return fmt.Errorf("server already started")
 	}
 	
-	var serverOpts []grpc.ServerOption
-	
-	// Configure TLS if enabled
-	if s.options.TLSEnabled {
-		tlsConfig := &tls.Config{
-			MinVersion: tls.VersionTLS12,
-		}
-		
-		// Load server certificate if provided
-		if s.options.CertFile != "" && s.options.KeyFile != "" {
-			cert, err := tls.LoadX509KeyPair(s.options.CertFile, s.options.KeyFile)
-			if err != nil {
-				return fmt.Errorf("failed to load server certificate: %w", err)
-			}
-			tlsConfig.Certificates = []tls.Certificate{cert}
-		}
-		
-		// Add credentials to server options
-		serverOpts = append(serverOpts, grpc.Creds(credentials.NewTLS(tlsConfig)))
-	}
-	
-	// Configure keepalive parameters
-	keepaliveParams := keepalive.ServerParameters{
-		MaxConnectionIdle:     60 * time.Second,
-		MaxConnectionAge:      5 * time.Minute,
-		MaxConnectionAgeGrace: 5 * time.Second,
-		Time:                  15 * time.Second,
-		Timeout:               5 * time.Second,
-	}
-	
-	keepalivePolicy := keepalive.EnforcementPolicy{
-		MinTime:             5 * time.Second,
-		PermitWithoutStream: true,
-	}
-	
-	serverOpts = append(serverOpts,
-		grpc.KeepaliveParams(keepaliveParams),
-		grpc.KeepaliveEnforcementPolicy(keepalivePolicy),
-	)
-	
-	// Create gRPC server
-	s.server = grpc.NewServer(serverOpts...)
-	
-	// Create listener
-	listener, err := net.Listen("tcp", s.address)
-	if err != nil {
-		return fmt.Errorf("failed to listen on %s: %w", s.address, err)
-	}
-	s.listener = listener
-	
-	// Set up service implementation
-	// Note: This is currently a placeholder. The actual implementation
-	// would require initializing the engine and transaction registry
-	// with real components. For now, we'll just register the "empty" service.
-	pb.RegisterKevoServiceServer(s.server, &placeholderKevoService{})
-	
-	// Start serving in a goroutine
+	// Start the server in a goroutine
 	go func() {
-		if err := s.server.Serve(listener); err != nil {
+		if err := s.Serve(); err != nil {
 			fmt.Printf("gRPC server error: %v\n", err)
 		}
 	}()
@@ -117,76 +90,36 @@ func (s *GRPCServer) Start() error {
 
 // Serve starts the server and blocks until it's stopped
 func (s *GRPCServer) Serve() error {
-	s.mu.Lock()
-	
-	if s.started {
-		s.mu.Unlock()
-		return fmt.Errorf("server already started")
+	if s.requestHandler == nil {
+		return fmt.Errorf("no request handler set")
 	}
 	
-	var serverOpts []grpc.ServerOption
-	
-	// Configure TLS if enabled
-	if s.options.TLSEnabled {
-		tlsConfig := &tls.Config{
-			MinVersion: tls.VersionTLS12,
-		}
-		
-		// Load server certificate if provided
-		if s.options.CertFile != "" && s.options.KeyFile != "" {
-			cert, err := tls.LoadX509KeyPair(s.options.CertFile, s.options.KeyFile)
-			if err != nil {
-				s.mu.Unlock()
-				return fmt.Errorf("failed to load server certificate: %w", err)
-			}
-			tlsConfig.Certificates = []tls.Certificate{cert}
-		}
-		
-		// Add credentials to server options
-		serverOpts = append(serverOpts, grpc.Creds(credentials.NewTLS(tlsConfig)))
+	// Create the service implementation
+	service := &kevoServiceServer{
+		handler: s.requestHandler,
 	}
 	
-	// Configure keepalive parameters
-	keepaliveParams := keepalive.ServerParameters{
-		MaxConnectionIdle:     60 * time.Second,
-		MaxConnectionAge:      5 * time.Minute,
-		MaxConnectionAgeGrace: 5 * time.Second,
-		Time:                  15 * time.Second,
-		Timeout:               5 * time.Second,
-	}
+	// Register the service
+	pb.RegisterKevoServiceServer(s.server, service)
 	
-	keepalivePolicy := keepalive.EnforcementPolicy{
-		MinTime:             5 * time.Second,
-		PermitWithoutStream: true,
-	}
-	
-	serverOpts = append(serverOpts,
-		grpc.KeepaliveParams(keepaliveParams),
-		grpc.KeepaliveEnforcementPolicy(keepalivePolicy),
-	)
-	
-	// Create gRPC server
-	s.server = grpc.NewServer(serverOpts...)
-	
-	// Create listener
-	listener, err := net.Listen("tcp", s.address)
+	// Start listening
+	listener, err := transport.CreateListener("tcp", s.address, s.tlsConfig)
 	if err != nil {
-		s.mu.Unlock()
 		return fmt.Errorf("failed to listen on %s: %w", s.address, err)
 	}
-	s.listener = listener
 	
-	// Set up service implementation
-	// Note: This is currently a placeholder. The actual implementation
-	// would require initializing the engine and transaction registry
-	// with real components. For now, we'll just register the "empty" service.
-	pb.RegisterKevoServiceServer(s.server, &placeholderKevoService{})
+	s.metrics.ServerStarted()
 	
-	s.started = true
-	s.mu.Unlock()
+	// Serve requests
+	err = s.server.Serve(listener)
 	
-	// This will block until the server is stopped
-	return s.server.Serve(listener)
+	if err != nil {
+		s.metrics.ServerErrored()
+		return fmt.Errorf("failed to serve: %w", err)
+	}
+	
+	s.metrics.ServerStopped()
+	return nil
 }
 
 // Stop stops the server gracefully
@@ -198,21 +131,9 @@ func (s *GRPCServer) Stop(ctx context.Context) error {
 		return nil
 	}
 	
-	stopped := make(chan struct{})
-	go func() {
-		s.server.GracefulStop()
-		close(stopped)
-	}()
-	
-	select {
-	case <-stopped:
-		// Server stopped gracefully
-	case <-ctx.Done():
-		// Context deadline exceeded, force stop
-		s.server.Stop()
-	}
-	
+	s.server.GracefulStop()
 	s.started = false
+	
 	return nil
 }
 
@@ -221,15 +142,13 @@ func (s *GRPCServer) SetRequestHandler(handler transport.RequestHandler) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	
-	s.handler = handler
+	s.requestHandler = handler
 }
 
-// placeholderKevoService is a minimal implementation of KevoServiceServer for testing
-type placeholderKevoService struct {
+// kevoServiceServer implements the KevoService gRPC service
+type kevoServiceServer struct {
 	pb.UnimplementedKevoServiceServer
+	handler transport.RequestHandler
 }
 
-// Register server factory with transport registry
-func init() {
-	transport.RegisterServerTransport("grpc", NewGRPCServer)
-}
+// TODO: Implement service methods

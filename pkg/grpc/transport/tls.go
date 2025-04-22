@@ -7,6 +7,14 @@ import (
 	"io/ioutil"
 )
 
+// TLSConfig holds TLS configuration settings
+type TLSConfig struct {
+	CertFile   string
+	KeyFile    string
+	CAFile     string
+	SkipVerify bool
+}
+
 // LoadServerTLSConfig loads TLS configuration for server
 func LoadServerTLSConfig(certFile, keyFile, caFile string) (*tls.Config, error) {
 	// Check if both cert and key files are provided
@@ -76,4 +84,12 @@ func LoadClientTLSConfig(certFile, keyFile, caFile string, skipVerify bool) (*tl
 	}
 
 	return tlsConfig, nil
+}
+
+// LoadClientTLSConfigFromStruct is a convenience method to load TLS config from TLSConfig struct
+func LoadClientTLSConfigFromStruct(config *TLSConfig) (*tls.Config, error) {
+	if config == nil {
+		return &tls.Config{MinVersion: tls.VersionTLS12}, nil
+	}
+	return LoadClientTLSConfig(config.CertFile, config.KeyFile, config.CAFile, config.SkipVerify)
 }
