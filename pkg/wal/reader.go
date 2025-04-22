@@ -229,6 +229,17 @@ func (r *Reader) Close() error {
 // EntryHandler is a function that processes WAL entries during replay
 type EntryHandler func(*Entry) error
 
+// RecoveryStats tracks statistics about WAL recovery
+type RecoveryStats struct {
+	EntriesProcessed uint64
+	EntriesSkipped   uint64
+}
+
+// NewRecoveryStats creates a new RecoveryStats instance
+func NewRecoveryStats() *RecoveryStats {
+	return &RecoveryStats{}
+}
+
 // FindWALFiles returns a list of WAL files in the given directory
 func FindWALFiles(dir string) ([]string, error) {
 	pattern := filepath.Join(dir, "*.wal")
@@ -267,16 +278,15 @@ func getEntryCount(path string) int {
 	return count
 }
 
-func ReplayWALFile(path string, handler EntryHandler) error {
+func ReplayWALFile(path string, handler EntryHandler) (*RecoveryStats, error) {
 	reader, err := OpenReader(path)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer reader.Close()
 
-	// Track statistics for reporting
-	entriesProcessed := 0
-	entriesSkipped := 0
+	// Track statistics
+	stats := NewRecoveryStats()
 
 	for {
 		entry, err := reader.ReadEntry()
@@ -290,14 +300,11 @@ func ReplayWALFile(path string, handler EntryHandler) error {
 			if strings.Contains(err.Error(), "corrupt") ||
 				strings.Contains(err.Error(), "invalid") {
 				// Skip this corrupted entry
-				if !DisableRecoveryLogs {
-					fmt.Printf("Skipping corrupted entry in %s: %v\n", path, err)
-				}
-				entriesSkipped++
+				stats.EntriesSkipped++
 
 				// If we've seen too many corrupted entries in a row, give up on this file
-				if entriesSkipped > 5 && entriesProcessed == 0 {
-					return fmt.Errorf("too many corrupted entries at start of file %s", path)
+				if stats.EntriesSkipped > 5 && stats.EntriesProcessed == 0 {
+					return stats, fmt.Errorf("too many corrupted entries at start of file %s", path)
 				}
 
 				// Try to recover by scanning ahead
@@ -310,7 +317,7 @@ func ReplayWALFile(path string, handler EntryHandler) error {
 						break
 					}
 					// Couldn't recover
-					return fmt.Errorf("failed to recover from corruption in %s: %w", path, recoverErr)
+					return stats, fmt.Errorf("failed to recover from corruption in %s: %w", path, recoverErr)
 				}
 
 				// Successfully recovered, continue to the next entry
@@ -318,23 +325,18 @@ func ReplayWALFile(path string, handler EntryHandler) error {
 			}
 
 			// For other errors, fail the replay
-			return fmt.Errorf("error reading entry from %s: %w", path, err)
+			return stats, fmt.Errorf("error reading entry from %s: %w", path, err)
 		}
 
 		// Process the entry
 		if err := handler(entry); err != nil {
-			return fmt.Errorf("error handling entry: %w", err)
+			return stats, fmt.Errorf("error handling entry: %w", err)
 		}
 
-		entriesProcessed++
+		stats.EntriesProcessed++
 	}
 
-	if !DisableRecoveryLogs {
-		fmt.Printf("Processed %d entries from %s (skipped %d corrupted entries)\n",
-			entriesProcessed, path, entriesSkipped)
-	}
-
-	return nil
+	return stats, nil
 }
 
 // recoverFromCorruption attempts to recover from a corrupted record by scanning ahead
@@ -356,54 +358,58 @@ func recoverFromCorruption(reader *Reader) error {
 }
 
 // ReplayWALDir replays all WAL files in the given directory in order
-func ReplayWALDir(dir string, handler EntryHandler) error {
+func ReplayWALDir(dir string, handler EntryHandler) (*RecoveryStats, error) {
 	files, err := FindWALFiles(dir)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
+	// Track overall recovery stats
+	totalStats := NewRecoveryStats()
+	
 	// Track number of files processed successfully
 	successfulFiles := 0
 	var lastErr error
 
 	// Try to process each file, but continue on recoverable errors
 	for _, file := range files {
-		err := ReplayWALFile(file, handler)
+		fileStats, err := ReplayWALFile(file, handler)
 		if err != nil {
-			if !DisableRecoveryLogs {
-				fmt.Printf("Error processing WAL file %s: %v\n", file, err)
-			}
-
 			// Record the error, but continue
 			lastErr = err
+
+			// If we got some stats from the file before the error, add them to our totals
+			if fileStats != nil {
+				totalStats.EntriesProcessed += fileStats.EntriesProcessed
+				totalStats.EntriesSkipped += fileStats.EntriesSkipped
+			}
 
 			// Check if this is a file-level error or just a corrupt record
 			if !strings.Contains(err.Error(), "corrupt") &&
 				!strings.Contains(err.Error(), "invalid") {
-				return fmt.Errorf("fatal error replaying WAL file %s: %w", file, err)
+				return totalStats, fmt.Errorf("fatal error replaying WAL file %s: %w", file, err)
 			}
 
 			// Continue to the next file for corrupt/invalid errors
 			continue
 		}
 
-		if !DisableRecoveryLogs {
-			fmt.Printf("Processed %d entries from %s (skipped 0 corrupted entries)\n",
-				getEntryCount(file), file)
-		}
-
+		// Add stats from this file to our totals
+		totalStats.EntriesProcessed += fileStats.EntriesProcessed
+		totalStats.EntriesSkipped += fileStats.EntriesSkipped
+		
 		successfulFiles++
 	}
 
 	// If we processed at least one file successfully, the WAL recovery is considered successful
 	if successfulFiles > 0 {
-		return nil
+		return totalStats, nil
 	}
 
 	// If no files were processed successfully and we had errors, return the last error
 	if lastErr != nil {
-		return fmt.Errorf("failed to process any WAL files: %w", lastErr)
+		return totalStats, fmt.Errorf("failed to process any WAL files: %w", lastErr)
 	}
 
-	return nil
+	return totalStats, nil
 }

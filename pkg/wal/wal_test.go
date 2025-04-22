@@ -56,7 +56,7 @@ func TestWALWrite(t *testing.T) {
 	// Verify entries by replaying
 	entries := make(map[string]string)
 
-	err = ReplayWALDir(dir, func(entry *Entry) error {
+	_, err = ReplayWALDir(dir, func(entry *Entry) error {
 		if entry.Type == OpTypePut {
 			entries[string(entry.Key)] = string(entry.Value)
 		} else if entry.Type == OpTypeDelete {
@@ -115,7 +115,7 @@ func TestWALDelete(t *testing.T) {
 	// Verify entries by replaying
 	var deleted bool
 
-	err = ReplayWALDir(dir, func(entry *Entry) error {
+	_, err = ReplayWALDir(dir, func(entry *Entry) error {
 		if entry.Type == OpTypePut && bytes.Equal(entry.Key, key) {
 			if deleted {
 				deleted = false // Key was re-added
@@ -171,7 +171,7 @@ func TestWALLargeEntry(t *testing.T) {
 	// Verify by replaying
 	var foundLargeEntry bool
 
-	err = ReplayWALDir(dir, func(entry *Entry) error {
+	_, err = ReplayWALDir(dir, func(entry *Entry) error {
 		if entry.Type == OpTypePut && len(entry.Key) == len(key) && len(entry.Value) == len(value) {
 			// Verify key
 			for i := range key {
@@ -240,7 +240,7 @@ func TestWALBatch(t *testing.T) {
 	entries := make(map[string]string)
 	batchCount := 0
 
-	err = ReplayWALDir(dir, func(entry *Entry) error {
+	_, err = ReplayWALDir(dir, func(entry *Entry) error {
 		if entry.Type == OpTypeBatch {
 			batchCount++
 
@@ -336,7 +336,7 @@ func TestWALRecovery(t *testing.T) {
 	// Verify entries by replaying all WAL files in order
 	entries := make(map[string]string)
 
-	err = ReplayWALDir(dir, func(entry *Entry) error {
+	_, err = ReplayWALDir(dir, func(entry *Entry) error {
 		if entry.Type == OpTypePut {
 			entries[string(entry.Key)] = string(entry.Value)
 		} else if entry.Type == OpTypeDelete {
@@ -410,7 +410,7 @@ func TestWALSyncModes(t *testing.T) {
 
 			// Verify entries by replaying
 			count := 0
-			err = ReplayWALDir(dir, func(entry *Entry) error {
+			_, err = ReplayWALDir(dir, func(entry *Entry) error {
 				if entry.Type == OpTypePut {
 					count++
 				}
@@ -471,7 +471,7 @@ func TestWALFragmentation(t *testing.T) {
 	var reconstructedValue []byte
 	var foundPut bool
 
-	err = ReplayWALDir(dir, func(entry *Entry) error {
+	_, err = ReplayWALDir(dir, func(entry *Entry) error {
 		if entry.Type == OpTypePut {
 			foundPut = true
 			reconstructedKey = entry.Key
@@ -580,7 +580,7 @@ func TestWALErrorHandling(t *testing.T) {
 
 	// Try to replay a non-existent file
 	nonExistentPath := filepath.Join(dir, "nonexistent.wal")
-	err = ReplayWALFile(nonExistentPath, func(entry *Entry) error {
+	_, err = ReplayWALFile(nonExistentPath, func(entry *Entry) error {
 		return nil
 	})
 

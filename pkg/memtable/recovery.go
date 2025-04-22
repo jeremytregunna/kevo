@@ -31,7 +31,7 @@ func DefaultRecoveryOptions(cfg *config.Config) *RecoveryOptions {
 }
 
 // RecoverFromWAL rebuilds MemTables from the write-ahead log
-// Returns a list of recovered MemTables and the maximum sequence number seen
+// Returns a list of recovered MemTables, the maximum sequence number seen, and stats
 func RecoverFromWAL(cfg *config.Config, opts *RecoveryOptions) ([]*MemTable, uint64, error) {
 	if opts == nil {
 		opts = DefaultRecoveryOptions(cfg)
@@ -76,9 +76,12 @@ func RecoverFromWAL(cfg *config.Config, opts *RecoveryOptions) ([]*MemTable, uin
 	}
 
 	// Replay the WAL directory
-	if err := wal.ReplayWALDir(cfg.WALDir, entryHandler); err != nil {
+	_, err := wal.ReplayWALDir(cfg.WALDir, entryHandler)
+	if err != nil {
 		return nil, 0, fmt.Errorf("failed to replay WAL: %w", err)
 	}
+
+	// Stats will be captured in the engine directly
 
 	// For batch operations, we need to adjust maxSeqNum
 	finalTable := memTables[len(memTables)-1]

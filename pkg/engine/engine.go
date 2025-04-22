@@ -61,6 +61,12 @@ type EngineStats struct {
 	TxCompleted atomic.Uint64
 	TxAborted   atomic.Uint64
 
+	// Recovery stats
+	WALFilesRecovered  atomic.Uint64
+	WALEntriesRecovered atomic.Uint64
+	WALCorruptedEntries atomic.Uint64
+	WALRecoveryDuration atomic.Int64 // nanoseconds
+
 	// Mutex for accessing non-atomic fields
 	mu sync.RWMutex
 }
@@ -666,21 +672,22 @@ func (e *Engine) loadSSTables() error {
 
 // recoverFromWAL recovers memtables from existing WAL files
 func (e *Engine) recoverFromWAL() error {
+	startTime := time.Now()
+	
 	// Check if WAL directory exists
 	if _, err := os.Stat(e.walDir); os.IsNotExist(err) {
 		return nil // No WAL directory, nothing to recover
 	}
 
-	// List all WAL files for diagnostic purposes
+	// List all WAL files
 	walFiles, err := wal.FindWALFiles(e.walDir)
 	if err != nil {
-		if !wal.DisableRecoveryLogs {
-			fmt.Printf("Error listing WAL files: %v\n", err)
-		}
-	} else {
-		if !wal.DisableRecoveryLogs {
-			fmt.Printf("Found %d WAL files: %v\n", len(walFiles), walFiles)
-		}
+		e.stats.ReadErrors.Add(1)
+		return fmt.Errorf("error listing WAL files: %w", err)
+	}
+	
+	if len(walFiles) > 0 {
+		e.stats.WALFilesRecovered.Add(uint64(len(walFiles)))
 	}
 
 	// Get recovery options
@@ -690,17 +697,11 @@ func (e *Engine) recoverFromWAL() error {
 	memTables, maxSeqNum, err := memtable.RecoverFromWAL(e.cfg, recoveryOpts)
 	if err != nil {
 		// If recovery fails, let's try cleaning up WAL files
-		if !wal.DisableRecoveryLogs {
-			fmt.Printf("WAL recovery failed: %v\n", err)
-			fmt.Printf("Attempting to recover by cleaning up WAL files...\n")
-		}
-
+		e.stats.ReadErrors.Add(1)
+		
 		// Create a backup directory
 		backupDir := filepath.Join(e.walDir, "backup_"+time.Now().Format("20060102_150405"))
 		if err := os.MkdirAll(backupDir, 0755); err != nil {
-			if !wal.DisableRecoveryLogs {
-				fmt.Printf("Failed to create backup directory: %v\n", err)
-			}
 			return fmt.Errorf("failed to recover from WAL: %w", err)
 		}
 
@@ -708,11 +709,7 @@ func (e *Engine) recoverFromWAL() error {
 		for _, walFile := range walFiles {
 			destFile := filepath.Join(backupDir, filepath.Base(walFile))
 			if err := os.Rename(walFile, destFile); err != nil {
-				if !wal.DisableRecoveryLogs {
-					fmt.Printf("Failed to move WAL file %s: %v\n", walFile, err)
-				}
-			} else if !wal.DisableRecoveryLogs {
-				fmt.Printf("Moved problematic WAL file to %s\n", destFile)
+				e.stats.ReadErrors.Add(1)
 			}
 		}
 
@@ -723,15 +720,28 @@ func (e *Engine) recoverFromWAL() error {
 		}
 		e.wal = newWal
 
-		// No memtables to recover, starting fresh
-		if !wal.DisableRecoveryLogs {
-			fmt.Printf("Starting with a fresh WAL after recovery failure\n")
-		}
+		// Record recovery duration
+		e.stats.WALRecoveryDuration.Store(time.Since(startTime).Nanoseconds())
 		return nil
+	}
+	
+	// Update recovery statistics based on actual entries recovered
+	if len(walFiles) > 0 {
+		// Use WALDir function directly to get stats
+		recoveryStats, statErr := wal.ReplayWALDir(e.cfg.WALDir, func(entry *wal.Entry) error {
+			return nil // Just counting, not processing
+		})
+		
+		if statErr == nil && recoveryStats != nil {
+			e.stats.WALEntriesRecovered.Add(recoveryStats.EntriesProcessed)
+			e.stats.WALCorruptedEntries.Add(recoveryStats.EntriesSkipped)
+		}
 	}
 
 	// No memtables recovered or empty WAL
 	if len(memTables) == 0 {
+		// Record recovery duration
+		e.stats.WALRecoveryDuration.Store(time.Since(startTime).Nanoseconds())
 		return nil
 	}
 
@@ -755,10 +765,9 @@ func (e *Engine) recoverFromWAL() error {
 		}
 	}
 
-	if !wal.DisableRecoveryLogs {
-		fmt.Printf("Recovered %d memtables from WAL with max sequence number %d\n",
-			len(memTables), maxSeqNum)
-	}
+	// Record recovery stats
+	e.stats.WALRecoveryDuration.Store(time.Since(startTime).Nanoseconds())
+	
 	return nil
 }
 
@@ -924,6 +933,15 @@ func (e *Engine) GetStats() map[string]interface{} {
 	// Add error statistics
 	stats["read_errors"] = e.stats.ReadErrors.Load()
 	stats["write_errors"] = e.stats.WriteErrors.Load()
+	
+	// Add WAL recovery statistics
+	stats["wal_files_recovered"] = e.stats.WALFilesRecovered.Load()
+	stats["wal_entries_recovered"] = e.stats.WALEntriesRecovered.Load()
+	stats["wal_corrupted_entries"] = e.stats.WALCorruptedEntries.Load()
+	recoveryDuration := e.stats.WALRecoveryDuration.Load()
+	if recoveryDuration > 0 {
+		stats["wal_recovery_duration_ms"] = recoveryDuration / int64(time.Millisecond)
+	}
 
 	// Add timing information
 	e.stats.mu.RLock()

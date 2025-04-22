@@ -12,6 +12,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode"
 
 	"github.com/chzyer/readline"
 
@@ -411,15 +412,89 @@ func runInteractive(eng *engine.Engine, dbPath string) {
 
 				// Print statistics
 				stats := eng.GetStats()
-				fmt.Println("Database Statistics:")
-				fmt.Printf("  Operations: %d puts, %d gets (%d hits, %d misses), %d deletes\n",
-					stats["put_ops"], stats["get_ops"], stats["get_hits"], stats["get_misses"], stats["delete_ops"])
-				fmt.Printf("  Transactions: %d started, %d committed, %d aborted\n",
-					stats["tx_started"], stats["tx_completed"], stats["tx_aborted"])
-				fmt.Printf("  Storage: %d bytes read, %d bytes written, %d flushes\n",
-					stats["total_bytes_read"], stats["total_bytes_written"], stats["flush_count"])
-				fmt.Printf("  Tables: %d sstables, %d immutable memtables\n",
-					stats["sstable_count"], stats["immutable_memtable_count"])
+				
+				// Format human-readable time for the last operation timestamps
+				var lastPutTime, lastGetTime, lastDeleteTime time.Time
+				if putTime, ok := stats["last_put_time"].(int64); ok && putTime > 0 {
+					lastPutTime = time.Unix(0, putTime)
+				}
+				if getTime, ok := stats["last_get_time"].(int64); ok && getTime > 0 {
+					lastGetTime = time.Unix(0, getTime)
+				}
+				if deleteTime, ok := stats["last_delete_time"].(int64); ok && deleteTime > 0 {
+					lastDeleteTime = time.Unix(0, deleteTime)
+				}
+				
+				// Operations section
+				fmt.Println("📊 Operations:")
+				fmt.Printf("  • Puts: %d\n", stats["put_ops"])
+				fmt.Printf("  • Gets: %d (Hits: %d, Misses: %d)\n", stats["get_ops"], stats["get_hits"], stats["get_misses"])
+				fmt.Printf("  • Deletes: %d\n", stats["delete_ops"])
+				
+				// Last Operation Times
+				fmt.Println("\n⏱️ Last Operation Times:")
+				if !lastPutTime.IsZero() {
+					fmt.Printf("  • Last Put: %s\n", lastPutTime.Format(time.RFC3339))
+				} else {
+					fmt.Printf("  • Last Put: Never\n")
+				}
+				if !lastGetTime.IsZero() {
+					fmt.Printf("  • Last Get: %s\n", lastGetTime.Format(time.RFC3339))
+				} else {
+					fmt.Printf("  • Last Get: Never\n")
+				}
+				if !lastDeleteTime.IsZero() {
+					fmt.Printf("  • Last Delete: %s\n", lastDeleteTime.Format(time.RFC3339))
+				} else {
+					fmt.Printf("  • Last Delete: Never\n")
+				}
+				
+				// Transactions
+				fmt.Println("\n💼 Transactions:")
+				fmt.Printf("  • Started: %d\n", stats["tx_started"])
+				fmt.Printf("  • Completed: %d\n", stats["tx_completed"])
+				fmt.Printf("  • Aborted: %d\n", stats["tx_aborted"])
+				
+				// Storage metrics
+				fmt.Println("\n💾 Storage:")
+				fmt.Printf("  • Total Bytes Read: %d\n", stats["total_bytes_read"])
+				fmt.Printf("  • Total Bytes Written: %d\n", stats["total_bytes_written"])
+				fmt.Printf("  • Flush Count: %d\n", stats["flush_count"])
+				
+				// Table stats
+				fmt.Println("\n📋 Tables:")
+				fmt.Printf("  • SSTable Count: %d\n", stats["sstable_count"])
+				fmt.Printf("  • Immutable MemTable Count: %d\n", stats["immutable_memtable_count"])
+				fmt.Printf("  • Current MemTable Size: %d bytes\n", stats["memtable_size"])
+				
+				// WAL recovery stats
+				fmt.Println("\n🔄 WAL Recovery:")
+				fmt.Printf("  • Files Recovered: %d\n", stats["wal_files_recovered"])
+				fmt.Printf("  • Entries Recovered: %d\n", stats["wal_entries_recovered"])
+				fmt.Printf("  • Corrupted Entries: %d\n", stats["wal_corrupted_entries"])
+				if recoveryDuration, ok := stats["wal_recovery_duration_ms"]; ok {
+					fmt.Printf("  • Recovery Duration: %d ms\n", recoveryDuration)
+				}
+				
+				// Error counts
+				fmt.Println("\n⚠️ Errors:")
+				fmt.Printf("  • Read Errors: %d\n", stats["read_errors"])
+				fmt.Printf("  • Write Errors: %d\n", stats["write_errors"])
+				
+				// Compaction stats (if available)
+				if compactionOutputCount, ok := stats["compaction_last_outputs_count"]; ok {
+					fmt.Println("\n🧹 Compaction:")
+					fmt.Printf("  • Last Output Files Count: %d\n", compactionOutputCount)
+					
+					// Display other compaction stats as available
+					for key, value := range stats {
+						if strings.HasPrefix(key, "compaction_") && key != "compaction_last_outputs_count" && key != "compaction_last_outputs" {
+							// Format the key for display (remove prefix, replace underscores with spaces)
+							displayKey := toTitle(strings.Replace(strings.TrimPrefix(key, "compaction_"), "_", " ", -1))
+							fmt.Printf("  • %s: %v\n", displayKey, value)
+						}
+					}
+				}
 
 			case ".flush":
 				if eng == nil {
@@ -734,4 +809,20 @@ func makeKeySuccessor(prefix []byte) []byte {
 	copy(successor, prefix)
 	successor[len(prefix)] = 0xFF
 	return successor
+}
+
+// toTitle replaces strings.Title which is deprecated
+// It converts the first character of each word to title case
+func toTitle(s string) string {
+	prev := ' '
+	return strings.Map(
+		func(r rune) rune {
+			if unicode.IsSpace(prev) || unicode.IsPunct(prev) {
+				prev = r
+				return unicode.ToTitle(r)
+			}
+			prev = r
+			return r
+		},
+		s)
 }

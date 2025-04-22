@@ -75,7 +75,7 @@ func TestBatchEncoding(t *testing.T) {
 	// Replay and decode
 	var decodedBatch *Batch
 
-	err = ReplayWALDir(dir, func(entry *Entry) error {
+	_, err = ReplayWALDir(dir, func(entry *Entry) error {
 		if entry.Type == OpTypeBatch {
 			var err error
 			decodedBatch, err = DecodeBatch(entry)
