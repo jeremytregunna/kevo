@@ -9,9 +9,9 @@ import (
 // Metrics struct extensions for server metrics
 type ServerMetrics struct {
 	Metrics
-	ServerStarted  uint64
-	ServerErrored  uint64
-	ServerStopped  uint64
+	ServerStarted uint64
+	ServerErrored uint64
+	ServerStopped uint64
 }
 
 // Connection represents a connection to a remote endpoint
@@ -31,11 +31,11 @@ type Connection interface {
 
 // ConnectionStatus represents the status of a connection
 type ConnectionStatus struct {
-	Connected     bool
-	LastActivity  time.Time
-	ErrorCount    int
-	RequestCount  int
-	LatencyAvg    time.Duration
+	Connected    bool
+	LastActivity time.Time
+	ErrorCount   int
+	RequestCount int
+	LatencyAvg   time.Duration
 }
 
 // TransportManager is an interface for managing transport layer operations

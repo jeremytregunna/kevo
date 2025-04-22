@@ -442,13 +442,13 @@ func (c *chainedIterator) SeekToFirst() {
 
 	// Find the iterator with the smallest key from the newest source
 	c.current = -1
-	
+
 	// Find the smallest valid key
 	for i, iter := range c.iterators {
 		if !iter.Valid() {
 			continue
 		}
-		
+
 		// If we haven't found a key yet, or this key is smaller than the current smallest
 		if c.current == -1 || bytes.Compare(iter.Key(), c.iterators[c.current].Key()) < 0 {
 			c.current = i
@@ -499,13 +499,13 @@ func (c *chainedIterator) Seek(target []byte) bool {
 
 	// Find the iterator with the smallest key from the newest source
 	c.current = -1
-	
+
 	// Find the smallest valid key
 	for i, iter := range c.iterators {
 		if !iter.Valid() {
 			continue
 		}
-		
+
 		// If we haven't found a key yet, or this key is smaller than the current smallest
 		if c.current == -1 || bytes.Compare(iter.Key(), c.iterators[c.current].Key()) < 0 {
 			c.current = i
@@ -537,18 +537,18 @@ func (c *chainedIterator) Next() bool {
 
 	// Find the iterator with the smallest key from the newest source
 	c.current = -1
-	
+
 	// Find the smallest valid key that is greater than the current key
 	for i, iter := range c.iterators {
 		if !iter.Valid() {
 			continue
 		}
-		
+
 		// Skip if the key is the same as the current key (we've already advanced past it)
 		if bytes.Equal(iter.Key(), currentKey) {
 			continue
 		}
-		
+
 		// If we haven't found a key yet, or this key is smaller than the current smallest
 		if c.current == -1 || bytes.Compare(iter.Key(), c.iterators[c.current].Key()) < 0 {
 			c.current = i

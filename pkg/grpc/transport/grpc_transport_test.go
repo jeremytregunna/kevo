@@ -7,15 +7,15 @@ import (
 // Simple smoke test for the gRPC transport
 func TestNewGRPCTransportManager(t *testing.T) {
 	opts := DefaultGRPCTransportOptions()
-	
+
 	// Override the listen address to avoid port conflicts
 	opts.ListenAddr = ":0" // use random available port
-	
+
 	manager, err := NewGRPCTransportManager(opts)
 	if err != nil {
 		t.Fatalf("Failed to create transport manager: %v", err)
 	}
-	
+
 	// Verify the manager was created
 	if manager == nil {
 		t.Fatal("Expected non-nil manager")

@@ -109,7 +109,7 @@ func (s *KevoServiceServer) BatchWrite(ctx context.Context, req *pb.BatchWriteRe
 	if err != nil {
 		return &pb.BatchWriteResponse{Success: false}, fmt.Errorf("failed to start transaction: %w", err)
 	}
-	
+
 	// Ensure we either commit or rollback
 	defer func() {
 		if err != nil {
@@ -182,7 +182,7 @@ func (s *KevoServiceServer) Scan(req *pb.ScanRequest, stream pb.KevoService_Scan
 	count := int32(0)
 	// Position iterator at the first entry
 	iter.SeekToFirst()
-	
+
 	// Iterate through all valid entries
 	for iter.Valid() {
 		if limit > 0 && count >= limit {
@@ -199,7 +199,7 @@ func (s *KevoServiceServer) Scan(req *pb.ScanRequest, stream pb.KevoService_Scan
 			}
 			count++
 		}
-		
+
 		// Move to the next entry
 		iter.Next()
 	}
@@ -225,8 +225,8 @@ func (pi *prefixIterator) Next() bool {
 	for pi.iter.Next() {
 		// Check if current key has the prefix
 		key := pi.iter.Key()
-		if len(key) >= len(pi.prefix) && 
-		   equalByteSlice(key[:len(pi.prefix)], pi.prefix) {
+		if len(key) >= len(pi.prefix) &&
+			equalByteSlice(key[:len(pi.prefix)], pi.prefix) {
 			return true
 		}
 	}
@@ -415,7 +415,7 @@ func (s *KevoServiceServer) TxScan(req *pb.TxScanRequest, stream pb.KevoService_
 	count := int32(0)
 	// Position iterator at the first entry
 	iter.SeekToFirst()
-	
+
 	// Iterate through all valid entries
 	for iter.Valid() {
 		if limit > 0 && count >= limit {
@@ -432,7 +432,7 @@ func (s *KevoServiceServer) TxScan(req *pb.TxScanRequest, stream pb.KevoService_
 			}
 			count++
 		}
-		
+
 		// Move to the next entry
 		iter.Next()
 	}
@@ -446,17 +446,17 @@ func (s *KevoServiceServer) GetStats(ctx context.Context, req *pb.GetStatsReques
 	keyCount := int64(0)
 	sstableCount := int32(0)
 	memtableCount := int32(1) // At least 1 active memtable
-	
+
 	// Create a read-only transaction to count keys
 	tx, err := s.engine.BeginTransaction(true)
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin transaction for stats: %w", err)
 	}
 	defer tx.Rollback()
-	
+
 	// Use an iterator to count keys
 	iter := tx.NewIterator()
-	
+
 	// Count keys and estimate size
 	var totalSize int64
 	for iter.Next() {
@@ -492,7 +492,7 @@ func (s *KevoServiceServer) Compact(ctx context.Context, req *pb.CompactRequest)
 	if err != nil {
 		return &pb.CompactResponse{Success: false}, err
 	}
-	
+
 	// Do a dummy write to force a flush
 	if req.Force {
 		err = tx.Put([]byte("__compact_marker__"), []byte("force"))
@@ -501,7 +501,7 @@ func (s *KevoServiceServer) Compact(ctx context.Context, req *pb.CompactRequest)
 			return &pb.CompactResponse{Success: false}, err
 		}
 	}
-	
+
 	err = tx.Commit()
 	if err != nil {
 		return &pb.CompactResponse{Success: false}, err

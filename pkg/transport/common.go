@@ -6,21 +6,21 @@ import (
 
 // Standard request/response type constants
 const (
-	TypeGet           = "get"
-	TypePut           = "put"
-	TypeDelete        = "delete"
-	TypeBatchWrite    = "batch_write"
-	TypeScan          = "scan"
-	TypeBeginTx       = "begin_tx"
-	TypeCommitTx      = "commit_tx"
-	TypeRollbackTx    = "rollback_tx"
-	TypeTxGet         = "tx_get"
-	TypeTxPut         = "tx_put"
-	TypeTxDelete      = "tx_delete"
-	TypeTxScan        = "tx_scan"
-	TypeGetStats      = "get_stats"
-	TypeCompact       = "compact"
-	TypeError         = "error"
+	TypeGet        = "get"
+	TypePut        = "put"
+	TypeDelete     = "delete"
+	TypeBatchWrite = "batch_write"
+	TypeScan       = "scan"
+	TypeBeginTx    = "begin_tx"
+	TypeCommitTx   = "commit_tx"
+	TypeRollbackTx = "rollback_tx"
+	TypeTxGet      = "tx_get"
+	TypeTxPut      = "tx_put"
+	TypeTxDelete   = "tx_delete"
+	TypeTxScan     = "tx_scan"
+	TypeGetStats   = "get_stats"
+	TypeCompact    = "compact"
+	TypeError      = "error"
 )
 
 // Common errors

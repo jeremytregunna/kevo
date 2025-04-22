@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	pb "github.com/KevoDB/kevo/proto/kevo"
 	"github.com/KevoDB/kevo/pkg/transport"
+	pb "github.com/KevoDB/kevo/proto/kevo"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -19,13 +19,13 @@ import (
 
 // GRPCClient implements the transport.Client interface for gRPC
 type GRPCClient struct {
-	endpoint   string
-	options    transport.TransportOptions
-	conn       *grpc.ClientConn
-	client     pb.KevoServiceClient
-	status     transport.TransportStatus
-	statusMu   sync.RWMutex
-	metrics    transport.MetricsCollector
+	endpoint string
+	options  transport.TransportOptions
+	conn     *grpc.ClientConn
+	client   pb.KevoServiceClient
+	status   transport.TransportStatus
+	statusMu sync.RWMutex
+	metrics  transport.MetricsCollector
 }
 
 // NewGRPCClient creates a new gRPC client
@@ -123,10 +123,10 @@ func (c *GRPCClient) Status() transport.TransportStatus {
 func (c *GRPCClient) setStatus(connected bool, err error) {
 	c.statusMu.Lock()
 	defer c.statusMu.Unlock()
-	
+
 	c.status.Connected = connected
 	c.status.LastError = err
-	
+
 	if connected {
 		c.status.LastConnected = time.Now()
 	}
@@ -141,11 +141,11 @@ func (c *GRPCClient) Send(ctx context.Context, request transport.Request) (trans
 	// Record request metrics
 	startTime := time.Now()
 	requestType := request.Type()
-	
+
 	// Record bytes sent
 	requestPayload := request.Payload()
 	c.metrics.RecordSend(len(requestPayload))
-	
+
 	var resp transport.Response
 	var err error
 
@@ -182,12 +182,12 @@ func (c *GRPCClient) Send(ctx context.Context, request transport.Request) (trans
 
 	// Record metrics for the request
 	c.metrics.RecordRequest(requestType, startTime, err)
-	
+
 	// If we got a response, record received bytes
 	if resp != nil {
 		c.metrics.RecordReceive(len(resp.Payload()))
 	}
-	
+
 	return resp, err
 }
 
@@ -206,20 +206,20 @@ func (c *GRPCClient) handleGet(ctx context.Context, payload []byte) (transport.R
 	var req struct {
 		Key []byte `json:"key"`
 	}
-	
+
 	if err := json.Unmarshal(payload, &req); err != nil {
 		return transport.NewErrorResponse(fmt.Errorf("invalid get request payload: %w", err)), err
 	}
-	
+
 	grpcReq := &pb.GetRequest{
 		Key: req.Key,
 	}
-	
+
 	grpcResp, err := c.client.Get(ctx, grpcReq)
 	if err != nil {
 		return transport.NewErrorResponse(err), err
 	}
-	
+
 	resp := struct {
 		Value []byte `json:"value"`
 		Found bool   `json:"found"`
@@ -227,12 +227,12 @@ func (c *GRPCClient) handleGet(ctx context.Context, payload []byte) (transport.R
 		Value: grpcResp.Value,
 		Found: grpcResp.Found,
 	}
-	
+
 	respData, err := json.Marshal(resp)
 	if err != nil {
 		return transport.NewErrorResponse(err), err
 	}
-	
+
 	return transport.NewResponse(transport.TypeGet, respData, nil), nil
 }
 
@@ -242,33 +242,33 @@ func (c *GRPCClient) handlePut(ctx context.Context, payload []byte) (transport.R
 		Value []byte `json:"value"`
 		Sync  bool   `json:"sync"`
 	}
-	
+
 	if err := json.Unmarshal(payload, &req); err != nil {
 		return transport.NewErrorResponse(fmt.Errorf("invalid put request payload: %w", err)), err
 	}
-	
+
 	grpcReq := &pb.PutRequest{
 		Key:   req.Key,
 		Value: req.Value,
 		Sync:  req.Sync,
 	}
-	
+
 	grpcResp, err := c.client.Put(ctx, grpcReq)
 	if err != nil {
 		return transport.NewErrorResponse(err), err
 	}
-	
+
 	resp := struct {
 		Success bool `json:"success"`
 	}{
 		Success: grpcResp.Success,
 	}
-	
+
 	respData, err := json.Marshal(resp)
 	if err != nil {
 		return transport.NewErrorResponse(err), err
 	}
-	
+
 	return transport.NewResponse(transport.TypePut, respData, nil), nil
 }
 
@@ -277,32 +277,32 @@ func (c *GRPCClient) handleDelete(ctx context.Context, payload []byte) (transpor
 		Key  []byte `json:"key"`
 		Sync bool   `json:"sync"`
 	}
-	
+
 	if err := json.Unmarshal(payload, &req); err != nil {
 		return transport.NewErrorResponse(fmt.Errorf("invalid delete request payload: %w", err)), err
 	}
-	
+
 	grpcReq := &pb.DeleteRequest{
 		Key:  req.Key,
 		Sync: req.Sync,
 	}
-	
+
 	grpcResp, err := c.client.Delete(ctx, grpcReq)
 	if err != nil {
 		return transport.NewErrorResponse(err), err
 	}
-	
+
 	resp := struct {
 		Success bool `json:"success"`
 	}{
 		Success: grpcResp.Success,
 	}
-	
+
 	respData, err := json.Marshal(resp)
 	if err != nil {
 		return transport.NewErrorResponse(err), err
 	}
-	
+
 	return transport.NewResponse(transport.TypeDelete, respData, nil), nil
 }
 
@@ -315,18 +315,18 @@ func (c *GRPCClient) handleBatchWrite(ctx context.Context, payload []byte) (tran
 		} `json:"operations"`
 		Sync bool `json:"sync"`
 	}
-	
+
 	if err := json.Unmarshal(payload, &req); err != nil {
 		return transport.NewErrorResponse(fmt.Errorf("invalid batch write request payload: %w", err)), err
 	}
-	
+
 	operations := make([]*pb.Operation, len(req.Operations))
 	for i, op := range req.Operations {
 		pbOp := &pb.Operation{
 			Key:   op.Key,
 			Value: op.Value,
 		}
-		
+
 		switch op.Type {
 		case "put":
 			pbOp.Type = pb.Operation_PUT
@@ -335,31 +335,31 @@ func (c *GRPCClient) handleBatchWrite(ctx context.Context, payload []byte) (tran
 		default:
 			return transport.NewErrorResponse(fmt.Errorf("invalid operation type: %s", op.Type)), fmt.Errorf("invalid operation type: %s", op.Type)
 		}
-		
+
 		operations[i] = pbOp
 	}
-	
+
 	grpcReq := &pb.BatchWriteRequest{
 		Operations: operations,
 		Sync:       req.Sync,
 	}
-	
+
 	grpcResp, err := c.client.BatchWrite(ctx, grpcReq)
 	if err != nil {
 		return transport.NewErrorResponse(err), err
 	}
-	
+
 	resp := struct {
 		Success bool `json:"success"`
 	}{
 		Success: grpcResp.Success,
 	}
-	
+
 	respData, err := json.Marshal(resp)
 	if err != nil {
 		return transport.NewErrorResponse(err), err
 	}
-	
+
 	return transport.NewResponse(transport.TypeBatchWrite, respData, nil), nil
 }
 
@@ -367,31 +367,31 @@ func (c *GRPCClient) handleBeginTransaction(ctx context.Context, payload []byte)
 	var req struct {
 		ReadOnly bool `json:"read_only"`
 	}
-	
+
 	if err := json.Unmarshal(payload, &req); err != nil {
 		return transport.NewErrorResponse(fmt.Errorf("invalid begin transaction request payload: %w", err)), err
 	}
-	
+
 	grpcReq := &pb.BeginTransactionRequest{
 		ReadOnly: req.ReadOnly,
 	}
-	
+
 	grpcResp, err := c.client.BeginTransaction(ctx, grpcReq)
 	if err != nil {
 		return transport.NewErrorResponse(err), err
 	}
-	
+
 	resp := struct {
 		TransactionID string `json:"transaction_id"`
 	}{
 		TransactionID: grpcResp.TransactionId,
 	}
-	
+
 	respData, err := json.Marshal(resp)
 	if err != nil {
 		return transport.NewErrorResponse(err), err
 	}
-	
+
 	return transport.NewResponse(transport.TypeBeginTx, respData, nil), nil
 }
 
@@ -399,31 +399,31 @@ func (c *GRPCClient) handleCommitTransaction(ctx context.Context, payload []byte
 	var req struct {
 		TransactionID string `json:"transaction_id"`
 	}
-	
+
 	if err := json.Unmarshal(payload, &req); err != nil {
 		return transport.NewErrorResponse(fmt.Errorf("invalid commit transaction request payload: %w", err)), err
 	}
-	
+
 	grpcReq := &pb.CommitTransactionRequest{
 		TransactionId: req.TransactionID,
 	}
-	
+
 	grpcResp, err := c.client.CommitTransaction(ctx, grpcReq)
 	if err != nil {
 		return transport.NewErrorResponse(err), err
 	}
-	
+
 	resp := struct {
 		Success bool `json:"success"`
 	}{
 		Success: grpcResp.Success,
 	}
-	
+
 	respData, err := json.Marshal(resp)
 	if err != nil {
 		return transport.NewErrorResponse(err), err
 	}
-	
+
 	return transport.NewResponse(transport.TypeCommitTx, respData, nil), nil
 }
 
@@ -431,31 +431,31 @@ func (c *GRPCClient) handleRollbackTransaction(ctx context.Context, payload []by
 	var req struct {
 		TransactionID string `json:"transaction_id"`
 	}
-	
+
 	if err := json.Unmarshal(payload, &req); err != nil {
 		return transport.NewErrorResponse(fmt.Errorf("invalid rollback transaction request payload: %w", err)), err
 	}
-	
+
 	grpcReq := &pb.RollbackTransactionRequest{
 		TransactionId: req.TransactionID,
 	}
-	
+
 	grpcResp, err := c.client.RollbackTransaction(ctx, grpcReq)
 	if err != nil {
 		return transport.NewErrorResponse(err), err
 	}
-	
+
 	resp := struct {
 		Success bool `json:"success"`
 	}{
 		Success: grpcResp.Success,
 	}
-	
+
 	respData, err := json.Marshal(resp)
 	if err != nil {
 		return transport.NewErrorResponse(err), err
 	}
-	
+
 	return transport.NewResponse(transport.TypeRollbackTx, respData, nil), nil
 }
 
@@ -464,21 +464,21 @@ func (c *GRPCClient) handleTxGet(ctx context.Context, payload []byte) (transport
 		TransactionID string `json:"transaction_id"`
 		Key           []byte `json:"key"`
 	}
-	
+
 	if err := json.Unmarshal(payload, &req); err != nil {
 		return transport.NewErrorResponse(fmt.Errorf("invalid tx get request payload: %w", err)), err
 	}
-	
+
 	grpcReq := &pb.TxGetRequest{
 		TransactionId: req.TransactionID,
 		Key:           req.Key,
 	}
-	
+
 	grpcResp, err := c.client.TxGet(ctx, grpcReq)
 	if err != nil {
 		return transport.NewErrorResponse(err), err
 	}
-	
+
 	resp := struct {
 		Value []byte `json:"value"`
 		Found bool   `json:"found"`
@@ -486,12 +486,12 @@ func (c *GRPCClient) handleTxGet(ctx context.Context, payload []byte) (transport
 		Value: grpcResp.Value,
 		Found: grpcResp.Found,
 	}
-	
+
 	respData, err := json.Marshal(resp)
 	if err != nil {
 		return transport.NewErrorResponse(err), err
 	}
-	
+
 	return transport.NewResponse(transport.TypeTxGet, respData, nil), nil
 }
 
@@ -501,33 +501,33 @@ func (c *GRPCClient) handleTxPut(ctx context.Context, payload []byte) (transport
 		Key           []byte `json:"key"`
 		Value         []byte `json:"value"`
 	}
-	
+
 	if err := json.Unmarshal(payload, &req); err != nil {
 		return transport.NewErrorResponse(fmt.Errorf("invalid tx put request payload: %w", err)), err
 	}
-	
+
 	grpcReq := &pb.TxPutRequest{
 		TransactionId: req.TransactionID,
 		Key:           req.Key,
 		Value:         req.Value,
 	}
-	
+
 	grpcResp, err := c.client.TxPut(ctx, grpcReq)
 	if err != nil {
 		return transport.NewErrorResponse(err), err
 	}
-	
+
 	resp := struct {
 		Success bool `json:"success"`
 	}{
 		Success: grpcResp.Success,
 	}
-	
+
 	respData, err := json.Marshal(resp)
 	if err != nil {
 		return transport.NewErrorResponse(err), err
 	}
-	
+
 	return transport.NewResponse(transport.TypeTxPut, respData, nil), nil
 }
 
@@ -536,43 +536,43 @@ func (c *GRPCClient) handleTxDelete(ctx context.Context, payload []byte) (transp
 		TransactionID string `json:"transaction_id"`
 		Key           []byte `json:"key"`
 	}
-	
+
 	if err := json.Unmarshal(payload, &req); err != nil {
 		return transport.NewErrorResponse(fmt.Errorf("invalid tx delete request payload: %w", err)), err
 	}
-	
+
 	grpcReq := &pb.TxDeleteRequest{
 		TransactionId: req.TransactionID,
 		Key:           req.Key,
 	}
-	
+
 	grpcResp, err := c.client.TxDelete(ctx, grpcReq)
 	if err != nil {
 		return transport.NewErrorResponse(err), err
 	}
-	
+
 	resp := struct {
 		Success bool `json:"success"`
 	}{
 		Success: grpcResp.Success,
 	}
-	
+
 	respData, err := json.Marshal(resp)
 	if err != nil {
 		return transport.NewErrorResponse(err), err
 	}
-	
+
 	return transport.NewResponse(transport.TypeTxDelete, respData, nil), nil
 }
 
 func (c *GRPCClient) handleGetStats(ctx context.Context, payload []byte) (transport.Response, error) {
 	grpcReq := &pb.GetStatsRequest{}
-	
+
 	grpcResp, err := c.client.GetStats(ctx, grpcReq)
 	if err != nil {
 		return transport.NewErrorResponse(err), err
 	}
-	
+
 	resp := struct {
 		KeyCount           int64   `json:"key_count"`
 		StorageSize        int64   `json:"storage_size"`
@@ -588,12 +588,12 @@ func (c *GRPCClient) handleGetStats(ctx context.Context, payload []byte) (transp
 		WriteAmplification: grpcResp.WriteAmplification,
 		ReadAmplification:  grpcResp.ReadAmplification,
 	}
-	
+
 	respData, err := json.Marshal(resp)
 	if err != nil {
 		return transport.NewErrorResponse(err), err
 	}
-	
+
 	return transport.NewResponse(transport.TypeGetStats, respData, nil), nil
 }
 
@@ -601,31 +601,31 @@ func (c *GRPCClient) handleCompact(ctx context.Context, payload []byte) (transpo
 	var req struct {
 		Force bool `json:"force"`
 	}
-	
+
 	if err := json.Unmarshal(payload, &req); err != nil {
 		return transport.NewErrorResponse(fmt.Errorf("invalid compact request payload: %w", err)), err
 	}
-	
+
 	grpcReq := &pb.CompactRequest{
 		Force: req.Force,
 	}
-	
+
 	grpcResp, err := c.client.Compact(ctx, grpcReq)
 	if err != nil {
 		return transport.NewErrorResponse(err), err
 	}
-	
+
 	resp := struct {
 		Success bool `json:"success"`
 	}{
 		Success: grpcResp.Success,
 	}
-	
+
 	respData, err := json.Marshal(resp)
 	if err != nil {
 		return transport.NewErrorResponse(err), err
 	}
-	
+
 	return transport.NewResponse(transport.TypeCompact, respData, nil), nil
 }
 
@@ -650,7 +650,7 @@ func (s *GRPCScanStream) Recv() (transport.Response, error) {
 		}
 		return transport.NewErrorResponse(err), err
 	}
-	
+
 	// Build response based on scan type
 	scanResp := struct {
 		Key   []byte `json:"key"`
@@ -659,12 +659,12 @@ func (s *GRPCScanStream) Recv() (transport.Response, error) {
 		Key:   resp.Key,
 		Value: resp.Value,
 	}
-	
+
 	respData, err := json.Marshal(scanResp)
 	if err != nil {
 		return transport.NewErrorResponse(err), err
 	}
-	
+
 	s.client.metrics.RecordReceive(len(respData))
 	return transport.NewResponse(s.streamType, respData, nil), nil
 }

@@ -50,7 +50,7 @@ type TransportStatus struct {
 type Request interface {
 	// Type returns the type of request
 	Type() string
-	
+
 	// Payload returns the payload of the request
 	Payload() []byte
 }
@@ -59,10 +59,10 @@ type Request interface {
 type Response interface {
 	// Type returns the type of response
 	Type() string
-	
+
 	// Payload returns the payload of the response
 	Payload() []byte
-	
+
 	// Error returns any error associated with the response
 	Error() error
 }
@@ -71,10 +71,10 @@ type Response interface {
 type Stream interface {
 	// Send sends a request over the stream
 	Send(request Request) error
-	
+
 	// Recv receives a response from the stream
 	Recv() (Response, error)
-	
+
 	// Close closes the stream
 	Close() error
 }
@@ -83,19 +83,19 @@ type Stream interface {
 type Client interface {
 	// Connect establishes a connection to the server
 	Connect(ctx context.Context) error
-	
+
 	// Close closes the connection
 	Close() error
-	
+
 	// IsConnected returns whether the client is connected
 	IsConnected() bool
-	
+
 	// Status returns the current status of the connection
 	Status() TransportStatus
-	
+
 	// Send sends a request and waits for a response
 	Send(ctx context.Context, request Request) (Response, error)
-	
+
 	// Stream opens a bidirectional stream
 	Stream(ctx context.Context) (Stream, error)
 }
@@ -104,7 +104,7 @@ type Client interface {
 type RequestHandler interface {
 	// HandleRequest processes a request and returns a response
 	HandleRequest(ctx context.Context, request Request) (Response, error)
-	
+
 	// HandleStream processes a bidirectional stream
 	HandleStream(stream Stream) error
 }
@@ -113,13 +113,13 @@ type RequestHandler interface {
 type Server interface {
 	// Start starts the server and returns immediately
 	Start() error
-	
+
 	// Serve starts the server and blocks until it's stopped
 	Serve() error
-	
+
 	// Stop stops the server gracefully
 	Stop(ctx context.Context) error
-	
+
 	// SetRequestHandler sets the handler for incoming requests
 	SetRequestHandler(handler RequestHandler)
 }
@@ -134,16 +134,16 @@ type ServerFactory func(address string, options TransportOptions) (Server, error
 type Registry interface {
 	// RegisterClient adds a new client implementation to the registry
 	RegisterClient(name string, factory ClientFactory)
-	
+
 	// RegisterServer adds a new server implementation to the registry
 	RegisterServer(name string, factory ServerFactory)
-	
+
 	// CreateClient instantiates a client by name
 	CreateClient(name, endpoint string, options TransportOptions) (Client, error)
-	
+
 	// CreateServer instantiates a server by name
 	CreateServer(name, address string, options TransportOptions) (Server, error)
-	
+
 	// ListTransports returns all available transport names
 	ListTransports() []string
 }

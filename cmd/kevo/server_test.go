@@ -14,7 +14,7 @@ func TestTransactionRegistry(t *testing.T) {
 	// Create a timeout context for the whole test
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	
+
 	// Set up temporary directory for test
 	tmpDir, err := os.MkdirTemp("", "kevo_test")
 	if err != nil {
@@ -153,47 +153,47 @@ func TestGRPCServer(t *testing.T) {
 		t.Fatalf("Failed to create temporary directory: %v", err)
 	}
 	defer os.RemoveAll(tempDBPath)
-	
+
 	// Create engine
 	eng, err := engine.NewEngine(tempDBPath)
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
 	defer eng.Close()
-	
+
 	// Create server configuration
 	config := Config{
 		ServerMode: true,
 		ListenAddr: "localhost:50052", // Use a different port for tests
 		DBPath:     tempDBPath,
 	}
-	
+
 	// Create and start the server
 	server := NewServer(eng, config)
 	if err := server.Start(); err != nil {
 		t.Fatalf("Failed to start server: %v", err)
 	}
-	
+
 	// Run server in a goroutine
 	go func() {
 		if err := server.Serve(); err != nil {
 			t.Logf("Server stopped: %v", err)
 		}
 	}()
-	
+
 	// Give the server a moment to start
 	time.Sleep(200 * time.Millisecond)
-	
+
 	// Clean up at the end
 	defer func() {
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer shutdownCancel()
-		
+
 		if err := server.Shutdown(shutdownCtx); err != nil {
 			t.Logf("Failed to shut down server: %v", err)
 		}
 	}()
-	
+
 	// TODO: Add gRPC client tests here when client implementation is complete
 	t.Log("gRPC server integration test scaffolding added")
 }

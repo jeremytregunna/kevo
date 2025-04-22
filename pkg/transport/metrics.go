@@ -10,16 +10,16 @@ import (
 type MetricsCollector interface {
 	// RecordRequest records metrics for a request
 	RecordRequest(requestType string, startTime time.Time, err error)
-	
+
 	// RecordSend records metrics for bytes sent
 	RecordSend(bytes int)
-	
+
 	// RecordReceive records metrics for bytes received
 	RecordReceive(bytes int)
-	
+
 	// RecordConnection records a connection event
 	RecordConnection(successful bool)
-	
+
 	// GetMetrics returns the current metrics
 	GetMetrics() Metrics
 }
@@ -46,7 +46,7 @@ type BasicMetricsCollector struct {
 	bytesReceived      uint64
 	connections        uint64
 	connectionFailures uint64
-	
+
 	// Track average latency and count for each request type
 	avgLatencyByType   map[string]time.Duration
 	requestCountByType map[string]uint64
@@ -63,26 +63,26 @@ func NewMetricsCollector() MetricsCollector {
 // RecordRequest records metrics for a request
 func (c *BasicMetricsCollector) RecordRequest(requestType string, startTime time.Time, err error) {
 	atomic.AddUint64(&c.totalRequests, 1)
-	
+
 	if err == nil {
 		atomic.AddUint64(&c.successfulRequests, 1)
 	} else {
 		atomic.AddUint64(&c.failedRequests, 1)
 	}
-	
+
 	// Update average latency for request type
 	latency := time.Since(startTime)
-	
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	
+
 	currentAvg, exists := c.avgLatencyByType[requestType]
 	currentCount, _ := c.requestCountByType[requestType]
-	
+
 	if exists {
 		// Update running average - the common case for better branch prediction
 		// new_avg = (old_avg * count + new_value) / (count + 1)
-		totalDuration := currentAvg * time.Duration(currentCount) + latency
+		totalDuration := currentAvg*time.Duration(currentCount) + latency
 		newCount := currentCount + 1
 		c.avgLatencyByType[requestType] = totalDuration / time.Duration(newCount)
 		c.requestCountByType[requestType] = newCount
@@ -116,13 +116,13 @@ func (c *BasicMetricsCollector) RecordConnection(successful bool) {
 func (c *BasicMetricsCollector) GetMetrics() Metrics {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	
+
 	// Create a copy of the average latency map
 	avgLatencyByType := make(map[string]time.Duration, len(c.avgLatencyByType))
 	for k, v := range c.avgLatencyByType {
 		avgLatencyByType[k] = v
 	}
-	
+
 	return Metrics{
 		TotalRequests:      atomic.LoadUint64(&c.totalRequests),
 		SuccessfulRequests: atomic.LoadUint64(&c.successfulRequests),

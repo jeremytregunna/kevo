@@ -81,14 +81,14 @@ Commands (interactive mode only):
 
 // Config holds the application configuration
 type Config struct {
-	ServerMode   bool
-	DaemonMode   bool
-	ListenAddr   string
-	DBPath       string
-	TLSEnabled   bool
-	TLSCertFile  string
-	TLSKeyFile   string
-	TLSCAFile    string
+	ServerMode  bool
+	DaemonMode  bool
+	ListenAddr  string
+	DBPath      string
+	TLSEnabled  bool
+	TLSCertFile string
+	TLSKeyFile  string
+	TLSCAFile   string
 }
 
 func main() {
@@ -98,7 +98,7 @@ func main() {
 	// Open database if path provided
 	var eng *engine.Engine
 	var err error
-	
+
 	if config.DBPath != "" {
 		fmt.Printf("Opening database at %s\n", config.DBPath)
 		eng, err = engine.NewEngine(config.DBPath)
@@ -108,18 +108,18 @@ func main() {
 		}
 		defer eng.Close()
 	}
-	
+
 	// Check if we should run in server mode
 	if config.ServerMode {
 		if eng == nil {
 			fmt.Fprintf(os.Stderr, "Error: Server mode requires a database path\n")
 			os.Exit(1)
 		}
-		
+
 		runServer(eng, config)
 		return
 	}
-	
+
 	// Run in interactive mode
 	runInteractive(eng, config.DBPath)
 }
@@ -151,31 +151,31 @@ func parseFlags() Config {
 	serverMode := flag.Bool("server", false, "Run in server mode, exposing a gRPC API")
 	daemonMode := flag.Bool("daemon", false, "Run in daemon mode (detached from terminal)")
 	listenAddr := flag.String("address", "localhost:50051", "Address to listen on in server mode")
-	
+
 	// TLS options
 	tlsEnabled := flag.Bool("tls", false, "Enable TLS for secure connections")
 	tlsCertFile := flag.String("cert", "", "TLS certificate file path")
 	tlsKeyFile := flag.String("key", "", "TLS private key file path")
 	tlsCAFile := flag.String("ca", "", "TLS CA certificate file for client verification")
-	
+
 	// Parse flags
 	flag.Parse()
-	
+
 	// Get database path from remaining arguments
 	var dbPath string
 	if flag.NArg() > 0 {
 		dbPath = flag.Arg(0)
 	}
-	
+
 	return Config{
-		ServerMode:   *serverMode,
-		DaemonMode:   *daemonMode,
-		ListenAddr:   *listenAddr,
-		DBPath:       dbPath,
-		TLSEnabled:   *tlsEnabled,
-		TLSCertFile:  *tlsCertFile,
-		TLSKeyFile:   *tlsKeyFile,
-		TLSCAFile:    *tlsCAFile,
+		ServerMode:  *serverMode,
+		DaemonMode:  *daemonMode,
+		ListenAddr:  *listenAddr,
+		DBPath:      dbPath,
+		TLSEnabled:  *tlsEnabled,
+		TLSCertFile: *tlsCertFile,
+		TLSKeyFile:  *tlsKeyFile,
+		TLSCAFile:   *tlsCAFile,
 	}
 }
 
@@ -185,10 +185,10 @@ func runServer(eng *engine.Engine, config Config) {
 	if config.DaemonMode {
 		setupDaemonMode()
 	}
-	
+
 	// Create and start the server
 	server := NewServer(eng, config)
-	
+
 	// Start the server (non-blocking)
 	if err := server.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error starting server: %v\n", err)
@@ -196,10 +196,10 @@ func runServer(eng *engine.Engine, config Config) {
 	}
 
 	fmt.Printf("Kevo server started on %s\n", config.ListenAddr)
-	
+
 	// Set up signal handling for graceful shutdown
 	setupGracefulShutdown(server, eng)
-	
+
 	// Start serving (blocking)
 	if err := server.Serve(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error serving: %v\n", err)
@@ -214,29 +214,29 @@ func setupDaemonMode() {
 	if err != nil {
 		log.Fatalf("Failed to open /dev/null: %v", err)
 	}
-	
+
 	// Redirect standard file descriptors to /dev/null
 	err = syscall.Dup2(int(null.Fd()), int(os.Stdin.Fd()))
 	if err != nil {
 		log.Fatalf("Failed to redirect stdin: %v", err)
 	}
-	
+
 	err = syscall.Dup2(int(null.Fd()), int(os.Stdout.Fd()))
 	if err != nil {
 		log.Fatalf("Failed to redirect stdout: %v", err)
 	}
-	
+
 	err = syscall.Dup2(int(null.Fd()), int(os.Stderr.Fd()))
 	if err != nil {
 		log.Fatalf("Failed to redirect stderr: %v", err)
 	}
-	
+
 	// Create a new process group
 	_, err = syscall.Setsid()
 	if err != nil {
 		log.Fatalf("Failed to create new session: %v", err)
 	}
-	
+
 	fmt.Println("Daemon mode enabled, detaching from terminal...")
 }
 
@@ -244,22 +244,22 @@ func setupDaemonMode() {
 func setupGracefulShutdown(server *Server, eng *engine.Engine) {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	
+
 	go func() {
 		sig := <-sigChan
 		fmt.Printf("\nReceived signal %v, shutting down...\n", sig)
-		
+
 		// Graceful shutdown logic
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		
+
 		// Shut down the server
 		if err := server.Shutdown(ctx); err != nil {
 			fmt.Fprintf(os.Stderr, "Error shutting down server: %v\n", err)
 		}
-		
+
 		// The engine will be closed by the defer in main()
-		
+
 		fmt.Println("Shutdown complete")
 		os.Exit(0)
 	}()
@@ -269,7 +269,7 @@ func setupGracefulShutdown(server *Server, eng *engine.Engine) {
 func runInteractive(eng *engine.Engine, dbPath string) {
 	fmt.Println("Kevo (kevo) version 1.0.2")
 	fmt.Println("Enter .help for usage hints.")
-	
+
 	var tx engine.Transaction
 	var err error
 
@@ -412,7 +412,7 @@ func runInteractive(eng *engine.Engine, dbPath string) {
 
 				// Print statistics
 				stats := eng.GetStats()
-				
+
 				// Format human-readable time for the last operation timestamps
 				var lastPutTime, lastGetTime, lastDeleteTime time.Time
 				if putTime, ok := stats["last_put_time"].(int64); ok && putTime > 0 {
@@ -424,13 +424,13 @@ func runInteractive(eng *engine.Engine, dbPath string) {
 				if deleteTime, ok := stats["last_delete_time"].(int64); ok && deleteTime > 0 {
 					lastDeleteTime = time.Unix(0, deleteTime)
 				}
-				
+
 				// Operations section
 				fmt.Println("📊 Operations:")
 				fmt.Printf("  • Puts: %d\n", stats["put_ops"])
 				fmt.Printf("  • Gets: %d (Hits: %d, Misses: %d)\n", stats["get_ops"], stats["get_hits"], stats["get_misses"])
 				fmt.Printf("  • Deletes: %d\n", stats["delete_ops"])
-				
+
 				// Last Operation Times
 				fmt.Println("\n⏱️ Last Operation Times:")
 				if !lastPutTime.IsZero() {
@@ -448,25 +448,25 @@ func runInteractive(eng *engine.Engine, dbPath string) {
 				} else {
 					fmt.Printf("  • Last Delete: Never\n")
 				}
-				
+
 				// Transactions
 				fmt.Println("\n💼 Transactions:")
 				fmt.Printf("  • Started: %d\n", stats["tx_started"])
 				fmt.Printf("  • Completed: %d\n", stats["tx_completed"])
 				fmt.Printf("  • Aborted: %d\n", stats["tx_aborted"])
-				
+
 				// Storage metrics
 				fmt.Println("\n💾 Storage:")
 				fmt.Printf("  • Total Bytes Read: %d\n", stats["total_bytes_read"])
 				fmt.Printf("  • Total Bytes Written: %d\n", stats["total_bytes_written"])
 				fmt.Printf("  • Flush Count: %d\n", stats["flush_count"])
-				
+
 				// Table stats
 				fmt.Println("\n📋 Tables:")
 				fmt.Printf("  • SSTable Count: %d\n", stats["sstable_count"])
 				fmt.Printf("  • Immutable MemTable Count: %d\n", stats["immutable_memtable_count"])
 				fmt.Printf("  • Current MemTable Size: %d bytes\n", stats["memtable_size"])
-				
+
 				// WAL recovery stats
 				fmt.Println("\n🔄 WAL Recovery:")
 				fmt.Printf("  • Files Recovered: %d\n", stats["wal_files_recovered"])
@@ -475,17 +475,17 @@ func runInteractive(eng *engine.Engine, dbPath string) {
 				if recoveryDuration, ok := stats["wal_recovery_duration_ms"]; ok {
 					fmt.Printf("  • Recovery Duration: %d ms\n", recoveryDuration)
 				}
-				
+
 				// Error counts
 				fmt.Println("\n⚠️ Errors:")
 				fmt.Printf("  • Read Errors: %d\n", stats["read_errors"])
 				fmt.Printf("  • Write Errors: %d\n", stats["write_errors"])
-				
+
 				// Compaction stats (if available)
 				if compactionOutputCount, ok := stats["compaction_last_outputs_count"]; ok {
 					fmt.Println("\n🧹 Compaction:")
 					fmt.Printf("  • Last Output Files Count: %d\n", compactionOutputCount)
-					
+
 					// Display other compaction stats as available
 					for key, value := range stats {
 						if strings.HasPrefix(key, "compaction_") && key != "compaction_last_outputs_count" && key != "compaction_last_outputs" {

@@ -81,8 +81,8 @@ func TestEngine_SameKeyMultipleOperationsFlush(t *testing.T) {
 	// Simulate exactly the bug scenario from the CLI
 	// Add the same key multiple times with different values
 	key := []byte("foo")
-	
-	// First add 
+
+	// First add
 	if err := engine.Put(key, []byte("23")); err != nil {
 		t.Fatalf("Failed to put first value: %v", err)
 	}
@@ -91,17 +91,17 @@ func TestEngine_SameKeyMultipleOperationsFlush(t *testing.T) {
 	if err := engine.Delete(key); err != nil {
 		t.Fatalf("Failed to delete key: %v", err)
 	}
-	
+
 	// Add it again with different value
 	if err := engine.Put(key, []byte("42")); err != nil {
 		t.Fatalf("Failed to re-add key: %v", err)
 	}
-	
+
 	// Add another key
 	if err := engine.Put([]byte("bar"), []byte("23")); err != nil {
 		t.Fatalf("Failed to add another key: %v", err)
 	}
-	
+
 	// Add another key
 	if err := engine.Put([]byte("user:1"), []byte(`{"name":"John"}`)); err != nil {
 		t.Fatalf("Failed to add another key: %v", err)
@@ -130,7 +130,7 @@ func TestEngine_SameKeyMultipleOperationsFlush(t *testing.T) {
 	if !bytes.Equal(value, []byte("42")) {
 		t.Errorf("Got incorrect value after flush. Expected: %s, Got: %s", "42", string(value))
 	}
-	
+
 	value, err = engine.Get([]byte("bar"))
 	if err != nil {
 		t.Fatalf("Failed to get 'bar' after flush: %v", err)
@@ -138,7 +138,7 @@ func TestEngine_SameKeyMultipleOperationsFlush(t *testing.T) {
 	if !bytes.Equal(value, []byte("23")) {
 		t.Errorf("Got incorrect value for 'bar' after flush. Expected: %s, Got: %s", "23", string(value))
 	}
-	
+
 	value, err = engine.Get([]byte("user:1"))
 	if err != nil {
 		t.Fatalf("Failed to get 'user:1' after flush: %v", err)
@@ -154,7 +154,7 @@ func TestEngine_DuplicateKeysFlush(t *testing.T) {
 
 	// Test with a key that will be deleted and re-added multiple times
 	key := []byte("foo")
-	
+
 	// Add the key
 	if err := engine.Put(key, []byte("42")); err != nil {
 		t.Fatalf("Failed to put initial value: %v", err)

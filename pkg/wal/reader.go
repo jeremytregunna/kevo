@@ -366,7 +366,7 @@ func ReplayWALDir(dir string, handler EntryHandler) (*RecoveryStats, error) {
 
 	// Track overall recovery stats
 	totalStats := NewRecoveryStats()
-	
+
 	// Track number of files processed successfully
 	successfulFiles := 0
 	var lastErr error
@@ -397,7 +397,7 @@ func ReplayWALDir(dir string, handler EntryHandler) (*RecoveryStats, error) {
 		// Add stats from this file to our totals
 		totalStats.EntriesProcessed += fileStats.EntriesProcessed
 		totalStats.EntriesSkipped += fileStats.EntriesSkipped
-		
+
 		successfulFiles++
 	}
 

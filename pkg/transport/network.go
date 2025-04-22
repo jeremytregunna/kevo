@@ -12,11 +12,11 @@ func CreateListener(network, address string, tlsConfig *tls.Config) (net.Listene
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// If TLS is configured, wrap the listener
 	if tlsConfig != nil {
 		listener = tls.NewListener(listener, tlsConfig)
 	}
-	
+
 	return listener, nil
 }

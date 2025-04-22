@@ -130,14 +130,14 @@ func (h *HierarchicalIterator) Seek(target []byte) bool {
 			if !iter.Valid() {
 				continue
 			}
-			
+
 			// If a newer iterator has the same key, use its value
 			if bytes.Equal(iter.Key(), bestKey) {
 				bestValue = iter.Value()
-				break  // Since iterators are in newest-to-oldest order, we can stop at the first match
+				break // Since iterators are in newest-to-oldest order, we can stop at the first match
 			}
 		}
-		
+
 		// Set the found key/value
 		h.key = bestKey
 		h.value = bestValue
@@ -253,7 +253,7 @@ func (h *HierarchicalIterator) findNextUniqueKey(prevKey []byte) bool {
 
 		// Get the current key
 		key := iter.Key()
-		
+
 		// If we haven't found a valid key yet, or this key is smaller than the current best key
 		if bestIterIdx == -1 || bytes.Compare(key, bestKey) < 0 {
 			// This becomes our best candidate so far
@@ -271,14 +271,14 @@ func (h *HierarchicalIterator) findNextUniqueKey(prevKey []byte) bool {
 			if !iter.Valid() {
 				continue
 			}
-			
+
 			// If a newer iterator has the same key, use its value
 			if bytes.Equal(iter.Key(), bestKey) {
 				bestValue = iter.Value()
-				break  // Since iterators are in newest-to-oldest order, we can stop at the first match
+				break // Since iterators are in newest-to-oldest order, we can stop at the first match
 			}
 		}
-		
+
 		// Set the found key/value
 		h.key = bestKey
 		h.value = bestValue

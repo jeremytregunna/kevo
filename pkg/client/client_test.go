@@ -105,13 +105,13 @@ func TestClientConnect(t *testing.T) {
 	// Modify default options to use mock transport
 	options := DefaultClientOptions()
 	options.TransportType = "mock"
-	
+
 	// Create a client with the mock transport
 	client, err := NewClient(options)
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
-	
+
 	// Get the underlying mock client for test assertions
 	mock := client.client.(*mockClient)
 
@@ -139,12 +139,12 @@ func TestClientGet(t *testing.T) {
 	// Create a client with the mock transport
 	options := DefaultClientOptions()
 	options.TransportType = "mock"
-	
+
 	client, err := NewClient(options)
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
-	
+
 	// Get the underlying mock client for test assertions
 	mock := client.client.(*mockClient)
 	mock.connected = true
@@ -186,12 +186,12 @@ func TestClientPut(t *testing.T) {
 	// Create a client with the mock transport
 	options := DefaultClientOptions()
 	options.TransportType = "mock"
-	
+
 	client, err := NewClient(options)
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
-	
+
 	// Get the underlying mock client for test assertions
 	mock := client.client.(*mockClient)
 	mock.connected = true
@@ -220,12 +220,12 @@ func TestClientDelete(t *testing.T) {
 	// Create a client with the mock transport
 	options := DefaultClientOptions()
 	options.TransportType = "mock"
-	
+
 	client, err := NewClient(options)
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
-	
+
 	// Get the underlying mock client for test assertions
 	mock := client.client.(*mockClient)
 	mock.connected = true
@@ -254,12 +254,12 @@ func TestClientBatchWrite(t *testing.T) {
 	// Create a client with the mock transport
 	options := DefaultClientOptions()
 	options.TransportType = "mock"
-	
+
 	client, err := NewClient(options)
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
-	
+
 	// Get the underlying mock client for test assertions
 	mock := client.client.(*mockClient)
 	mock.connected = true
@@ -295,12 +295,12 @@ func TestClientGetStats(t *testing.T) {
 	// Create a client with the mock transport
 	options := DefaultClientOptions()
 	options.TransportType = "mock"
-	
+
 	client, err := NewClient(options)
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
-	
+
 	// Get the underlying mock client for test assertions
 	mock := client.client.(*mockClient)
 	mock.connected = true
@@ -317,12 +317,12 @@ func TestClientGetStats(t *testing.T) {
 		"read_amplification": 2.0
 	}`
 	mock.setResponse(transport.TypeGetStats, []byte(statsJSON))
-	
+
 	stats, err := client.GetStats(ctx)
 	if err != nil {
 		t.Errorf("Expected successful get stats, got error: %v", err)
 	}
-	
+
 	if stats.KeyCount != 1000 {
 		t.Errorf("Expected KeyCount 1000, got %d", stats.KeyCount)
 	}
@@ -354,12 +354,12 @@ func TestClientCompact(t *testing.T) {
 	// Create a client with the mock transport
 	options := DefaultClientOptions()
 	options.TransportType = "mock"
-	
+
 	client, err := NewClient(options)
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
-	
+
 	// Get the underlying mock client for test assertions
 	mock := client.client.(*mockClient)
 	mock.connected = true
@@ -386,7 +386,7 @@ func TestClientCompact(t *testing.T) {
 
 func TestRetryWithBackoff(t *testing.T) {
 	ctx := context.Background()
-	
+
 	// Test successful retry
 	attempts := 0
 	err := RetryWithBackoff(
@@ -404,14 +404,14 @@ func TestRetryWithBackoff(t *testing.T) {
 		2.0,                  // backoffFactor
 		0.1,                  // jitter
 	)
-	
+
 	if err != nil {
 		t.Errorf("Expected successful retry, got error: %v", err)
 	}
 	if attempts != 3 {
 		t.Errorf("Expected 3 attempts, got %d", attempts)
 	}
-	
+
 	// Test max retries exceeded
 	attempts = 0
 	err = RetryWithBackoff(
@@ -426,14 +426,14 @@ func TestRetryWithBackoff(t *testing.T) {
 		2.0,                  // backoffFactor
 		0.1,                  // jitter
 	)
-	
+
 	if err == nil {
 		t.Error("Expected error after max retries, got nil")
 	}
 	if attempts != 4 { // Initial + 3 retries
 		t.Errorf("Expected 4 attempts, got %d", attempts)
 	}
-	
+
 	// Test non-retryable error
 	attempts = 0
 	err = RetryWithBackoff(
@@ -448,14 +448,14 @@ func TestRetryWithBackoff(t *testing.T) {
 		2.0,                  // backoffFactor
 		0.1,                  // jitter
 	)
-	
+
 	if err == nil {
 		t.Error("Expected non-retryable error to be returned, got nil")
 	}
 	if attempts != 1 {
 		t.Errorf("Expected 1 attempt for non-retryable error, got %d", attempts)
 	}
-	
+
 	// Test context cancellation
 	attempts = 0
 	cancelCtx, cancel := context.WithCancel(ctx)
@@ -463,7 +463,7 @@ func TestRetryWithBackoff(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 		cancel()
 	}()
-	
+
 	err = RetryWithBackoff(
 		cancelCtx,
 		func() error {
@@ -476,7 +476,7 @@ func TestRetryWithBackoff(t *testing.T) {
 		2.0,                  // backoffFactor
 		0.1,                  // jitter
 	)
-	
+
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("Expected context.Canceled error, got: %v", err)
 	}

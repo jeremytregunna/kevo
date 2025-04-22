@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	pb "github.com/KevoDB/kevo/proto/kevo"
 	"github.com/KevoDB/kevo/pkg/transport"
+	pb "github.com/KevoDB/kevo/proto/kevo"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -72,7 +72,7 @@ func (g *GRPCTransportManager) Serve() error {
 	if err := g.Start(); err != nil {
 		return err
 	}
-	
+
 	// Block until server is stopped
 	<-ctx.Done()
 	return nil

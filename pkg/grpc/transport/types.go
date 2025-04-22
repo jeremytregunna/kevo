@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
-	pb "github.com/KevoDB/kevo/proto/kevo"
 	"github.com/KevoDB/kevo/pkg/transport"
+	pb "github.com/KevoDB/kevo/proto/kevo"
 	"google.golang.org/grpc"
 )
 
@@ -30,17 +30,17 @@ func (c *GRPCConnection) Execute(fn func(interface{}) error) error {
 
 	// Create a new client from the connection
 	client := pb.NewKevoServiceClient(c.conn)
-	
+
 	// Execute the provided function with the client
 	err := fn(client)
-	
+
 	// Update metrics if there was an error
 	if err != nil {
 		c.mu.Lock()
 		c.errCount++
 		c.mu.Unlock()
 	}
-	
+
 	return err
 }
 
@@ -58,10 +58,10 @@ func (c *GRPCConnection) Address() string {
 func (c *GRPCConnection) Status() transport.ConnectionStatus {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	
+
 	// Check the connection state
 	isConnected := c.conn != nil
-	
+
 	return transport.ConnectionStatus{
 		Connected:    isConnected,
 		LastActivity: c.lastUsed,

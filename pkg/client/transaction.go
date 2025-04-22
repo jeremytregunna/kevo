@@ -12,11 +12,11 @@ import (
 
 // Transaction represents a database transaction
 type Transaction struct {
-	client        *Client
-	id            string
-	readOnly      bool
-	closed        bool
-	mu            sync.RWMutex
+	client   *Client
+	id       string
+	readOnly bool
+	closed   bool
+	mu       sync.RWMutex
 }
 
 // ErrTransactionClosed is returned when attempting to use a closed transaction

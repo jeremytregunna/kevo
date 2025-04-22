@@ -7,7 +7,7 @@ import (
 
 // registry implements the Registry interface
 type registry struct {
-	mu            sync.RWMutex
+	mu              sync.RWMutex
 	clientFactories map[string]ClientFactory
 	serverFactories map[string]ServerFactory
 }

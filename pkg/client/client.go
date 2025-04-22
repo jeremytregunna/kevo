@@ -23,11 +23,11 @@ const (
 // ClientOptions configures a Kevo client
 type ClientOptions struct {
 	// Connection options
-	Endpoint        string        // Server address
-	ConnectTimeout  time.Duration // Timeout for connection attempts
-	RequestTimeout  time.Duration // Default timeout for requests
-	TransportType   string        // Transport type (e.g. "grpc")
-	PoolSize        int           // Connection pool size
+	Endpoint       string        // Server address
+	ConnectTimeout time.Duration // Timeout for connection attempts
+	RequestTimeout time.Duration // Default timeout for requests
+	TransportType  string        // Transport type (e.g. "grpc")
+	PoolSize       int           // Connection pool size
 
 	// Security options
 	TLSEnabled bool   // Enable TLS
@@ -50,19 +50,19 @@ type ClientOptions struct {
 // DefaultClientOptions returns sensible default client options
 func DefaultClientOptions() ClientOptions {
 	return ClientOptions{
-		Endpoint:        "localhost:50051",
-		ConnectTimeout:  time.Second * 5,
-		RequestTimeout:  time.Second * 10,
-		TransportType:   "grpc",
-		PoolSize:        5,
-		TLSEnabled:      false,
-		MaxRetries:      3,
-		InitialBackoff:  time.Millisecond * 100,
-		MaxBackoff:      time.Second * 2,
-		BackoffFactor:   1.5,
-		RetryJitter:     0.2,
-		Compression:     CompressionNone,
-		MaxMessageSize:  16 * 1024 * 1024, // 16MB
+		Endpoint:       "localhost:50051",
+		ConnectTimeout: time.Second * 5,
+		RequestTimeout: time.Second * 10,
+		TransportType:  "grpc",
+		PoolSize:       5,
+		TLSEnabled:     false,
+		MaxRetries:     3,
+		InitialBackoff: time.Millisecond * 100,
+		MaxBackoff:     time.Second * 2,
+		BackoffFactor:  1.5,
+		RetryJitter:    0.2,
+		Compression:    CompressionNone,
+		MaxMessageSize: 16 * 1024 * 1024, // 16MB
 	}
 }
 

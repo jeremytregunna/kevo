@@ -97,17 +97,17 @@ func mockServerFactory(address string, options TransportOptions) (Server, error)
 // TestRegistry tests the transport registry
 func TestRegistry(t *testing.T) {
 	registry := NewRegistry()
-	
+
 	// Register transports
 	registry.RegisterClient("mock", mockClientFactory)
 	registry.RegisterServer("mock", mockServerFactory)
-	
+
 	// Test listing transports
 	transports := registry.ListTransports()
 	if len(transports) != 1 || transports[0] != "mock" {
 		t.Errorf("Expected [mock], got %v", transports)
 	}
-	
+
 	// Test creating client
 	client, err := registry.CreateClient("mock", "localhost:8080", TransportOptions{
 		Timeout: 5 * time.Second,
@@ -115,21 +115,21 @@ func TestRegistry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
-	
+
 	// Test client methods
 	if client.IsConnected() {
 		t.Error("Expected client to be disconnected initially")
 	}
-	
+
 	err = client.Connect(context.Background())
 	if err != nil {
 		t.Fatalf("Failed to connect: %v", err)
 	}
-	
+
 	if !client.IsConnected() {
 		t.Error("Expected client to be connected after Connect()")
 	}
-	
+
 	// Test server creation
 	server, err := registry.CreateServer("mock", "localhost:8080", TransportOptions{
 		Timeout: 5 * time.Second,
@@ -137,24 +137,24 @@ func TestRegistry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create server: %v", err)
 	}
-	
+
 	// Test server methods
 	err = server.Start()
 	if err != nil {
 		t.Fatalf("Failed to start server: %v", err)
 	}
-	
+
 	mockServer := server.(*mockServer)
 	if !mockServer.started {
 		t.Error("Expected server to be started")
 	}
-	
+
 	// Test non-existent transport
 	_, err = registry.CreateClient("nonexistent", "", TransportOptions{})
 	if err == nil {
 		t.Error("Expected error creating non-existent client")
 	}
-	
+
 	_, err = registry.CreateServer("nonexistent", "", TransportOptions{})
 	if err == nil {
 		t.Error("Expected error creating non-existent server")
