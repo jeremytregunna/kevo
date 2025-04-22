@@ -5,8 +5,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/jeremytregunna/kevo/pkg/compaction"
-	"github.com/jeremytregunna/kevo/pkg/sstable"
+	"github.com/KevoDB/kevo/pkg/compaction"
+	"github.com/KevoDB/kevo/pkg/sstable"
 )
 
 // setupCompaction initializes the compaction manager for the engine

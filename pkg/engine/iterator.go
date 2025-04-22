@@ -5,9 +5,9 @@ import (
 	"container/heap"
 	"sync"
 
-	"github.com/jeremytregunna/kevo/pkg/common/iterator"
-	"github.com/jeremytregunna/kevo/pkg/memtable"
-	"github.com/jeremytregunna/kevo/pkg/sstable"
+	"github.com/KevoDB/kevo/pkg/common/iterator"
+	"github.com/KevoDB/kevo/pkg/memtable"
+	"github.com/KevoDB/kevo/pkg/sstable"
 )
 
 // iterHeapItem represents an item in the priority queue of iterators

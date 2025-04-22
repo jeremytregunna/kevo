@@ -1,7 +1,7 @@
 package composite
 
 import (
-	"github.com/jeremytregunna/kevo/pkg/common/iterator"
+	"github.com/KevoDB/kevo/pkg/common/iterator"
 )
 
 // CompositeIterator is an interface for iterators that combine multiple source iterators

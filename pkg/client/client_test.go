@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jeremytregunna/kevo/pkg/transport"
+	"github.com/KevoDB/kevo/pkg/transport"
 )
 
 // mockClient implements the transport.Client interface for testing

@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/jeremytregunna/kevo/pkg/config"
+	"github.com/KevoDB/kevo/pkg/config"
 )
 
 // TieredCompactionStrategy implements a tiered compaction strategy

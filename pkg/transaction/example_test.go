@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/jeremytregunna/kevo/pkg/engine"
-	"github.com/jeremytregunna/kevo/pkg/transaction"
-	"github.com/jeremytregunna/kevo/pkg/wal"
+	"github.com/KevoDB/kevo/pkg/engine"
+	"github.com/KevoDB/kevo/pkg/transaction"
+	"github.com/KevoDB/kevo/pkg/wal"
 )
 
 // Disable all logs in tests

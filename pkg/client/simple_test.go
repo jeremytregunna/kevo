@@ -3,7 +3,7 @@ package client
 import (
 	"testing"
 
-	"github.com/jeremytregunna/kevo/pkg/transport"
+	"github.com/KevoDB/kevo/pkg/transport"
 )
 
 // mockTransport is a simple mock for testing

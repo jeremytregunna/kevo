@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jeremytregunna/kevo/pkg/wal"
+	"github.com/KevoDB/kevo/pkg/wal"
 )
 
 func TestMemTableBasicOperations(t *testing.T) {

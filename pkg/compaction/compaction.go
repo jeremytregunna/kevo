@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"fmt"
 
-	"github.com/jeremytregunna/kevo/pkg/sstable"
+	"github.com/KevoDB/kevo/pkg/sstable"
 )
 
 // SSTableInfo represents metadata about an SSTable file

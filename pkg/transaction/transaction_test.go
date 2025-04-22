@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/jeremytregunna/kevo/pkg/engine"
+	"github.com/KevoDB/kevo/pkg/engine"
 )
 
 func setupTestEngine(t *testing.T) (*engine.Engine, string) {

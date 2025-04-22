@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jeremytregunna/kevo/pkg/engine"
+	"github.com/KevoDB/kevo/pkg/engine"
 )
 
 // CompactionBenchmarkOptions configures the compaction benchmark

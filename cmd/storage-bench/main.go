@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jeremytregunna/kevo/pkg/engine"
+	"github.com/KevoDB/kevo/pkg/engine"
 )
 
 const (

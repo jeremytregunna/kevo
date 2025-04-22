@@ -1,14 +1,14 @@
 # Kevo
 
-A lightweight, minimalist Log-Structured Merge (LSM) tree storage engine written
-in Go.
+[![Go Report Card](https://goreportcard.com/badge/github.com/KevoDB/kevo)](https://goreportcard.com/report/github.com/KevoDB/kevo)
+[![GoDoc](https://godoc.org/github.com/KevoDB/kevo?status.svg)](https://godoc.org/github.com/KevoDB/kevo)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+
+A lightweight, minimalist Log-Structured Merge (LSM) tree storage engine written in Go.
 
 ## Overview
 
-Kevo is a clean, composable storage engine that follows LSM tree
-principles, focusing on simplicity while providing the building blocks needed
-for higher-level database implementations. It's designed to be both educational
-and practically useful for embedded storage needs.
+Kevo is a clean, composable storage engine that follows LSM tree principles, focusing on simplicity while providing the building blocks needed for higher-level database implementations. It's designed to be both educational and practically useful for embedded storage needs.
 
 ## Features
 
@@ -31,7 +31,7 @@ and practically useful for embedded storage needs.
 ### Installation
 
 ```bash
-go get github.com/jeremytregunna/kevo
+go get github.com/KevoDB/kevo
 ```
 
 ### Basic Usage
@@ -43,7 +43,7 @@ import (
     "fmt"
     "log"
 
-    "github.com/jeremytregunna/kevo/pkg/engine"
+    "github.com/KevoDB/kevo/pkg/engine"
 )
 
 func main() {
@@ -103,8 +103,7 @@ Included is an interactive CLI tool (`kevo`) for exploring and manipulating data
 go run ./cmd/kevo/main.go [database_path]
 ```
 
-Will create a directory at the path you create (e.g., /tmp/foo.db will be a
-directory called foo.db in /tmp where the database will live).
+Will create a directory at the path you create (e.g., `/tmp/foo.db` will be a directory called `foo.db` in `/tmp` where the database will live).
 
 Example session:
 
@@ -159,6 +158,8 @@ Kevo is built on the LSM tree architecture, consisting of:
 - **Compaction**: Background process to merge and optimize SSTables
 - **Transactions**: ACID-compliant operations with reader-writer concurrency
 
+For more details, see the documentation in the [docs](./docs) directory.
+
 ## Benchmarking
 
 The storage-bench tool provides comprehensive performance testing:
@@ -186,11 +187,26 @@ go test ./...
 
 # Run benchmarks
 go test ./pkg/path/to/package -bench .
+
+# Run with race detector
+go test -race ./...
 ```
+
+## Project Status
+
+This project is under active development. While the core functionality is stable, the API may change as we continue to improve the engine.
 
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+See our [contribution guidelines](CONTRIBUTING.md) for more information.
 
 ## License
 
