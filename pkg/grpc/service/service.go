@@ -180,19 +180,28 @@ func (s *KevoServiceServer) Scan(req *pb.ScanRequest, stream pb.KevoService_Scan
 	}
 
 	count := int32(0)
-	for iter.Next() {
+	// Position iterator at the first entry
+	iter.SeekToFirst()
+	
+	// Iterate through all valid entries
+	for iter.Valid() {
 		if limit > 0 && count >= limit {
 			break
 		}
 
-		if err := stream.Send(&pb.ScanResponse{
-			Key:   iter.Key(),
-			Value: iter.Value(),
-		}); err != nil {
-			return err
+		// Skip tombstones (deletion markers)
+		if !iter.IsTombstone() {
+			if err := stream.Send(&pb.ScanResponse{
+				Key:   iter.Key(),
+				Value: iter.Value(),
+			}); err != nil {
+				return err
+			}
+			count++
 		}
-
-		count++
+		
+		// Move to the next entry
+		iter.Next()
 	}
 
 	return nil
@@ -404,19 +413,28 @@ func (s *KevoServiceServer) TxScan(req *pb.TxScanRequest, stream pb.KevoService_
 	}
 
 	count := int32(0)
-	for iter.Next() {
+	// Position iterator at the first entry
+	iter.SeekToFirst()
+	
+	// Iterate through all valid entries
+	for iter.Valid() {
 		if limit > 0 && count >= limit {
 			break
 		}
 
-		if err := stream.Send(&pb.TxScanResponse{
-			Key:   iter.Key(),
-			Value: iter.Value(),
-		}); err != nil {
-			return err
+		// Skip tombstones (deletion markers)
+		if !iter.IsTombstone() {
+			if err := stream.Send(&pb.TxScanResponse{
+				Key:   iter.Key(),
+				Value: iter.Value(),
+			}); err != nil {
+				return err
+			}
+			count++
 		}
-
-		count++
+		
+		// Move to the next entry
+		iter.Next()
 	}
 
 	return nil
