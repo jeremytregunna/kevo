@@ -1,0 +1,182 @@
+syntax = "proto3";
+
+package kevo;
+
+option go_package = "github.com/jeremytregunna/kevo/pkg/grpc/proto;proto";
+
+service KevoService {
+  // Key-Value Operations
+  rpc Get(GetRequest) returns (GetResponse);
+  rpc Put(PutRequest) returns (PutResponse);
+  rpc Delete(DeleteRequest) returns (DeleteResponse);
+  
+  // Batch Operations
+  rpc BatchWrite(BatchWriteRequest) returns (BatchWriteResponse);
+  
+  // Iterator Operations
+  rpc Scan(ScanRequest) returns (stream ScanResponse);
+  
+  // Transaction Operations
+  rpc BeginTransaction(BeginTransactionRequest) returns (BeginTransactionResponse);
+  rpc CommitTransaction(CommitTransactionRequest) returns (CommitTransactionResponse);
+  rpc RollbackTransaction(RollbackTransactionRequest) returns (RollbackTransactionResponse);
+  
+  // Transaction Operations within an active transaction
+  rpc TxGet(TxGetRequest) returns (TxGetResponse);
+  rpc TxPut(TxPutRequest) returns (TxPutResponse);
+  rpc TxDelete(TxDeleteRequest) returns (TxDeleteResponse);
+  rpc TxScan(TxScanRequest) returns (stream TxScanResponse);
+  
+  // Administrative Operations
+  rpc GetStats(GetStatsRequest) returns (GetStatsResponse);
+  rpc Compact(CompactRequest) returns (CompactResponse);
+}
+
+// Basic message types
+message GetRequest {
+  bytes key = 1;
+}
+
+message GetResponse {
+  bytes value = 1;
+  bool found = 2;
+}
+
+message PutRequest {
+  bytes key = 1;
+  bytes value = 2;
+  bool sync = 3;
+}
+
+message PutResponse {
+  bool success = 1;
+}
+
+message DeleteRequest {
+  bytes key = 1;
+  bool sync = 2;
+}
+
+message DeleteResponse {
+  bool success = 1;
+}
+
+// Batch operations
+message BatchWriteRequest {
+  repeated Operation operations = 1;
+  bool sync = 2;
+}
+
+message Operation {
+  enum Type {
+    PUT = 0;
+    DELETE = 1;
+  }
+  Type type = 1;
+  bytes key = 2;
+  bytes value = 3; // Only used for PUT
+}
+
+message BatchWriteResponse {
+  bool success = 1;
+}
+
+// Iterator operations
+message ScanRequest {
+  bytes prefix = 1;
+  bytes start_key = 2;
+  bytes end_key = 3;
+  int32 limit = 4;
+}
+
+message ScanResponse {
+  bytes key = 1;
+  bytes value = 2;
+}
+
+// Transaction operations
+message BeginTransactionRequest {
+  bool read_only = 1;
+}
+
+message BeginTransactionResponse {
+  string transaction_id = 1;
+}
+
+message CommitTransactionRequest {
+  string transaction_id = 1;
+}
+
+message CommitTransactionResponse {
+  bool success = 1;
+}
+
+message RollbackTransactionRequest {
+  string transaction_id = 1;
+}
+
+message RollbackTransactionResponse {
+  bool success = 1;
+}
+
+message TxGetRequest {
+  string transaction_id = 1;
+  bytes key = 2;
+}
+
+message TxGetResponse {
+  bytes value = 1;
+  bool found = 2;
+}
+
+message TxPutRequest {
+  string transaction_id = 1;
+  bytes key = 2;
+  bytes value = 3;
+}
+
+message TxPutResponse {
+  bool success = 1;
+}
+
+message TxDeleteRequest {
+  string transaction_id = 1;
+  bytes key = 2;
+}
+
+message TxDeleteResponse {
+  bool success = 1;
+}
+
+message TxScanRequest {
+  string transaction_id = 1;
+  bytes prefix = 2;
+  bytes start_key = 3;
+  bytes end_key = 4;
+  int32 limit = 5;
+}
+
+message TxScanResponse {
+  bytes key = 1;
+  bytes value = 2;
+}
+
+// Administrative operations
+message GetStatsRequest {}
+
+message GetStatsResponse {
+  int64 key_count = 1;
+  int64 storage_size = 2;
+  int32 memtable_count = 3;
+  int32 sstable_count = 4;
+  double write_amplification = 5;
+  double read_amplification = 6;
+}
+
+message CompactRequest {
+  bool force = 1;
+}
+
+message CompactResponse {
+  bool success = 1;
+}
