@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/jeremytregunna/kevo/pkg/transport"
+	"github.com/KevoDB/kevo/pkg/transport"
 )
 
 // ScanOptions configures a scan operation

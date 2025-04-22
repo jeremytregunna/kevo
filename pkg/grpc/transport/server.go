@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	pb "github.com/jeremytregunna/kevo/proto/kevo"
-	"github.com/jeremytregunna/kevo/pkg/transport"
+	pb "github.com/KevoDB/kevo/proto/kevo"
+	"github.com/KevoDB/kevo/pkg/transport"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"

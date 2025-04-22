@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jeremytregunna/kevo/pkg/transport"
+	"github.com/KevoDB/kevo/pkg/transport"
 )
 
 // CompressionType represents a compression algorithm

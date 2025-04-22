@@ -1,7 +1,7 @@
 package transaction
 
 import (
-	"github.com/jeremytregunna/kevo/pkg/engine"
+	"github.com/KevoDB/kevo/pkg/engine"
 )
 
 // TransactionCreatorImpl implements the engine.TransactionCreator interface

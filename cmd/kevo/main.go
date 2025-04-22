@@ -15,11 +15,11 @@ import (
 
 	"github.com/chzyer/readline"
 
-	"github.com/jeremytregunna/kevo/pkg/common/iterator"
-	"github.com/jeremytregunna/kevo/pkg/engine"
+	"github.com/KevoDB/kevo/pkg/common/iterator"
+	"github.com/KevoDB/kevo/pkg/engine"
 
 	// Import transaction package to register the transaction creator
-	_ "github.com/jeremytregunna/kevo/pkg/transaction"
+	_ "github.com/KevoDB/kevo/pkg/transaction"
 )
 
 // Command completer for readline

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jeremytregunna/kevo/pkg/sstable"
+	"github.com/KevoDB/kevo/pkg/sstable"
 )
 
 func setupTest(t *testing.T) (string, *Engine, func()) {

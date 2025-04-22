@@ -1,7 +1,7 @@
 package transaction
 
 import (
-	"github.com/jeremytregunna/kevo/pkg/common/iterator"
+	"github.com/KevoDB/kevo/pkg/common/iterator"
 )
 
 // TransactionMode defines the transaction access mode (ReadOnly or ReadWrite)

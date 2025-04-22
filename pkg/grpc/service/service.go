@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/jeremytregunna/kevo/pkg/common/iterator"
-	"github.com/jeremytregunna/kevo/pkg/engine"
-	pb "github.com/jeremytregunna/kevo/proto/kevo"
+	"github.com/KevoDB/kevo/pkg/common/iterator"
+	"github.com/KevoDB/kevo/pkg/engine"
+	pb "github.com/KevoDB/kevo/proto/kevo"
 )
 
 // TxRegistry is the interface we need for the transaction registry

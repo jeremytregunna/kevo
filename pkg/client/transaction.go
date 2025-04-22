@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/jeremytregunna/kevo/pkg/transport"
+	"github.com/KevoDB/kevo/pkg/transport"
 )
 
 // Transaction represents a database transaction

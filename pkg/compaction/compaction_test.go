@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jeremytregunna/kevo/pkg/config"
-	"github.com/jeremytregunna/kevo/pkg/sstable"
+	"github.com/KevoDB/kevo/pkg/config"
+	"github.com/KevoDB/kevo/pkg/sstable"
 )
 
 func createTestSSTable(t *testing.T, dir string, level, seq int, timestamp int64, keyValues map[string]string) string {

@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jeremytregunna/kevo/pkg/config"
+	"github.com/KevoDB/kevo/pkg/config"
 )
 
 const (

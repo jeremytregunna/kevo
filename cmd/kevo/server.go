@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jeremytregunna/kevo/pkg/engine"
-	grpcservice "github.com/jeremytregunna/kevo/pkg/grpc/service"
-	pb "github.com/jeremytregunna/kevo/proto/kevo"
+	"github.com/KevoDB/kevo/pkg/engine"
+	grpcservice "github.com/KevoDB/kevo/pkg/grpc/service"
+	pb "github.com/KevoDB/kevo/proto/kevo"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"

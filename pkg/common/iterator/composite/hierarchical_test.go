@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/jeremytregunna/kevo/pkg/common/iterator"
+	"github.com/KevoDB/kevo/pkg/common/iterator"
 )
 
 // mockIterator is a simple in-memory iterator for testing
