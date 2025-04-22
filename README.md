@@ -34,6 +34,13 @@ Kevo is a clean, composable storage engine that follows LSM tree principles, foc
 go get github.com/KevoDB/kevo
 ```
 
+### Client SDKs
+
+Kevo provides client SDKs for different languages to connect to a Kevo server:
+
+- **Go**: [github.com/KevoDB/kevo/pkg/client](https://github.com/KevoDB/kevo/pkg/client)
+- **Python**: [github.com/KevoDB/python-sdk](https://github.com/KevoDB/python-sdk)
+
 ### Basic Usage
 
 ```go
