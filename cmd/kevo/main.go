@@ -1,11 +1,16 @@
 package main
 
 import (
+	"context"
+	"flag"
 	"fmt"
 	"io"
+	"log"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/chzyer/readline"
@@ -43,9 +48,14 @@ const helpText = `
 Kevo (kevo) - A lightweight, minimalist, storage engine.
 
 Usage:
-  keco [database_path]      - Start with an optional database path
+  kevo [options] [database_path]  - Start with an optional database path
 
-Commands:
+Options:
+  -server                 - Run in server mode, exposing a gRPC API
+  -daemon                 - Run in daemon mode (detached from terminal)
+  -address string         - Address to listen on in server mode (default "localhost:50051")
+
+Commands (interactive mode only):
   .help                   - Show this help message
   .open PATH              - Open a database at PATH
   .close                  - Close the current database
@@ -68,26 +78,163 @@ Commands:
                           - Note: start and end are treated as string keys, not numeric indices
 `
 
+// Config holds the application configuration
+type Config struct {
+	ServerMode bool
+	DaemonMode bool
+	ListenAddr string
+	DBPath     string
+}
+
 func main() {
-	fmt.Println("Kevo (kevo) version 1.0.2")
-	fmt.Println("Enter .help for usage hints.")
+	// Parse command line arguments and get configuration
+	config := parseFlags()
 
-	// Initialize variables
+	// Open database if path provided
 	var eng *engine.Engine
-	var tx engine.Transaction
 	var err error
-	var dbPath string
-
-	// Check if a database path was provided as an argument
-	if len(os.Args) > 1 {
-		dbPath = os.Args[1]
-		fmt.Printf("Opening database at %s\n", dbPath)
-		eng, err = engine.NewEngine(dbPath)
+	
+	if config.DBPath != "" {
+		fmt.Printf("Opening database at %s\n", config.DBPath)
+		eng, err = engine.NewEngine(config.DBPath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error opening database: %s\n", err)
 			os.Exit(1)
 		}
+		defer eng.Close()
 	}
+	
+	// Check if we should run in server mode
+	if config.ServerMode {
+		if eng == nil {
+			fmt.Fprintf(os.Stderr, "Error: Server mode requires a database path\n")
+			os.Exit(1)
+		}
+		
+		runServer(eng, config)
+		return
+	}
+	
+	// Run in interactive mode
+	runInteractive(eng, config.DBPath)
+}
+
+// parseFlags parses command line flags and returns a Config
+func parseFlags() Config {
+	serverMode := flag.Bool("server", false, "Run in server mode, exposing a gRPC API")
+	daemonMode := flag.Bool("daemon", false, "Run in daemon mode (detached from terminal)")
+	listenAddr := flag.String("address", "localhost:50051", "Address to listen on in server mode")
+	
+	// Parse flags
+	flag.Parse()
+	
+	// Get database path from remaining arguments
+	var dbPath string
+	if flag.NArg() > 0 {
+		dbPath = flag.Arg(0)
+	}
+	
+	return Config{
+		ServerMode: *serverMode,
+		DaemonMode: *daemonMode,
+		ListenAddr: *listenAddr,
+		DBPath:     dbPath,
+	}
+}
+
+// runServer initializes and runs the Kevo server
+func runServer(eng *engine.Engine, config Config) {
+	// Set up daemon mode if requested
+	if config.DaemonMode {
+		setupDaemonMode()
+	}
+	
+	// Create and start the server
+	server := NewServer(eng, config)
+	
+	// Start the server (non-blocking)
+	if err := server.Start(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error starting server: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Kevo server started on %s\n", config.ListenAddr)
+	
+	// Set up signal handling for graceful shutdown
+	setupGracefulShutdown(server, eng)
+	
+	// Start serving (blocking)
+	if err := server.Serve(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error serving: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+// setupDaemonMode configures process to run as a daemon
+func setupDaemonMode() {
+	// Redirect standard file descriptors to /dev/null
+	null, err := os.OpenFile("/dev/null", os.O_RDWR, 0)
+	if err != nil {
+		log.Fatalf("Failed to open /dev/null: %v", err)
+	}
+	
+	// Redirect standard file descriptors to /dev/null
+	err = syscall.Dup2(int(null.Fd()), int(os.Stdin.Fd()))
+	if err != nil {
+		log.Fatalf("Failed to redirect stdin: %v", err)
+	}
+	
+	err = syscall.Dup2(int(null.Fd()), int(os.Stdout.Fd()))
+	if err != nil {
+		log.Fatalf("Failed to redirect stdout: %v", err)
+	}
+	
+	err = syscall.Dup2(int(null.Fd()), int(os.Stderr.Fd()))
+	if err != nil {
+		log.Fatalf("Failed to redirect stderr: %v", err)
+	}
+	
+	// Create a new process group
+	_, err = syscall.Setsid()
+	if err != nil {
+		log.Fatalf("Failed to create new session: %v", err)
+	}
+	
+	fmt.Println("Daemon mode enabled, detaching from terminal...")
+}
+
+// setupGracefulShutdown configures graceful shutdown on signals
+func setupGracefulShutdown(server *Server, eng *engine.Engine) {
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	
+	go func() {
+		sig := <-sigChan
+		fmt.Printf("\nReceived signal %v, shutting down...\n", sig)
+		
+		// Graceful shutdown logic
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		
+		// Shut down the server
+		if err := server.Shutdown(ctx); err != nil {
+			fmt.Fprintf(os.Stderr, "Error shutting down server: %v\n", err)
+		}
+		
+		// The engine will be closed by the defer in main()
+		
+		fmt.Println("Shutdown complete")
+		os.Exit(0)
+	}()
+}
+
+// runInteractive starts the interactive CLI mode
+func runInteractive(eng *engine.Engine, dbPath string) {
+	fmt.Println("Kevo (kevo) version 1.0.2")
+	fmt.Println("Enter .help for usage hints.")
+	
+	var tx engine.Transaction
+	var err error
 
 	// Setup readline with history support
 	historyFile := filepath.Join(os.TempDir(), ".kevo_history")
@@ -96,6 +243,7 @@ func main() {
 		HistoryFile:     historyFile,
 		InterruptPrompt: "^C",
 		EOFPrompt:       "exit",
+		AutoComplete:    completer,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error initializing readline: %s\n", err)
@@ -150,9 +298,6 @@ func main() {
 		if line == "" {
 			continue
 		}
-
-		// Add to history (readline handles this automatically for non-empty lines)
-		// rl.SaveHistory(line)
 
 		// Process command
 		parts := strings.Fields(line)
