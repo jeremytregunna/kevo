@@ -4,7 +4,7 @@ Welcome, and thank you for your interest in contributing. This project is govern
 
 1. **Project Governance**
 
-This is not a democracy. The project is maintained by a *benevolent dictator*—that’s me. Final decisions rest with the maintainer. Suggestions are welcome, but proposals that conflict with the core philosophy or goals of the project may be closed without further discussion.
+This is not a democracy. The project is maintained by a *benevolent dictator*--that’s me. Final decisions rest with the maintainer. Suggestions are welcome, but proposals that conflict with the core philosophy or goals of the project may be closed without further discussion.
 
 2. **Pull Requests**
 
