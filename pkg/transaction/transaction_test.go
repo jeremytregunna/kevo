@@ -320,3 +320,93 @@ func TestTransactionIterator(t *testing.T) {
 		t.Fatalf("Failed to commit transaction: %v", err)
 	}
 }
+
+func TestTransactionPutDeletePutSequence(t *testing.T) {
+	eng, tempDir := setupTestEngine(t)
+	defer os.RemoveAll(tempDir)
+	defer eng.Close()
+
+	// Create a read-write transaction
+	tx, err := NewTransaction(eng, ReadWrite)
+	if err != nil {
+		t.Fatalf("Failed to create read-write transaction: %v", err)
+	}
+
+	// Define key and values
+	key := []byte("transaction-sequence-key")
+	initialValue := []byte("initial-transaction-value")
+	newValue := []byte("new-transaction-value-after-delete")
+
+	// 1. Put the initial value within the transaction
+	if err := tx.Put(key, initialValue); err != nil {
+		t.Fatalf("Failed to put initial value in transaction: %v", err)
+	}
+
+	// 2. Get and verify the initial value within the transaction
+	val, err := tx.Get(key)
+	if err != nil {
+		t.Fatalf("Failed to get key after initial put in transaction: %v", err)
+	}
+	if !bytes.Equal(val, initialValue) {
+		t.Errorf("Got incorrect value after initial put. Expected: %s, Got: %s",
+			initialValue, val)
+	}
+
+	// 3. Delete the key within the transaction
+	if err := tx.Delete(key); err != nil {
+		t.Fatalf("Failed to delete key in transaction: %v", err)
+	}
+
+	// 4. Verify the key is deleted within the transaction
+	_, err = tx.Get(key)
+	if err == nil {
+		t.Error("Expected error after deleting key in transaction, got nil")
+	}
+
+	// 5. Put a new value for the same key within the transaction
+	if err := tx.Put(key, newValue); err != nil {
+		t.Fatalf("Failed to put new value after delete in transaction: %v", err)
+	}
+
+	// 6. Get and verify the new value within the transaction
+	val, err = tx.Get(key)
+	if err != nil {
+		t.Fatalf("Failed to get key after put-delete-put sequence in transaction: %v", err)
+	}
+	if !bytes.Equal(val, newValue) {
+		t.Errorf("Got incorrect value after put-delete-put sequence. Expected: %s, Got: %s",
+			newValue, val)
+	}
+
+	// 7. Commit the transaction
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Failed to commit transaction: %v", err)
+	}
+
+	// 8. Verify the final state is correctly persisted to the engine
+	val, err = eng.Get(key)
+	if err != nil {
+		t.Fatalf("Failed to get key from engine after commit: %v", err)
+	}
+	if !bytes.Equal(val, newValue) {
+		t.Errorf("Got incorrect value from engine after commit. Expected: %s, Got: %s",
+			newValue, val)
+	}
+
+	// 9. Create a new transaction to verify the data is still correct
+	tx2, err := NewTransaction(eng, ReadOnly)
+	if err != nil {
+		t.Fatalf("Failed to create second transaction: %v", err)
+	}
+
+	val, err = tx2.Get(key)
+	if err != nil {
+		t.Fatalf("Failed to get key in second transaction: %v", err)
+	}
+	if !bytes.Equal(val, newValue) {
+		t.Errorf("Got incorrect value in second transaction. Expected: %s, Got: %s",
+			newValue, val)
+	}
+
+	tx2.Rollback()
+}

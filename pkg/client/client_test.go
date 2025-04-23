@@ -384,6 +384,94 @@ func TestClientCompact(t *testing.T) {
 	}
 }
 
+func TestClientPutDeletePutSequence(t *testing.T) {
+	// Create a client with the mock transport
+	options := DefaultClientOptions()
+	options.TransportType = "mock"
+
+	client, err := NewClient(options)
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+
+	// Get the underlying mock client for test assertions
+	mock := client.client.(*mockClient)
+	mock.connected = true
+
+	ctx := context.Background()
+
+	// Define test key and values
+	key := []byte("sequence-test-key")
+	initialValue := []byte("initial-value")
+	newValue := []byte("new-value-after-delete")
+
+	// 1. Put the initial value
+	mock.setResponse(transport.TypePut, []byte(`{"success": true}`))
+	success, err := client.Put(ctx, key, initialValue, true)
+	if err != nil {
+		t.Fatalf("Failed to put initial value: %v", err)
+	}
+	if !success {
+		t.Fatal("Expected Put success to be true")
+	}
+
+	// 2. Get and verify the initial value
+	mock.setResponse(transport.TypeGet, []byte(`{"value": "aW5pdGlhbC12YWx1ZQ==", "found": true}`))
+	val, found, err := client.Get(ctx, key)
+	if err != nil {
+		t.Fatalf("Failed to get key after initial put: %v", err)
+	}
+	if !found {
+		t.Fatal("Expected key to be found after initial put")
+	}
+	if string(val) != string(initialValue) {
+		t.Errorf("Expected value '%s', got '%s'", initialValue, val)
+	}
+
+	// 3. Delete the key
+	mock.setResponse(transport.TypeDelete, []byte(`{"success": true}`))
+	success, err = client.Delete(ctx, key, true)
+	if err != nil {
+		t.Fatalf("Failed to delete key: %v", err)
+	}
+	if !success {
+		t.Fatal("Expected Delete success to be true")
+	}
+
+	// 4. Verify the key is deleted
+	mock.setResponse(transport.TypeGet, []byte(`{"value": null, "found": false}`))
+	_, found, err = client.Get(ctx, key)
+	if err != nil {
+		t.Fatalf("Failed to get key after delete: %v", err)
+	}
+	if found {
+		t.Fatal("Expected key to not be found after delete")
+	}
+
+	// 5. Put a new value for the same key
+	mock.setResponse(transport.TypePut, []byte(`{"success": true}`))
+	success, err = client.Put(ctx, key, newValue, true)
+	if err != nil {
+		t.Fatalf("Failed to put new value after delete: %v", err)
+	}
+	if !success {
+		t.Fatal("Expected Put success to be true")
+	}
+
+	// 6. Get and verify the new value
+	mock.setResponse(transport.TypeGet, []byte(`{"value": "bmV3LXZhbHVlLWFmdGVyLWRlbGV0ZQ==", "found": true}`))
+	val, found, err = client.Get(ctx, key)
+	if err != nil {
+		t.Fatalf("Failed to get key after put-delete-put sequence: %v", err)
+	}
+	if !found {
+		t.Fatal("Expected key to be found after put-delete-put sequence")
+	}
+	if string(val) != string(newValue) {
+		t.Errorf("Expected value '%s', got '%s'", newValue, val)
+	}
+}
+
 func TestRetryWithBackoff(t *testing.T) {
 	ctx := context.Background()
 

@@ -451,6 +451,171 @@ func TestEngine_Reload(t *testing.T) {
 	}
 }
 
+func TestEngine_PutDeletePutSequence(t *testing.T) {
+	_, engine, cleanup := setupTest(t)
+	defer cleanup()
+
+	// Test key and initial value
+	key := []byte("test-sequence-key")
+	initialValue := []byte("initial-value")
+	
+	// 1. Put initial value
+	if err := engine.Put(key, initialValue); err != nil {
+		t.Fatalf("Failed to put initial value: %v", err)
+	}
+	
+	// Verify initial put worked
+	result, err := engine.Get(key)
+	if err != nil {
+		t.Fatalf("Failed to get key after initial put: %v", err)
+	}
+	if !bytes.Equal(result, initialValue) {
+		t.Errorf("Got incorrect value after initial put. Expected: %s, Got: %s", 
+			initialValue, result)
+	}
+	
+	// 2. Delete the key
+	if err := engine.Delete(key); err != nil {
+		t.Fatalf("Failed to delete key: %v", err)
+	}
+	
+	// Verify key is deleted
+	_, err = engine.Get(key)
+	if err != ErrKeyNotFound {
+		t.Errorf("Expected ErrKeyNotFound after delete, got: %v", err)
+	}
+	
+	// 3. Put a new value for the same key
+	newValue := []byte("new-value-after-delete")
+	if err := engine.Put(key, newValue); err != nil {
+		t.Fatalf("Failed to put new value after delete: %v", err)
+	}
+	
+	// 4. Get the key and verify it has the new value
+	result, err = engine.Get(key)
+	if err != nil {
+		t.Fatalf("Failed to get key after put-delete-put sequence: %v", err)
+	}
+	if !bytes.Equal(result, newValue) {
+		t.Errorf("Got incorrect value after put-delete-put sequence. Expected: %s, Got: %s", 
+			newValue, result)
+	}
+	
+	// 5. Flush to ensure the operations are persisted
+	tables := engine.memTablePool.GetMemTables()
+	if len(tables) > 0 {
+		if err := engine.flushMemTable(tables[0]); err != nil {
+			t.Fatalf("Error flushing after put-delete-put sequence: %v", err)
+		}
+	}
+	
+	// 6. Verify the key still has the correct value after flush
+	result, err = engine.Get(key)
+	if err != nil {
+		t.Fatalf("Failed to get key after flush: %v", err)
+	}
+	if !bytes.Equal(result, newValue) {
+		t.Errorf("Got incorrect value after flush. Expected: %s, Got: %s", 
+			newValue, result)
+	}
+}
+
+func TestEngine_PutDeletePutWithFlushes(t *testing.T) {
+	_, engine, cleanup := setupTest(t)
+	defer cleanup()
+
+	// Test key and initial value
+	key := []byte("flush-test-key")
+	initialValue := []byte("initial-value-with-flush")
+	
+	// 1. Put initial value
+	if err := engine.Put(key, initialValue); err != nil {
+		t.Fatalf("Failed to put initial value: %v", err)
+	}
+	
+	// Flush after first put
+	tables := engine.memTablePool.GetMemTables()
+	if len(tables) > 0 {
+		if err := engine.flushMemTable(tables[0]); err != nil {
+			t.Fatalf("Error flushing after initial put: %v", err)
+		}
+	}
+	
+	// Verify initial value persisted correctly
+	result, err := engine.Get(key)
+	if err != nil {
+		t.Fatalf("Failed to get key after initial put and flush: %v", err)
+	}
+	if !bytes.Equal(result, initialValue) {
+		t.Errorf("Got incorrect value after initial put and flush. Expected: %s, Got: %s", 
+			initialValue, result)
+	}
+	
+	// 2. Delete the key
+	if err := engine.Delete(key); err != nil {
+		t.Fatalf("Failed to delete key: %v", err)
+	}
+	
+	// Flush after delete
+	tables = engine.memTablePool.GetMemTables()
+	if len(tables) > 0 {
+		if err := engine.flushMemTable(tables[0]); err != nil {
+			t.Fatalf("Error flushing after delete: %v", err)
+		}
+	}
+	
+	// Verify key is deleted and the deletion was persisted
+	_, err = engine.Get(key)
+	if err != ErrKeyNotFound {
+		t.Errorf("Expected ErrKeyNotFound after delete and flush, got: %v", err)
+	}
+	
+	// 3. Put a new value for the same key
+	newValue := []byte("new-value-after-delete-and-flush")
+	if err := engine.Put(key, newValue); err != nil {
+		t.Fatalf("Failed to put new value after delete and flush: %v", err)
+	}
+	
+	// Flush after final put
+	tables = engine.memTablePool.GetMemTables()
+	if len(tables) > 0 {
+		if err := engine.flushMemTable(tables[0]); err != nil {
+			t.Fatalf("Error flushing after final put: %v", err)
+		}
+	}
+	
+	// 4. Get the key and verify it has the new value after all operations and flushes
+	result, err = engine.Get(key)
+	if err != nil {
+		t.Fatalf("Failed to get key after complete sequence with flushes: %v", err)
+	}
+	if !bytes.Equal(result, newValue) {
+		t.Errorf("Got incorrect value after complete sequence with flushes. Expected: %s, Got: %s", 
+			newValue, result)
+	}
+	
+	// 5. Close and reopen the engine to ensure durability across restarts
+	dir := engine.dataDir
+	engine.Close()
+	
+	// Reopen the engine
+	newEngine, err := NewEngine(dir)
+	if err != nil {
+		t.Fatalf("Failed to reopen engine: %v", err)
+	}
+	defer newEngine.Close()
+	
+	// Verify the key still has the correct value after restart
+	result, err = newEngine.Get(key)
+	if err != nil {
+		t.Fatalf("Failed to get key after engine restart: %v", err)
+	}
+	if !bytes.Equal(result, newValue) {
+		t.Errorf("Got incorrect value after engine restart. Expected: %s, Got: %s", 
+			newValue, result)
+	}
+}
+
 func TestEngine_Statistics(t *testing.T) {
 	_, engine, cleanup := setupTest(t)
 	defer cleanup()
