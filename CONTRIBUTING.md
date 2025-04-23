@@ -10,7 +10,7 @@ This is not a democracy. The project is maintained by a *benevolent dictator*--t
 
 - **Feature Suggestions**: Open to ideas, but keep them aligned with the project's direction. Off-mission PRs will be closed.
 - **Bug Fixes**: Fixes must include tests that directly verifies the issue described in the report. If the bug can't be demonstrated, it doesn't exist (or at least, it's not our problem).
-- **Test Coverage**: PRs that improve test coverage are encouraged. If nthere's a need to refactor code to enable testing, that's acceptable--but any touched area must remain fully covered. Incomplete refactors or those introducing new test gaps will be rejected.
+- **Test Coverage**: PRs that improve test coverage are encouraged. If there's a need to refactor code to enable testing, that's acceptable--but any touched area must remain fully covered. Incomplete refactors or those introducing new test gaps will be rejected.
 
 3. **Code Style & Quality**
 
