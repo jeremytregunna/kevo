@@ -14,6 +14,8 @@ import (
 type ScanOptions struct {
 	// Prefix limit the scan to keys with this prefix
 	Prefix []byte
+	// Suffix limit the scan to keys with this suffix
+	Suffix []byte
 	// StartKey sets the starting point for the scan (inclusive)
 	StartKey []byte
 	// EndKey sets the ending point for the scan (exclusive)
@@ -74,11 +76,13 @@ func (c *Client) Scan(ctx context.Context, options ScanOptions) (Scanner, error)
 	// Create the scan request
 	req := struct {
 		Prefix   []byte `json:"prefix"`
+		Suffix   []byte `json:"suffix"`
 		StartKey []byte `json:"start_key"`
 		EndKey   []byte `json:"end_key"`
 		Limit    int32  `json:"limit"`
 	}{
 		Prefix:   options.Prefix,
+		Suffix:   options.Suffix,
 		StartKey: options.StartKey,
 		EndKey:   options.EndKey,
 		Limit:    options.Limit,
@@ -206,12 +210,14 @@ func (tx *Transaction) Scan(ctx context.Context, options ScanOptions) (Scanner, 
 	req := struct {
 		TransactionID string `json:"transaction_id"`
 		Prefix        []byte `json:"prefix"`
+		Suffix        []byte `json:"suffix"`
 		StartKey      []byte `json:"start_key"`
 		EndKey        []byte `json:"end_key"`
 		Limit         int32  `json:"limit"`
 	}{
 		TransactionID: tx.id,
 		Prefix:        options.Prefix,
+		Suffix:        options.Suffix,
 		StartKey:      options.StartKey,
 		EndKey:        options.EndKey,
 		Limit:         options.Limit,

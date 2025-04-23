@@ -65,6 +65,23 @@ Bounded iterators limit the range of keys an iterator will traverse:
    - Filter out keys outside the desired range
    - Maintain the underlying iterator's properties otherwise
 
+### Filtering Iterators
+
+Filtering iterators apply specific criteria to the underlying data:
+
+1. **Prefix Iterator**:
+   - Only returns keys that start with a specific prefix
+   - Efficiently filters keys during iteration
+
+2. **Suffix Iterator**:
+   - Only returns keys that end with a specific suffix
+   - Checks suffix condition during iteration
+
+3. **Implementation Approach**:
+   - Wrap an existing iterator
+   - Apply filtering logic in the Next() method
+   - Allow combining with other iterator types (e.g., bounded)
+
 ### Composite Iterators
 
 Composite iterators combine multiple source iterators into a single view:
@@ -177,6 +194,26 @@ rangeIter := bounded.NewBoundedIterator(sourceIter, startKey, endKey)
 // Iterate through the bounded range
 for rangeIter.SeekToFirst(); rangeIter.Valid(); rangeIter.Next() {
     fmt.Printf("Key: %s\n", rangeIter.Key())
+}
+```
+
+### Prefix and Suffix Iterator
+
+```go
+// Create a prefix iterator
+prefixIter := newPrefixIterator(sourceIter, []byte("user:"))
+
+// Iterate through keys with prefix
+for prefixIter.SeekToFirst(); prefixIter.Valid(); prefixIter.Next() {
+    fmt.Printf("Key with prefix: %s\n", prefixIter.Key())
+}
+
+// Create a suffix iterator
+suffixIter := newSuffixIterator(sourceIter, []byte("@example.com"))
+
+// Iterate through keys with suffix
+for suffixIter.SeekToFirst(); suffixIter.Valid(); suffixIter.Next() {
+    fmt.Printf("Key with suffix: %s\n", suffixIter.Key())
 }
 ```
 

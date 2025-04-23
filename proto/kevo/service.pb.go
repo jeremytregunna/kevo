@@ -525,6 +525,7 @@ func (x *BatchWriteResponse) GetSuccess() bool {
 type ScanRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Prefix        []byte                 `protobuf:"bytes,1,opt,name=prefix,proto3" json:"prefix,omitempty"`
+	Suffix        []byte                 `protobuf:"bytes,5,opt,name=suffix,proto3" json:"suffix,omitempty"`
 	StartKey      []byte                 `protobuf:"bytes,2,opt,name=start_key,json=startKey,proto3" json:"start_key,omitempty"`
 	EndKey        []byte                 `protobuf:"bytes,3,opt,name=end_key,json=endKey,proto3" json:"end_key,omitempty"`
 	Limit         int32                  `protobuf:"varint,4,opt,name=limit,proto3" json:"limit,omitempty"`
@@ -565,6 +566,13 @@ func (*ScanRequest) Descriptor() ([]byte, []int) {
 func (x *ScanRequest) GetPrefix() []byte {
 	if x != nil {
 		return x.Prefix
+	}
+	return nil
+}
+
+func (x *ScanRequest) GetSuffix() []byte {
+	if x != nil {
+		return x.Suffix
 	}
 	return nil
 }
@@ -1215,6 +1223,7 @@ type TxScanRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	TransactionId string                 `protobuf:"bytes,1,opt,name=transaction_id,json=transactionId,proto3" json:"transaction_id,omitempty"`
 	Prefix        []byte                 `protobuf:"bytes,2,opt,name=prefix,proto3" json:"prefix,omitempty"`
+	Suffix        []byte                 `protobuf:"bytes,6,opt,name=suffix,proto3" json:"suffix,omitempty"`
 	StartKey      []byte                 `protobuf:"bytes,3,opt,name=start_key,json=startKey,proto3" json:"start_key,omitempty"`
 	EndKey        []byte                 `protobuf:"bytes,4,opt,name=end_key,json=endKey,proto3" json:"end_key,omitempty"`
 	Limit         int32                  `protobuf:"varint,5,opt,name=limit,proto3" json:"limit,omitempty"`
@@ -1262,6 +1271,13 @@ func (x *TxScanRequest) GetTransactionId() string {
 func (x *TxScanRequest) GetPrefix() []byte {
 	if x != nil {
 		return x.Prefix
+	}
+	return nil
+}
+
+func (x *TxScanRequest) GetSuffix() []byte {
+	if x != nil {
+		return x.Suffix
 	}
 	return nil
 }
@@ -1585,9 +1601,10 @@ const file_proto_kevo_service_proto_rawDesc = "" +
 	"\n" +
 	"\x06DELETE\x10\x01\".\n" +
 	"\x12BatchWriteResponse\x12\x18\n" +
-	"\asuccess\x18\x01 \x01(\bR\asuccess\"q\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\"\x89\x01\n" +
 	"\vScanRequest\x12\x16\n" +
-	"\x06prefix\x18\x01 \x01(\fR\x06prefix\x12\x1b\n" +
+	"\x06prefix\x18\x01 \x01(\fR\x06prefix\x12\x16\n" +
+	"\x06suffix\x18\x05 \x01(\fR\x06suffix\x12\x1b\n" +
 	"\tstart_key\x18\x02 \x01(\fR\bstartKey\x12\x17\n" +
 	"\aend_key\x18\x03 \x01(\fR\x06endKey\x12\x14\n" +
 	"\x05limit\x18\x04 \x01(\x05R\x05limit\"6\n" +
@@ -1622,10 +1639,11 @@ const file_proto_kevo_service_proto_rawDesc = "" +
 	"\x0etransaction_id\x18\x01 \x01(\tR\rtransactionId\x12\x10\n" +
 	"\x03key\x18\x02 \x01(\fR\x03key\",\n" +
 	"\x10TxDeleteResponse\x12\x18\n" +
-	"\asuccess\x18\x01 \x01(\bR\asuccess\"\x9a\x01\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\"\xb2\x01\n" +
 	"\rTxScanRequest\x12%\n" +
 	"\x0etransaction_id\x18\x01 \x01(\tR\rtransactionId\x12\x16\n" +
-	"\x06prefix\x18\x02 \x01(\fR\x06prefix\x12\x1b\n" +
+	"\x06prefix\x18\x02 \x01(\fR\x06prefix\x12\x16\n" +
+	"\x06suffix\x18\x06 \x01(\fR\x06suffix\x12\x1b\n" +
 	"\tstart_key\x18\x03 \x01(\fR\bstartKey\x12\x17\n" +
 	"\aend_key\x18\x04 \x01(\fR\x06endKey\x12\x14\n" +
 	"\x05limit\x18\x05 \x01(\x05R\x05limit\"8\n" +
@@ -1659,7 +1677,7 @@ const file_proto_kevo_service_proto_rawDesc = "" +
 	"\bTxDelete\x12\x15.kevo.TxDeleteRequest\x1a\x16.kevo.TxDeleteResponse\x125\n" +
 	"\x06TxScan\x12\x13.kevo.TxScanRequest\x1a\x14.kevo.TxScanResponse0\x01\x129\n" +
 	"\bGetStats\x12\x15.kevo.GetStatsRequest\x1a\x16.kevo.GetStatsResponse\x126\n" +
-	"\aCompact\x12\x14.kevo.CompactRequest\x1a\x15.kevo.CompactResponseB5Z3github.com/KevoDB/kevo/pkg/grpc/proto;protob\x06proto3"
+	"\aCompact\x12\x14.kevo.CompactRequest\x1a\x15.kevo.CompactResponseB5Z3github.com/jeremytregunna/kevo/pkg/grpc/proto;protob\x06proto3"
 
 var (
 	file_proto_kevo_service_proto_rawDescOnce sync.Once

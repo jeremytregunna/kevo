@@ -134,6 +134,11 @@ kevo> SCAN user:
 user:1: {"name":"John","email":"john@example.com"}
 user:2: {"name":"Jane","email":"jane@example.com"}
 2 entries found
+
+kevo> SCAN SUFFIX @example.com
+user:1: {"name":"John","email":"john@example.com"}
+user:2: {"name":"Jane","email":"jane@example.com"}
+2 entries found
 ```
 
 Type `.help` in the CLI for more commands.

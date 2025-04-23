@@ -84,6 +84,7 @@ message BatchWriteResponse {
 // Iterator operations
 message ScanRequest {
   bytes prefix = 1;
+  bytes suffix = 5;
   bytes start_key = 2;
   bytes end_key = 3;
   int32 limit = 4;
@@ -151,6 +152,7 @@ message TxDeleteResponse {
 message TxScanRequest {
   string transaction_id = 1;
   bytes prefix = 2;
+  bytes suffix = 6;
   bytes start_key = 3;
   bytes end_key = 4;
   int32 limit = 5;

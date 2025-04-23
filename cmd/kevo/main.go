@@ -42,6 +42,7 @@ var completer = readline.NewPrefixCompleter(
 	readline.PcItem("DELETE"),
 	readline.PcItem("SCAN",
 		readline.PcItem("RANGE"),
+		readline.PcItem("SUFFIX"),
 	),
 )
 
@@ -75,6 +76,7 @@ Commands (interactive mode only):
 
   SCAN                    - Scan all key-value pairs
   SCAN prefix             - Scan key-value pairs with given prefix
+  SCAN SUFFIX suffix      - Scan key-value pairs with given suffix
   SCAN RANGE start end    - Scan key-value pairs in range [start, end)
                           - Note: start and end are treated as string keys, not numeric indices
 `
@@ -701,6 +703,9 @@ func runInteractive(eng *engine.Engine, dbPath string) {
 				if len(parts) == 1 {
 					// Full scan
 					iter = tx.NewIterator()
+				} else if len(parts) == 3 && strings.ToUpper(parts[1]) == "SUFFIX" {
+					// Suffix scan - we'll create a regular iterator and filter for the suffix later
+					iter = tx.NewIterator()
 				} else if len(parts) == 2 {
 					// Prefix scan
 					prefix := []byte(parts[1])
@@ -713,7 +718,7 @@ func runInteractive(eng *engine.Engine, dbPath string) {
 				} else if len(parts) == 4 && strings.ToUpper(parts[1]) == "RANGE" {
 					// Range scan with explicit RANGE keyword
 					iter = tx.NewRangeIterator([]byte(parts[2]), []byte(parts[3]))
-				} else if len(parts) == 3 {
+				} else if len(parts) == 3 && strings.ToUpper(parts[1]) != "SUFFIX" {
 					// Old style range scan
 					fmt.Println("Warning: Using deprecated range syntax. Use 'SCAN RANGE start end' instead.")
 					iter = tx.NewRangeIterator([]byte(parts[1]), []byte(parts[2]))
@@ -733,6 +738,9 @@ func runInteractive(eng *engine.Engine, dbPath string) {
 				if len(parts) == 1 {
 					// Full scan
 					iter, iterErr = eng.GetIterator()
+				} else if len(parts) == 3 && strings.ToUpper(parts[1]) == "SUFFIX" {
+					// Suffix scan - create a regular iterator and filter in the scan loop
+					iter, iterErr = eng.GetIterator()
 				} else if len(parts) == 2 {
 					// Prefix scan
 					prefix := []byte(parts[1])
@@ -745,7 +753,7 @@ func runInteractive(eng *engine.Engine, dbPath string) {
 				} else if len(parts) == 4 && strings.ToUpper(parts[1]) == "RANGE" {
 					// Range scan with explicit RANGE keyword
 					iter, iterErr = eng.GetRangeIterator([]byte(parts[2]), []byte(parts[3]))
-				} else if len(parts) == 3 {
+				} else if len(parts) == 3 && strings.ToUpper(parts[1]) != "SUFFIX" {
 					// Old style range scan
 					fmt.Println("Warning: Using deprecated range syntax. Use 'SCAN RANGE start end' instead.")
 					iter, iterErr = eng.GetRangeIterator([]byte(parts[1]), []byte(parts[2]))
@@ -760,6 +768,13 @@ func runInteractive(eng *engine.Engine, dbPath string) {
 				}
 			}
 
+			// Check if we're doing a suffix scan
+			isSuffixScan := len(parts) == 3 && strings.ToUpper(parts[1]) == "SUFFIX"
+			suffix := []byte{}
+			if isSuffixScan {
+				suffix = []byte(parts[2])
+			}
+
 			// Perform the scan
 			count := 0
 			seenKeys := make(map[string]bool)
@@ -768,6 +783,14 @@ func runInteractive(eng *engine.Engine, dbPath string) {
 				keyStr := string(iter.Key())
 				if seenKeys[keyStr] {
 					continue
+				}
+
+				// For suffix scans, check if the key ends with the suffix
+				if isSuffixScan {
+					key := iter.Key()
+					if len(key) < len(suffix) || !hasSuffix(key, suffix) {
+						continue
+					}
 				}
 
 				// Mark this key as seen
@@ -809,6 +832,19 @@ func makeKeySuccessor(prefix []byte) []byte {
 	copy(successor, prefix)
 	successor[len(prefix)] = 0xFF
 	return successor
+}
+
+// hasSuffix checks if a byte slice ends with a specific suffix
+func hasSuffix(data, suffix []byte) bool {
+	if len(data) < len(suffix) {
+		return false
+	}
+	for i := 0; i < len(suffix); i++ {
+		if data[len(data)-len(suffix)+i] != suffix[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // toTitle replaces strings.Title which is deprecated
