@@ -11,16 +11,17 @@ type OperationType string
 
 // Common operation types
 const (
-	OpPut       OperationType = "put"
-	OpGet       OperationType = "get"
-	OpDelete    OperationType = "delete"
-	OpTxBegin   OperationType = "tx_begin"
-	OpTxCommit  OperationType = "tx_commit"
+	OpPut        OperationType = "put"
+	OpGet        OperationType = "get"
+	OpDelete     OperationType = "delete"
+	OpTxBegin    OperationType = "tx_begin"
+	OpTxCommit   OperationType = "tx_commit"
 	OpTxRollback OperationType = "tx_rollback"
-	OpFlush     OperationType = "flush"
-	OpCompact   OperationType = "compact"
-	OpSeek      OperationType = "seek"
-	OpScan      OperationType = "scan"
+	OpFlush      OperationType = "flush"
+	OpCompact    OperationType = "compact"
+	OpSeek       OperationType = "seek"
+	OpScan       OperationType = "scan"
+	OpScanRange  OperationType = "scan_range"
 )
 
 // AtomicCollector provides centralized statistics collection with minimal contention
@@ -73,6 +74,17 @@ type LatencyTracker struct {
 
 // NewCollector creates a new statistics collector
 func NewCollector() *AtomicCollector {
+	return &AtomicCollector{
+		counts:     make(map[OperationType]*atomic.Uint64),
+		lastOpTime: make(map[OperationType]time.Time),
+		errors:     make(map[string]*atomic.Uint64),
+		latencies:  make(map[OperationType]*LatencyTracker),
+	}
+}
+
+// NewAtomicCollector creates a new atomic statistics collector
+// This is the recommended collector implementation for production use
+func NewAtomicCollector() *AtomicCollector {
 	return &AtomicCollector{
 		counts:     make(map[OperationType]*atomic.Uint64),
 		lastOpTime: make(map[OperationType]time.Time),

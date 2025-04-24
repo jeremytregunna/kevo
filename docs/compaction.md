@@ -21,25 +21,42 @@ The compaction package consists of several interrelated components that work tog
 
 ```
 ┌───────────────────────┐
-│ CompactionCoordinator │
+│   CompactionManager   │◄─────┐
+└───────────┬───────────┘      │
+            │                  │
+            ▼                  │
+┌───────────────────────┐      │
+│ CompactionCoordinator │      │
+└───────────┬───────────┘      │
+            │                  │
+            ▼                  │
+┌───────────────────────┐      │      ┌───────────────────────┐
+│  CompactionStrategy   │─────▶│      │     EngineFacade      │
+└───────────┬───────────┘      │      └───────────────────────┘
+            │                  │                │
+            ▼                  │                │
+┌───────────────────────┐      │                ▼
+│     FileTracker       │      │      ┌───────────────────────┐
+└─────────────────┬─────┘      │      │    Statistics         │
+                  │            │      │    Collector          │
+                  ▼            │      └───────────────────────┘
+┌───────────────────────┐      │
+│   CompactionExecutor  │──────┘
 └───────────┬───────────┘
             │
             ▼
-┌───────────────────────┐      ┌───────────────────────┐
-│  CompactionStrategy   │─────▶│   CompactionExecutor  │
-└───────────┬───────────┘      └───────────────────────┘
-            │                              │
-            ▼                              ▼
-┌───────────────────────┐      ┌───────────────────────┐
-│     FileTracker       │      │   TombstoneManager    │
-└───────────────────────┘      └───────────────────────┘
+┌───────────────────────┐
+│   TombstoneManager    │
+└───────────────────────┘
 ```
 
-1. **CompactionCoordinator**: Orchestrates the compaction process
-2. **CompactionStrategy**: Determines which files to compact and when
-3. **CompactionExecutor**: Performs the actual merging of files
-4. **FileTracker**: Manages the lifecycle of SSTable files
-5. **TombstoneManager**: Tracks deleted keys and their lifecycle
+1. **CompactionManager**: Implements the `CompactionManager` interface
+2. **CompactionCoordinator**: Orchestrates the compaction process
+3. **CompactionStrategy**: Determines which files to compact and when
+4. **CompactionExecutor**: Performs the actual merging of files
+5. **FileTracker**: Manages the lifecycle of SSTable files
+6. **TombstoneManager**: Tracks deleted keys and their lifecycle
+7. **Statistics Collector**: Records compaction metrics and performance data
 
 ## Compaction Strategies
 

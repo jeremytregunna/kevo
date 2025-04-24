@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/KevoDB/kevo/pkg/engine"
+	"github.com/KevoDB/kevo/pkg/engine/interfaces"
 	grpcservice "github.com/KevoDB/kevo/pkg/grpc/service"
 	pb "github.com/KevoDB/kevo/proto/kevo"
 	"google.golang.org/grpc"
@@ -19,26 +20,26 @@ import (
 // TransactionRegistry manages active transactions on the server
 type TransactionRegistry struct {
 	mu           sync.RWMutex
-	transactions map[string]engine.Transaction
+	transactions map[string]interfaces.Transaction
 	nextID       uint64
 }
 
 // NewTransactionRegistry creates a new transaction registry
 func NewTransactionRegistry() *TransactionRegistry {
 	return &TransactionRegistry{
-		transactions: make(map[string]engine.Transaction),
+		transactions: make(map[string]interfaces.Transaction),
 	}
 }
 
 // Begin creates a new transaction and registers it
-func (tr *TransactionRegistry) Begin(ctx context.Context, eng *engine.Engine, readOnly bool) (string, error) {
+func (tr *TransactionRegistry) Begin(ctx context.Context, eng interfaces.Engine, readOnly bool) (string, error) {
 	// Create context with timeout to prevent potential hangs
 	timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	// Create a channel to receive the transaction result
 	type txResult struct {
-		tx  engine.Transaction
+		tx  interfaces.Transaction
 		err error
 	}
 	resultCh := make(chan txResult, 1)
@@ -82,7 +83,7 @@ func (tr *TransactionRegistry) Begin(ctx context.Context, eng *engine.Engine, re
 }
 
 // Get retrieves a transaction by ID
-func (tr *TransactionRegistry) Get(txID string) (engine.Transaction, bool) {
+func (tr *TransactionRegistry) Get(txID string) (interfaces.Transaction, bool) {
 	tr.mu.RLock()
 	defer tr.mu.RUnlock()
 
@@ -125,7 +126,7 @@ func (tr *TransactionRegistry) GracefulShutdown(ctx context.Context) error {
 		doneCh := make(chan error, 1)
 
 		// Execute rollback in goroutine
-		go func(t engine.Transaction) {
+		go func(t interfaces.Transaction) {
 			doneCh <- t.Rollback()
 		}(tx)
 
@@ -154,7 +155,7 @@ func (tr *TransactionRegistry) GracefulShutdown(ctx context.Context) error {
 
 // Server represents the Kevo server
 type Server struct {
-	eng         *engine.Engine
+	eng         interfaces.Engine
 	txRegistry  *TransactionRegistry
 	listener    net.Listener
 	grpcServer  *grpc.Server
@@ -163,7 +164,7 @@ type Server struct {
 }
 
 // NewServer creates a new server instance
-func NewServer(eng *engine.Engine, config Config) *Server {
+func NewServer(eng interfaces.Engine, config Config) *Server {
 	return &Server{
 		eng:        eng,
 		txRegistry: NewTransactionRegistry(),

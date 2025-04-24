@@ -23,7 +23,7 @@ func TestTransactionRegistry(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	// Create a test engine
-	eng, err := engine.NewEngine(tmpDir)
+	eng, err := engine.NewEngineFacade(tmpDir)
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestServerStartup(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	// Create a test engine
-	eng, err := engine.NewEngine(tmpDir)
+	eng, err := engine.NewEngineFacade(tmpDir)
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
@@ -155,7 +155,7 @@ func TestGRPCServer(t *testing.T) {
 	defer os.RemoveAll(tempDBPath)
 
 	// Create engine
-	eng, err := engine.NewEngine(tempDBPath)
+	eng, err := engine.NewEngineFacade(tempDBPath)
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}

@@ -18,6 +18,7 @@ import (
 
 	"github.com/KevoDB/kevo/pkg/common/iterator"
 	"github.com/KevoDB/kevo/pkg/engine"
+	"github.com/KevoDB/kevo/pkg/engine/interfaces"
 
 	// Import transaction package to register the transaction creator
 	_ "github.com/KevoDB/kevo/pkg/transaction"
@@ -103,7 +104,8 @@ func main() {
 
 	if config.DBPath != "" {
 		fmt.Printf("Opening database at %s\n", config.DBPath)
-		eng, err = engine.NewEngine(config.DBPath)
+		// Use the new facade-based engine implementation
+		eng, err = engine.NewEngineFacade(config.DBPath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error opening database: %s\n", err)
 			os.Exit(1)
@@ -272,7 +274,7 @@ func runInteractive(eng *engine.Engine, dbPath string) {
 	fmt.Println("Kevo (kevo) version 1.0.2")
 	fmt.Println("Enter .help for usage hints.")
 
-	var tx engine.Transaction
+	var tx interfaces.Transaction
 	var err error
 
 	// Setup readline with history support
@@ -362,7 +364,8 @@ func runInteractive(eng *engine.Engine, dbPath string) {
 
 				// Open the database
 				dbPath = parts[1]
-				eng, err = engine.NewEngine(dbPath)
+				// Use the new facade-based engine implementation
+				eng, err = engine.NewEngineFacade(dbPath)
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "Error opening database: %s\n", err)
 					dbPath = ""
@@ -415,6 +418,25 @@ func runInteractive(eng *engine.Engine, dbPath string) {
 				// Print statistics
 				stats := eng.GetStats()
 
+				// Helper function to safely get a uint64 value with default
+				getUint64 := func(m map[string]interface{}, key string, defaultVal uint64) uint64 {
+					if val, ok := m[key]; ok {
+						switch v := val.(type) {
+						case uint64:
+							return v
+						case int64:
+							return uint64(v)
+						case int:
+							return uint64(v)
+						case float64:
+							return uint64(v)
+						default:
+							return defaultVal
+						}
+					}
+					return defaultVal
+				}
+
 				// Format human-readable time for the last operation timestamps
 				var lastPutTime, lastGetTime, lastDeleteTime time.Time
 				if putTime, ok := stats["last_put_time"].(int64); ok && putTime > 0 {
@@ -429,9 +451,20 @@ func runInteractive(eng *engine.Engine, dbPath string) {
 
 				// Operations section
 				fmt.Println("📊 Operations:")
-				fmt.Printf("  • Puts: %d\n", stats["put_ops"])
-				fmt.Printf("  • Gets: %d (Hits: %d, Misses: %d)\n", stats["get_ops"], stats["get_hits"], stats["get_misses"])
-				fmt.Printf("  • Deletes: %d\n", stats["delete_ops"])
+				fmt.Printf("  • Puts: %d\n", getUint64(stats, "put_ops", 0))
+
+				// Handle hits and misses
+				getOps := getUint64(stats, "get_ops", 0)
+				getHits := getUint64(stats, "get_hits", 0)
+				getMisses := getUint64(stats, "get_misses", 0)
+
+				// If get_hits and get_misses aren't available, just show operations
+				if getHits == 0 && getMisses == 0 {
+					fmt.Printf("  • Gets: %d\n", getOps)
+				} else {
+					fmt.Printf("  • Gets: %d (Hits: %d, Misses: %d)\n", getOps, getHits, getMisses)
+				}
+				fmt.Printf("  • Deletes: %d\n", getUint64(stats, "delete_ops", 0))
 
 				// Last Operation Times
 				fmt.Println("\n⏱️ Last Operation Times:")
@@ -451,46 +484,82 @@ func runInteractive(eng *engine.Engine, dbPath string) {
 					fmt.Printf("  • Last Delete: Never\n")
 				}
 
-				// Transactions
+				// Transactions (using proper prefixes from txManager stats)
 				fmt.Println("\n💼 Transactions:")
-				fmt.Printf("  • Started: %d\n", stats["tx_started"])
-				fmt.Printf("  • Completed: %d\n", stats["tx_completed"])
-				fmt.Printf("  • Aborted: %d\n", stats["tx_aborted"])
+				fmt.Printf("  • Started: %d\n", getUint64(stats, "tx_tx_begin_ops", 0))
+				fmt.Printf("  • Completed: %d\n", getUint64(stats, "tx_tx_commit_ops", 0))
+				fmt.Printf("  • Aborted: %d\n", getUint64(stats, "tx_tx_rollback_ops", 0))
+
+				// Latency statistics if available
+				if latency, ok := stats["put_latency"].(map[string]interface{}); ok {
+					fmt.Println("\n⚡ Latency (last):")
+					if avgNs, ok := latency["avg_ns"].(uint64); ok {
+						fmt.Printf("  • Put avg: %.2f ms\n", float64(avgNs)/1000000.0)
+					}
+					if getLatency, ok := stats["get_latency"].(map[string]interface{}); ok {
+						if avgNs, ok := getLatency["avg_ns"].(uint64); ok {
+							fmt.Printf("  • Get avg: %.2f ms\n", float64(avgNs)/1000000.0)
+						}
+					}
+				}
 
 				// Storage metrics
 				fmt.Println("\n💾 Storage:")
-				fmt.Printf("  • Total Bytes Read: %d\n", stats["total_bytes_read"])
-				fmt.Printf("  • Total Bytes Written: %d\n", stats["total_bytes_written"])
-				fmt.Printf("  • Flush Count: %d\n", stats["flush_count"])
+				fmt.Printf("  • Total Bytes Read: %d\n", getUint64(stats, "total_bytes_read", 0))
+				fmt.Printf("  • Total Bytes Written: %d\n", getUint64(stats, "total_bytes_written", 0))
+				fmt.Printf("  • Flush Count: %d\n", getUint64(stats, "flush_count", 0))
 
-				// Table stats
+				// Table stats - now get these from storage manager stats
 				fmt.Println("\n📋 Tables:")
-				fmt.Printf("  • SSTable Count: %d\n", stats["sstable_count"])
-				fmt.Printf("  • Immutable MemTable Count: %d\n", stats["immutable_memtable_count"])
-				fmt.Printf("  • Current MemTable Size: %d bytes\n", stats["memtable_size"])
+				fmt.Printf("  • SSTable Count: %d\n", getUint64(stats, "storage_sstable_count", 0))
+				fmt.Printf("  • Immutable MemTable Count: %d\n", getUint64(stats, "storage_immutable_memtable_count", 0))
+				fmt.Printf("  • Current MemTable Size: %d bytes\n", getUint64(stats, "memtable_size", 0))
 
-				// WAL recovery stats
-				fmt.Println("\n🔄 WAL Recovery:")
-				fmt.Printf("  • Files Recovered: %d\n", stats["wal_files_recovered"])
-				fmt.Printf("  • Entries Recovered: %d\n", stats["wal_entries_recovered"])
-				fmt.Printf("  • Corrupted Entries: %d\n", stats["wal_corrupted_entries"])
-				if recoveryDuration, ok := stats["wal_recovery_duration_ms"]; ok {
-					fmt.Printf("  • Recovery Duration: %d ms\n", recoveryDuration)
+				// Get recovery stats from the nested map if available
+				if recoveryMap, ok := stats["recovery"].(map[string]interface{}); ok {
+					fmt.Println("\n🔄 WAL Recovery:")
+					fmt.Printf("  • Files Recovered: %d\n", getUint64(recoveryMap, "wal_files_recovered", 0))
+					fmt.Printf("  • Entries Recovered: %d\n", getUint64(recoveryMap, "wal_entries_recovered", 0))
+					fmt.Printf("  • Corrupted Entries: %d\n", getUint64(recoveryMap, "wal_corrupted_entries", 0))
+
+					if durationMs, ok := recoveryMap["wal_recovery_duration_ms"]; ok {
+						switch v := durationMs.(type) {
+						case int64:
+							fmt.Printf("  • Recovery Duration: %d ms\n", v)
+						case uint64:
+							fmt.Printf("  • Recovery Duration: %d ms\n", v)
+						case int:
+							fmt.Printf("  • Recovery Duration: %d ms\n", v)
+						case float64:
+							fmt.Printf("  • Recovery Duration: %.0f ms\n", v)
+						}
+					}
 				}
 
-				// Error counts
-				fmt.Println("\n⚠️ Errors:")
-				fmt.Printf("  • Read Errors: %d\n", stats["read_errors"])
-				fmt.Printf("  • Write Errors: %d\n", stats["write_errors"])
+				// Error counts from the nested errors map
+				if errorsMap, ok := stats["errors"].(map[string]interface{}); ok && len(errorsMap) > 0 {
+					fmt.Println("\n⚠️ Errors:")
+					for errType, count := range errorsMap {
+						// Format the error type for display
+						displayKey := toTitle(strings.Replace(errType, "_", " ", -1))
+						fmt.Printf("  • %s: %v\n", displayKey, count)
+					}
+				} else {
+					// No error map or empty, show default counters
+					fmt.Println("\n⚠️ Errors:")
+					fmt.Printf("  • Read Errors: %d\n", getUint64(stats, "read_errors", 0))
+					fmt.Printf("  • Write Errors: %d\n", getUint64(stats, "write_errors", 0))
+				}
 
-				// Compaction stats (if available)
-				if compactionOutputCount, ok := stats["compaction_last_outputs_count"]; ok {
+				// Compaction stats
+				compactionCount := getUint64(stats, "compaction_count", 0)
+				if compactionCount > 0 {
 					fmt.Println("\n🧹 Compaction:")
-					fmt.Printf("  • Last Output Files Count: %d\n", compactionOutputCount)
+					fmt.Printf("  • Compaction Count: %d\n", compactionCount)
 
-					// Display other compaction stats as available
+					// Display any compaction-specific stats
 					for key, value := range stats {
-						if strings.HasPrefix(key, "compaction_") && key != "compaction_last_outputs_count" && key != "compaction_last_outputs" {
+						if strings.HasPrefix(key, "compaction_") && key != "compaction_count" {
 							// Format the key for display (remove prefix, replace underscores with spaces)
 							displayKey := toTitle(strings.Replace(strings.TrimPrefix(key, "compaction_"), "_", " ", -1))
 							fmt.Printf("  • %s: %v\n", displayKey, value)

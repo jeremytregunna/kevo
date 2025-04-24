@@ -470,3 +470,11 @@ func (r *Reader) GetKeyCount() int {
 
 	return int(r.numEntries)
 }
+
+// FilePath returns the file path of this SSTable
+func (r *Reader) FilePath() string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	
+	return r.ioManager.path
+}

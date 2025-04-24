@@ -13,10 +13,12 @@ Kevo is a clean, composable storage engine that follows LSM tree principles, foc
 ## Features
 
 - **Clean, idiomatic Go implementation** of the LSM tree architecture
+- **Facade-based architecture** for separation of concerns and modularity
 - **Single-writer architecture** for simplicity and reduced concurrency complexity
 - **Complete storage primitives**: WAL, MemTable, SSTable, Compaction
 - **Configurable durability** guarantees (sync vs. batched fsync)
-- **Composable interfaces** for fundamental operations (reads, writes, iteration, transactions)
+- **Interface-driven design** with clear component boundaries
+- **Comprehensive statistics collection** for monitoring and debugging
 - **ACID-compliant transactions** with SQLite-inspired reader-writer concurrency
 
 ## Use Cases
@@ -55,7 +57,8 @@ import (
 
 func main() {
     // Create or open a storage engine at the specified path
-    eng, err := engine.NewEngine("/path/to/data")
+    // The EngineFacade implements the Engine interface
+    eng, err := engine.NewEngineFacade("/path/to/data")
     if err != nil {
         log.Fatalf("Failed to open engine: %v", err)
     }
@@ -99,6 +102,11 @@ func main() {
     for iter.SeekToFirst(); iter.Valid(); iter.Next() {
         fmt.Printf("%s: %s\n", iter.Key(), iter.Value())
     }
+
+    // Get statistics from the engine
+    stats := eng.GetStats()
+    fmt.Printf("Operations - Puts: %v, Gets: %v\n",
+        stats["put_ops"], stats["get_ops"])
 }
 ```
 
@@ -143,6 +151,12 @@ user:2: {"name":"Jane","email":"jane@example.com"}
 
 Type `.help` in the CLI for more commands.
 
+### Run Server
+
+```bash
+go run ./cmd/kevo/main.go -server [database_path]
+```
+
 ## Configuration
 
 Kevo offers extensive configuration options to optimize for different workloads:
@@ -154,23 +168,67 @@ config.MemTableSize = 64 * 1024 * 1024  // 64MB MemTable
 config.WALSyncMode = config.SyncBatch   // Batch sync for better throughput
 config.SSTableBlockSize = 32 * 1024     // 32KB blocks
 
-// Create engine with custom config
-eng, err := engine.NewEngineWithConfig(config)
+// Save the config to disk
+if err := config.SaveManifest(dbPath); err != nil {
+    log.Fatalf("Failed to save configuration: %v", err)
+}
+
+// Create engine using the saved config
+eng, err := engine.NewEngineFacade(dbPath)
+if err != nil {
+    log.Fatalf("Failed to create engine: %v", err)
+}
 ```
 
 See [CONFIG_GUIDE.md](./docs/CONFIG_GUIDE.md) for detailed configuration guidance.
 
 ## Architecture
 
-Kevo is built on the LSM tree architecture, consisting of:
+Kevo implements a facade-based design over the LSM tree architecture, consisting of:
+
+### Core Components
+
+- **EngineFacade**: Central coordinator that delegates to specialized managers
+- **StorageManager**: Handles data storage operations across multiple layers
+- **TransactionManager**: Manages transaction lifecycle and isolation
+- **CompactionManager**: Coordinates background optimization processes
+- **Statistics Collector**: Provides comprehensive metrics for monitoring
+
+### Storage Layer
 
 - **Write-Ahead Log (WAL)**: Ensures durability of writes before they're in memory
 - **MemTable**: In-memory data structure (skiplist) for fast writes
 - **SSTables**: Immutable, sorted files for persistent storage
 - **Compaction**: Background process to merge and optimize SSTables
-- **Transactions**: ACID-compliant operations with reader-writer concurrency
 
-For more details, see the documentation in the [docs](./docs) directory.
+### Interface-Driven Design
+
+The system is designed around clear interfaces that define contracts between components:
+
+```
+┌───────────────────┐
+│    Client Code    │
+└─────────┬─────────┘
+          │
+          ▼
+┌───────────────────┐
+│  Engine Interface │
+└─────────┬─────────┘
+          │
+          ▼
+┌───────────────────┐
+│   EngineFacade    │
+└─────────┬─────────┘
+          │
+┌─────────┼─────────┐
+▼         ▼         ▼
+┌─────────┐ ┌───────┐ ┌─────────┐
+│ Storage │ │  Tx   │ │Compaction│
+│ Manager │ │Manager│ │ Manager  │
+└─────────┘ └───────┘ └─────────┘
+```
+
+For more details on each component, see the documentation in the [docs](./docs) directory.
 
 ## Benchmarking
 

@@ -183,7 +183,7 @@ func runBenchmarkWithConfig(baseDir, optionName string, optionValue interface{},
 }
 
 // runWriteBenchmarkForTuning runs a write benchmark and extracts the metrics
-func runWriteBenchmarkForTuning(e *engine.Engine, duration time.Duration, valueSize int) BenchmarkMetrics {
+func runWriteBenchmarkForTuning(e *engine.EngineFacade, duration time.Duration, valueSize int) BenchmarkMetrics {
 	// Setup benchmark parameters
 	value := make([]byte, valueSize)
 	for i := range value {
@@ -237,7 +237,7 @@ benchmarkEnd:
 }
 
 // runReadBenchmarkForTuning runs a read benchmark and extracts the metrics
-func runReadBenchmarkForTuning(e *engine.Engine, duration time.Duration, valueSize int) BenchmarkMetrics {
+func runReadBenchmarkForTuning(e *engine.EngineFacade, duration time.Duration, valueSize int) BenchmarkMetrics {
 	// First, make sure we have data to read
 	numKeys := 1000 // Smaller set for tuning
 	value := make([]byte, valueSize)
@@ -306,7 +306,7 @@ benchmarkEnd:
 }
 
 // runScanBenchmarkForTuning runs a scan benchmark and extracts the metrics
-func runScanBenchmarkForTuning(e *engine.Engine, duration time.Duration, valueSize int) BenchmarkMetrics {
+func runScanBenchmarkForTuning(e *engine.EngineFacade, duration time.Duration, valueSize int) BenchmarkMetrics {
 	const scanSize = 20 // Smaller scan size for tuning
 	start := time.Now()
 	deadline := start.Add(duration)
@@ -367,7 +367,7 @@ benchmarkEnd:
 }
 
 // runMixedBenchmarkForTuning runs a mixed benchmark and extracts the metrics
-func runMixedBenchmarkForTuning(e *engine.Engine, duration time.Duration, valueSize int) BenchmarkMetrics {
+func runMixedBenchmarkForTuning(e *engine.EngineFacade, duration time.Duration, valueSize int) BenchmarkMetrics {
 	start := time.Now()
 	deadline := start.Add(duration)
 

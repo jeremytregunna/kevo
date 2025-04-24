@@ -25,7 +25,12 @@ The transaction system consists of several interrelated components:
 └───────────┬───────────┘
             │
 ┌───────────▼───────────┐      ┌───────────────────────┐
-│  EngineTransaction    │◄─────┤   TransactionCreator  │
+│  TransactionManager   │◄─────┤     EngineFacade      │
+└───────────┬───────────┘      └───────────────────────┘
+            │
+            ▼
+┌───────────▼───────────┐      ┌───────────────────────┐
+│  EngineTransaction    │◄─────┤   StorageManager      │
 └───────────┬───────────┘      └───────────────────────┘
             │
             ▼
@@ -36,10 +41,11 @@ The transaction system consists of several interrelated components:
 ```
 
 1. **Transaction Interface**: The public API for transaction operations
-2. **EngineTransaction**: Implementation of the Transaction interface
-3. **TransactionCreator**: Factory pattern for creating transactions
-4. **TxBuffer**: In-memory storage for uncommitted changes
-5. **Transaction Iterators**: Special iterators that merge buffer and database state
+2. **TransactionManager**: Handles transaction creation and tracking
+3. **EngineTransaction**: Implementation of the Transaction interface
+4. **StorageManager**: Provides the underlying storage operations
+5. **TxBuffer**: In-memory storage for uncommitted changes
+6. **Transaction Iterators**: Special iterators that merge buffer and database state
 
 ## ACID Properties Implementation
 

@@ -161,7 +161,7 @@ func keyMode() string {
 }
 
 // runWriteBenchmark benchmarks write performance
-func runWriteBenchmark(e *engine.Engine) string {
+func runWriteBenchmark(e *engine.EngineFacade) string {
 	fmt.Println("Running Write Benchmark...")
 
 	// Determine reasonable batch size based on value size
@@ -243,7 +243,7 @@ benchmarkEnd:
 }
 
 // runReadBenchmark benchmarks read performance
-func runReadBenchmark(e *engine.Engine) string {
+func runReadBenchmark(e *engine.EngineFacade) string {
 	fmt.Println("Preparing data for Read Benchmark...")
 
 	// First, write data to read
@@ -323,7 +323,7 @@ benchmarkEnd:
 }
 
 // runScanBenchmark benchmarks range scan performance
-func runScanBenchmark(e *engine.Engine) string {
+func runScanBenchmark(e *engine.EngineFacade) string {
 	fmt.Println("Preparing data for Scan Benchmark...")
 
 	// First, write data to scan
@@ -418,7 +418,7 @@ benchmarkEnd:
 }
 
 // runMixedBenchmark benchmarks a mix of read and write operations
-func runMixedBenchmark(e *engine.Engine) string {
+func runMixedBenchmark(e *engine.EngineFacade) string {
 	fmt.Println("Preparing data for Mixed Benchmark...")
 
 	// First, write some initial data

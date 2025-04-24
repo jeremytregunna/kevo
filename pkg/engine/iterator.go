@@ -365,64 +365,6 @@ func (m *MergedIterator) advanceHeap() {
 	}
 }
 
-// newHierarchicalIterator creates a new hierarchical iterator for the engine
-func newHierarchicalIterator(e *Engine) *boundedIterator {
-	// Get all MemTables from the pool
-	memTables := e.memTablePool.GetMemTables()
-
-	// Create a list of all iterators in newest-to-oldest order
-	iters := make([]iterator.Iterator, 0, len(memTables)+len(e.sstables))
-
-	// Add MemTables (active first, then immutables)
-	for _, table := range memTables {
-		iters = append(iters, memtable.NewIteratorAdapter(table.NewIterator()))
-	}
-
-	// Add SSTables (from newest to oldest)
-	for i := len(e.sstables) - 1; i >= 0; i-- {
-		iters = append(iters, sstable.NewIteratorAdapter(e.sstables[i].NewIterator()))
-	}
-
-	// Create sources list for all iterators
-	sources := make([]IterSource, 0, len(memTables)+len(e.sstables))
-
-	// Add sources for memtables
-	for i, table := range memTables {
-		sources = append(sources, &MemTableSource{
-			mem:   table,
-			level: i, // Assign level numbers starting from 0 (active memtable is newest)
-		})
-	}
-
-	// Add sources for SSTables
-	for i := len(e.sstables) - 1; i >= 0; i-- {
-		sources = append(sources, &SSTableSource{
-			sst:   e.sstables[i],
-			level: len(memTables) + (len(e.sstables) - 1 - i), // Continue level numbering after memtables
-		})
-	}
-
-	// Wrap in a bounded iterator (unbounded by default)
-	// If we have no iterators, use an empty one
-	var baseIter iterator.Iterator
-	if len(iters) == 0 {
-		baseIter = &emptyIterator{}
-	} else if len(iters) == 1 {
-		baseIter = iters[0]
-	} else {
-		// Create a chained iterator that checks each source in order and handles duplicates
-		baseIter = &chainedIterator{
-			iterators: iters,
-			sources:   sources,
-		}
-	}
-
-	return &boundedIterator{
-		Iterator: baseIter,
-		end:      nil, // No end bound by default
-	}
-}
-
 // chainedIterator is a simple iterator that checks multiple sources in order
 type chainedIterator struct {
 	iterators []iterator.Iterator

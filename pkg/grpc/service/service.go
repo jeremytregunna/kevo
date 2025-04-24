@@ -7,22 +7,23 @@ import (
 
     "github.com/KevoDB/kevo/pkg/common/iterator"
     "github.com/KevoDB/kevo/pkg/engine"
+    "github.com/KevoDB/kevo/pkg/engine/interfaces"
     pb "github.com/KevoDB/kevo/proto/kevo"
 )
 
 // TxRegistry is the interface we need for the transaction registry
 type TxRegistry interface {
-    Begin(ctx context.Context, eng *engine.Engine, readOnly bool) (string, error)
-    Get(txID string) (engine.Transaction, bool)
+    Begin(ctx context.Context, eng interfaces.Engine, readOnly bool) (string, error)
+    Get(txID string) (interfaces.Transaction, bool)
     Remove(txID string)
 }
 
 // KevoServiceServer implements the gRPC KevoService interface
 type KevoServiceServer struct {
     pb.UnimplementedKevoServiceServer
-    engine           *engine.Engine
+    engine           interfaces.Engine
     txRegistry       TxRegistry
-    activeTx         sync.Map // map[string]engine.Transaction
+    activeTx         sync.Map // map[string]interfaces.Transaction
     txMu             sync.Mutex
     compactionSem    chan struct{} // Semaphore for limiting concurrent compactions
     maxKeySize       int           // Maximum allowed key size
@@ -34,7 +35,7 @@ type KevoServiceServer struct {
 }
 
 // NewKevoServiceServer creates a new KevoServiceServer
-func NewKevoServiceServer(engine *engine.Engine, txRegistry TxRegistry) *KevoServiceServer {
+func NewKevoServiceServer(engine interfaces.Engine, txRegistry TxRegistry) *KevoServiceServer {
     return &KevoServiceServer{
         engine:          engine,
         txRegistry:      txRegistry,
