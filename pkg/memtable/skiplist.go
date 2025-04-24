@@ -14,7 +14,7 @@ const (
 	MaxHeight = 12
 
 	// BranchingFactor determines the probability of increasing the height
-	BranchingFactor = 4
+	BranchingFactor = 2
 
 	// DefaultCacheLineSize aligns nodes to cache lines for better performance
 	DefaultCacheLineSize = 64
@@ -124,12 +124,15 @@ func NewSkipList() *SkipList {
 }
 
 // randomHeight generates a random height for a new node
+// Uses a geometric distribution with p=0.5 for better balanced trees
 func (s *SkipList) randomHeight() int {
 	s.rndMtx.Lock()
 	defer s.rndMtx.Unlock()
 
+	// Use a geometric distribution with p=0.5
+	// Each level has 50% chance of promotion to next level
 	height := 1
-	for height < MaxHeight && s.rnd.Intn(BranchingFactor) == 0 {
+	for height < MaxHeight && s.rnd.Int31n(BranchingFactor) == 0 {
 		height++
 	}
 	return height
@@ -155,22 +158,24 @@ func (s *SkipList) Insert(e *entry) {
 		}
 	}
 
-	// Find where to insert at each level
+	// Find where to insert at each level - using the efficient search algorithm
 	current := s.head
 	for level := currHeight - 1; level >= 0; level-- {
-		// Find the insertion point at this level
-		for next := current.getNext(level); next != nil; next = current.getNext(level) {
-			if next.entry.compareWithEntry(e) >= 0 {
-				break
-			}
+		// Move right until we find a node >= the key we're inserting
+		next := current.getNext(level)
+		for next != nil && next.entry.compareWithEntry(e) < 0 {
 			current = next
+			next = current.getNext(level)
 		}
+		// Remember the node before the insertion point at this level
 		prev[level] = current
 	}
 
-	// Insert the node at each level
+	// Insert the node at each level - from bottom up
 	for level := 0; level < height; level++ {
+		// Link the new node's next pointer to the next node at this level
 		node.setNext(level, prev[level].getNext(level))
+		// Link the previous node's next pointer to the new node
 		prev[level].setNext(level, node)
 	}
 
@@ -181,46 +186,37 @@ func (s *SkipList) Insert(e *entry) {
 // Find looks for an entry with the specified key
 // If multiple entries have the same key, the most recent one is returned
 func (s *SkipList) Find(key []byte) *entry {
-	var result *entry
 	current := s.head
 	height := s.getCurrentHeight()
 
-	// Start from the highest level for efficient search
+	// Start at the highest level, and work our way down
+	// At each level, move right as far as possible without overshooting
 	for level := height - 1; level >= 0; level-- {
-		// Scan forward until we find a key greater than or equal to the target
-		for next := current.getNext(level); next != nil; next = current.getNext(level) {
-			cmp := next.entry.compare(key)
-			if cmp > 0 {
-				// Key at next is greater than target, go down a level
-				break
-			} else if cmp == 0 {
-				// Found a match, check if it's newer than our current result
-				if result == nil || next.entry.seqNum > result.seqNum {
-					result = next.entry
-				}
-				// Continue at this level to see if there are more entries with same key
-				current = next
-			} else {
-				// Key at next is less than target, move forward
-				current = next
-			}
+		next := current.getNext(level)
+		for next != nil && next.entry.compare(key) < 0 {
+			current = next
+			next = current.getNext(level)
 		}
+		// When we exit this loop, current.next[level] is either nil or >= key
 	}
 
-	// For level 0, do one more sweep to ensure we get the newest entry
-	current = s.head
-	for next := current.getNext(0); next != nil; next = next.getNext(0) {
-		cmp := next.entry.compare(key)
-		if cmp > 0 {
-			// Past the key
-			break
-		} else if cmp == 0 {
-			// Found a match, update result if it's newer
-			if result == nil || next.entry.seqNum > result.seqNum {
-				result = next.entry
-			}
+	// We're now at level 0 with current just before the potential target
+	// Check next node to see if it's our target key
+	candidate := current.getNext(0)
+	if candidate == nil || candidate.entry.compare(key) != 0 {
+		// Key doesn't exist in the list
+		return nil
+	}
+
+	// We found the key, but there might be multiple entries with the same key
+	// Find the one with the highest sequence number (most recent)
+	var result *entry = candidate.entry
+	for candidate != nil && candidate.entry.compare(key) == 0 {
+		// Update result if this entry has a higher sequence number
+		if candidate.entry.seqNum > result.seqNum {
+			result = candidate.entry
 		}
-		current = next
+		candidate = candidate.getNext(0)
 	}
 
 	return result
@@ -269,17 +265,18 @@ func (it *Iterator) Seek(key []byte) {
 	current := it.list.head
 	height := it.list.getCurrentHeight()
 
-	// Search algorithm similar to Find
+	// Start at the highest level, and work our way down
+	// At each level, move right as far as possible without overshooting
 	for level := height - 1; level >= 0; level-- {
-		for next := current.getNext(level); next != nil; next = current.getNext(level) {
-			if next.entry.compare(key) >= 0 {
-				break
-			}
+		next := current.getNext(level)
+		for next != nil && next.entry.compare(key) < 0 {
 			current = next
+			next = current.getNext(level)
 		}
+		// When we exit this loop, current.next[level] is either nil or >= key
 	}
 
-	// Move to the next node, which should be >= target
+	// Move to the next node at level 0, which should be >= target
 	it.current = current.getNext(0)
 }
 
