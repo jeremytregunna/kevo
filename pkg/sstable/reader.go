@@ -7,6 +7,7 @@ import (
 	"os"
 	"sync"
 
+	bloomfilter "github.com/KevoDB/kevo/pkg/bloom_filter"
 	"github.com/KevoDB/kevo/pkg/sstable/block"
 	"github.com/KevoDB/kevo/pkg/sstable/footer"
 )
@@ -131,6 +132,55 @@ func ParseBlockLocator(key, value []byte) (BlockLocator, error) {
 	}, nil
 }
 
+// BlockCache is a simple LRU cache for data blocks
+type BlockCache struct {
+	blocks    map[uint64]*block.Reader
+	maxBlocks int
+	// Using a simple approach for now - more sophisticated LRU could be implemented
+	// with a linked list or other data structure for better eviction
+	mu sync.RWMutex
+}
+
+// NewBlockCache creates a new block cache with the specified capacity
+func NewBlockCache(capacity int) *BlockCache {
+	return &BlockCache{
+		blocks:    make(map[uint64]*block.Reader),
+		maxBlocks: capacity,
+	}
+}
+
+// Get retrieves a block from the cache
+func (c *BlockCache) Get(offset uint64) (*block.Reader, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	
+	block, found := c.blocks[offset]
+	return block, found
+}
+
+// Put adds a block to the cache
+func (c *BlockCache) Put(offset uint64, block *block.Reader) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	
+	// If cache is full, evict a random block (simple strategy for now)
+	if len(c.blocks) >= c.maxBlocks {
+		// Pick a random offset to evict
+		for k := range c.blocks {
+			delete(c.blocks, k)
+			break
+		}
+	}
+	
+	c.blocks[offset] = block
+}
+
+// BlockBloomFilter associates a bloom filter with a block offset
+type BlockBloomFilter struct {
+	blockOffset uint64
+	filter      *bloomfilter.BloomFilter
+}
+
 // Reader reads an SSTable file
 type Reader struct {
 	ioManager    *IOManager
@@ -141,6 +191,11 @@ type Reader struct {
 	indexBlock   *block.Reader
 	ft           *footer.Footer
 	mu           sync.RWMutex
+	// Add block cache
+	blockCache   *BlockCache
+	// Add bloom filters
+	bloomFilters  []BlockBloomFilter
+	hasBloomFilter bool
 }
 
 // OpenReader opens an SSTable file for reading
@@ -188,15 +243,82 @@ func OpenReader(path string) (*Reader, error) {
 		return nil, fmt.Errorf("failed to create index block reader: %w", err)
 	}
 
-	return &Reader{
-		ioManager:    ioManager,
-		blockFetcher: blockFetcher,
-		indexOffset:  ft.IndexOffset,
-		indexSize:    ft.IndexSize,
-		numEntries:   ft.NumEntries,
-		indexBlock:   indexBlock,
-		ft:           ft,
-	}, nil
+	// Initialize reader with basic fields
+	reader := &Reader{
+		ioManager:     ioManager,
+		blockFetcher:  blockFetcher,
+		indexOffset:   ft.IndexOffset,
+		indexSize:     ft.IndexSize,
+		numEntries:    ft.NumEntries,
+		indexBlock:    indexBlock,
+		ft:            ft,
+		blockCache:    NewBlockCache(100), // Cache up to 100 blocks by default
+		bloomFilters:  make([]BlockBloomFilter, 0),
+		hasBloomFilter: ft.BloomFilterOffset > 0 && ft.BloomFilterSize > 0,
+	}
+	
+	// Load bloom filters if they exist
+	if reader.hasBloomFilter {
+		// Read the bloom filter data
+		bloomFilterData := make([]byte, ft.BloomFilterSize)
+		_, err = ioManager.ReadAt(bloomFilterData, int64(ft.BloomFilterOffset))
+		if err != nil {
+			ioManager.Close()
+			return nil, fmt.Errorf("failed to read bloom filter data: %w", err)
+		}
+		
+		// Process the bloom filter data
+		var pos uint32 = 0
+		for pos < ft.BloomFilterSize {
+			// Read the block offset and filter size
+			if pos+12 > ft.BloomFilterSize {
+				break // Not enough data for header
+			}
+			
+			blockOffset := binary.LittleEndian.Uint64(bloomFilterData[pos:pos+8])
+			filterSize := binary.LittleEndian.Uint32(bloomFilterData[pos+8:pos+12])
+			pos += 12
+			
+			// Ensure we have enough data for the filter
+			if pos+filterSize > ft.BloomFilterSize {
+				break
+			}
+			
+			// Create a temporary file to load the bloom filter
+			tempFile, err := os.CreateTemp("", "bloom-filter-*.tmp")
+			if err != nil {
+				continue // Skip this filter if we can't create temp file
+			}
+			tempPath := tempFile.Name()
+			
+			// Write the bloom filter data to the temp file
+			_, err = tempFile.Write(bloomFilterData[pos:pos+filterSize])
+			tempFile.Close()
+			if err != nil {
+				os.Remove(tempPath)
+				continue
+			}
+			
+			// Load the bloom filter
+			filter, err := bloomfilter.LoadBloomFilter(tempPath)
+			os.Remove(tempPath) // Clean up temp file
+			
+			if err != nil {
+				continue // Skip this filter
+			}
+			
+			// Add the bloom filter to our list
+			reader.bloomFilters = append(reader.bloomFilters, BlockBloomFilter{
+				blockOffset: blockOffset,
+				filter:      filter,
+			})
+			
+			// Move to the next filter
+			pos += filterSize
+		}
+	}
+
+	return reader, nil
 }
 
 // FindBlockForKey finds the block that might contain the given key
@@ -265,9 +387,43 @@ func (r *Reader) Get(key []byte) ([]byte, error) {
 
 	// Search through each block
 	for _, locator := range blocks {
-		blockReader, err := r.blockFetcher.FetchBlock(locator.Offset, locator.Size)
-		if err != nil {
-			return nil, err
+		// Check bloom filter first if available
+		if r.hasBloomFilter {
+			// Find the bloom filter for this block
+			var shouldSkip = true
+			for _, bf := range r.bloomFilters {
+				if bf.blockOffset == locator.Offset {
+					// Found a bloom filter for this block
+					// If the key might be in this block, we'll check it
+					if bf.filter.Contains(key) {
+						shouldSkip = false
+					}
+					break
+				}
+			}
+			
+			// If the bloom filter says the key definitely isn't in this block, skip it
+			if shouldSkip {
+				continue
+			}
+		}
+		
+		var blockReader *block.Reader
+		
+		// Try to get the block from cache first
+		cachedBlock, found := r.blockCache.Get(locator.Offset)
+		if found {
+			// Use cached block
+			blockReader = cachedBlock
+		} else {
+			// Block not in cache, fetch from disk
+			blockReader, err = r.blockFetcher.FetchBlock(locator.Offset, locator.Size)
+			if err != nil {
+				return nil, err
+			}
+			
+			// Add to cache for future use
+			r.blockCache.Put(locator.Offset, blockReader)
 		}
 
 		// Search for the key in this block

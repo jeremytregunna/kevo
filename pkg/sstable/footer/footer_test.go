@@ -14,6 +14,8 @@ func TestFooterEncodeDecode(t *testing.T) {
 		1234, // numEntries
 		100,  // minKeyOffset
 		200,  // maxKeyOffset
+		5000, // bloomFilterOffset
+		300,  // bloomFilterSize
 	)
 
 	// Encode the footer
@@ -76,6 +78,8 @@ func TestFooterWriteTo(t *testing.T) {
 		1234, // numEntries
 		100,  // minKeyOffset
 		200,  // maxKeyOffset
+		5000, // bloomFilterOffset
+		300,  // bloomFilterSize
 	)
 
 	// Write to a buffer
@@ -115,6 +119,8 @@ func TestFooterCorruption(t *testing.T) {
 		1234, // numEntries
 		100,  // minKeyOffset
 		200,  // maxKeyOffset
+		5000, // bloomFilterOffset
+		300,  // bloomFilterSize
 	)
 
 	// Encode the footer
@@ -150,7 +156,7 @@ func TestFooterCorruption(t *testing.T) {
 
 func TestFooterVersionCheck(t *testing.T) {
 	// Create a footer with the current version
-	f := NewFooter(1000, 500, 1234, 100, 200)
+	f := NewFooter(1000, 500, 1234, 100, 200, 5000, 300)
 
 	// Create a modified version
 	f.Version = 9999

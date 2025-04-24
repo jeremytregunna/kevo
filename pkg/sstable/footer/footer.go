@@ -11,11 +11,11 @@ import (
 
 const (
 	// FooterSize is the fixed size of the footer in bytes
-	FooterSize = 52
+	FooterSize = 68
 	// FooterMagic is a magic number to verify we're reading a valid footer
 	FooterMagic = uint64(0xFACEFEEDFACEFEED)
 	// CurrentVersion is the current file format version
-	CurrentVersion = uint32(1)
+	CurrentVersion = uint32(2) // Updated for bloom filter support
 )
 
 // Footer contains metadata for an SSTable file
@@ -36,24 +36,30 @@ type Footer struct {
 	MinKeyOffset uint32
 	// Largest key in the file
 	MaxKeyOffset uint32
+	// Bloom filter offset (0 if no bloom filter)
+	BloomFilterOffset uint64
+	// Bloom filter size (0 if no bloom filter)
+	BloomFilterSize uint32
 	// Checksum of all footer fields excluding the checksum itself
 	Checksum uint64
 }
 
 // NewFooter creates a new footer with the given parameters
 func NewFooter(indexOffset uint64, indexSize uint32, numEntries uint32,
-	minKeyOffset, maxKeyOffset uint32) *Footer {
+	minKeyOffset, maxKeyOffset uint32, bloomFilterOffset uint64, bloomFilterSize uint32) *Footer {
 
 	return &Footer{
-		Magic:        FooterMagic,
-		Version:      CurrentVersion,
-		Timestamp:    time.Now().UnixNano(),
-		IndexOffset:  indexOffset,
-		IndexSize:    indexSize,
-		NumEntries:   numEntries,
-		MinKeyOffset: minKeyOffset,
-		MaxKeyOffset: maxKeyOffset,
-		Checksum:     0, // Will be calculated during serialization
+		Magic:             FooterMagic,
+		Version:           CurrentVersion,
+		Timestamp:         time.Now().UnixNano(),
+		IndexOffset:       indexOffset,
+		IndexSize:         indexSize,
+		NumEntries:        numEntries,
+		MinKeyOffset:      minKeyOffset,
+		MaxKeyOffset:      maxKeyOffset,
+		BloomFilterOffset: bloomFilterOffset,
+		BloomFilterSize:   bloomFilterSize,
+		Checksum:          0, // Will be calculated during serialization
 	}
 }
 
@@ -70,10 +76,13 @@ func (f *Footer) Encode() []byte {
 	binary.LittleEndian.PutUint32(result[32:36], f.NumEntries)
 	binary.LittleEndian.PutUint32(result[36:40], f.MinKeyOffset)
 	binary.LittleEndian.PutUint32(result[40:44], f.MaxKeyOffset)
+	binary.LittleEndian.PutUint64(result[44:52], f.BloomFilterOffset)
+	binary.LittleEndian.PutUint32(result[52:56], f.BloomFilterSize)
+	// 4 bytes of padding (56:60)
 
 	// Calculate checksum of all fields excluding the checksum itself
-	f.Checksum = xxhash.Sum64(result[:44])
-	binary.LittleEndian.PutUint64(result[44:], f.Checksum)
+	f.Checksum = xxhash.Sum64(result[:60])
+	binary.LittleEndian.PutUint64(result[60:], f.Checksum)
 
 	return result
 }
@@ -101,7 +110,21 @@ func Decode(data []byte) (*Footer, error) {
 		NumEntries:   binary.LittleEndian.Uint32(data[32:36]),
 		MinKeyOffset: binary.LittleEndian.Uint32(data[36:40]),
 		MaxKeyOffset: binary.LittleEndian.Uint32(data[40:44]),
-		Checksum:     binary.LittleEndian.Uint64(data[44:]),
+	}
+
+	// Check version to determine how to decode the rest
+	// Version 1: Original format without bloom filters
+	// Version 2+: Format with bloom filters
+	if footer.Version >= 2 {
+		footer.BloomFilterOffset = binary.LittleEndian.Uint64(data[44:52])
+		footer.BloomFilterSize = binary.LittleEndian.Uint32(data[52:56])
+		// 4 bytes of padding (56:60)
+		footer.Checksum = binary.LittleEndian.Uint64(data[60:])
+	} else {
+		// Legacy format without bloom filters
+		footer.BloomFilterOffset = 0
+		footer.BloomFilterSize = 0
+		footer.Checksum = binary.LittleEndian.Uint64(data[44:52])
 	}
 
 	// Verify magic number
@@ -110,8 +133,14 @@ func Decode(data []byte) (*Footer, error) {
 			footer.Magic, FooterMagic)
 	}
 
-	// Verify checksum
-	expectedChecksum := xxhash.Sum64(data[:44])
+	// Verify checksum based on version
+	var expectedChecksum uint64
+	if footer.Version >= 2 {
+		expectedChecksum = xxhash.Sum64(data[:60])
+	} else {
+		expectedChecksum = xxhash.Sum64(data[:44])
+	}
+
 	if footer.Checksum != expectedChecksum {
 		return nil, fmt.Errorf("footer checksum mismatch: file has %d, calculated %d",
 			footer.Checksum, expectedChecksum)
