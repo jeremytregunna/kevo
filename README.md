@@ -206,26 +206,26 @@ Kevo implements a facade-based design over the LSM tree architecture, consisting
 The system is designed around clear interfaces that define contracts between components:
 
 ```
-┌───────────────────┐
-│    Client Code    │
-└─────────┬─────────┘
-          │
-          ▼
-┌───────────────────┐
-│  Engine Interface │
-└─────────┬─────────┘
-          │
-          ▼
-┌───────────────────┐
-│   EngineFacade    │
-└─────────┬─────────┘
-          │
-┌─────────┼─────────┐
-▼         ▼         ▼
-┌─────────┐ ┌───────┐ ┌─────────┐
+     ┌───────────────────┐
+     │    Client Code    │
+     └─────────┬─────────┘
+               │
+               ▼
+     ┌───────────────────┐
+     │  Engine Interface │
+     └─────────┬─────────┘
+               │
+               ▼
+     ┌───────────────────┐
+     │   EngineFacade    │
+     └─────────┬─────────┘
+               │
+     ┌─────────┼─────────┐
+     ▼         ▼         ▼
+┌─────────┐ ┌───────┐ ┌──────────┐
 │ Storage │ │  Tx   │ │Compaction│
 │ Manager │ │Manager│ │ Manager  │
-└─────────┘ └───────┘ └─────────┘
+└─────────┘ └───────┘ └──────────┘
 ```
 
 For more details on each component, see the documentation in the [docs](./docs) directory.
