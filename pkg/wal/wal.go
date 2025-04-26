@@ -226,11 +226,15 @@ func (w *WAL) Append(entryType uint8, key, value []byte) (uint64, error) {
 	if w.clock != nil {
 		// Generate Lamport timestamp (reusing SequenceNumber field)
 		seqNum = w.clock.Tick()
+		// Keep the nextSequence in sync with the highest used sequence number
+		if seqNum >= w.nextSequence {
+			w.nextSequence = seqNum + 1
+		}
 	} else {
 		// Use traditional sequence number
 		seqNum = w.nextSequence
+		w.nextSequence++
 	}
-	w.nextSequence = seqNum + 1
 
 	// Encode the entry
 	// Format: type(1) + seq(8) + keylen(4) + key + vallen(4) + val
@@ -511,6 +515,10 @@ func (w *WAL) AppendBatch(entries []*Entry) (uint64, error) {
 	if w.clock != nil {
 		// Generate Lamport timestamp for the batch
 		startSeqNum = w.clock.Tick()
+		// Keep the nextSequence in sync with the highest timestamp
+		if startSeqNum >= w.nextSequence {
+			w.nextSequence = startSeqNum + 1
+		}
 	} else {
 		// Use traditional sequence number
 		startSeqNum = w.nextSequence
@@ -599,7 +607,6 @@ func (w *WAL) Close() error {
 	if err := w.file.Close(); err != nil {
 		return fmt.Errorf("failed to close WAL file: %w", err)
 	}
-
 	atomic.StoreInt32(&w.status, WALStatusClosed)
 	return nil
 }

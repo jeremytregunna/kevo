@@ -138,12 +138,24 @@ func (b *Batch) Write(w *WAL) error {
 		return ErrWALClosed
 	}
 
-	// Set the sequence number
-	b.Seq = w.nextSequence
+	// Set the sequence number - use Lamport clock if available
+	var seqNum uint64
+	if w.clock != nil {
+		// Generate Lamport timestamp for the batch
+		seqNum = w.clock.Tick()
+		// Keep the nextSequence in sync with the highest timestamp
+		if seqNum >= w.nextSequence {
+			w.nextSequence = seqNum + 1
+		}
+	} else {
+		// Use traditional sequence number
+		seqNum = w.nextSequence
+		// Increment sequence for future operations
+		w.nextSequence += uint64(len(b.Operations))
+	}
+	
+	b.Seq = seqNum
 	binary.LittleEndian.PutUint64(data[4:12], b.Seq)
-
-	// Increment sequence for future operations
-	w.nextSequence += uint64(len(b.Operations))
 
 	// Write as a batch entry
 	if err := w.writeRecord(uint8(RecordTypeFull), OpTypeBatch, b.Seq, data, nil); err != nil {

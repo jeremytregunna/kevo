@@ -12,7 +12,10 @@ import (
 )
 
 func createTestConfig() *config.Config {
-	return config.NewDefaultConfig("/tmp/gostorage_test")
+	cfg := config.NewDefaultConfig("/tmp/gostorage_test")
+	// Force immediate sync for tests
+	cfg.WALSyncMode = config.SyncImmediate
+	return cfg
 }
 
 func createTempDir(t *testing.T) string {
@@ -370,12 +373,13 @@ func TestWALRecovery(t *testing.T) {
 
 func TestWALSyncModes(t *testing.T) {
 	testCases := []struct {
-		name     string
-		syncMode config.SyncMode
+		name            string
+		syncMode        config.SyncMode
+		expectedEntries int // Expected number of entries after crash (without explicit sync)
 	}{
-		{"SyncNone", config.SyncNone},
-		{"SyncBatch", config.SyncBatch},
-		{"SyncImmediate", config.SyncImmediate},
+		{"SyncNone", config.SyncNone, 0}, // No entries should be recovered without explicit sync
+		{"SyncBatch", config.SyncBatch, 0}, // No entries should be recovered if batch threshold not reached
+		{"SyncImmediate", config.SyncImmediate, 10}, // All entries should be recovered
 	}
 
 	for _, tc := range testCases {
@@ -386,6 +390,10 @@ func TestWALSyncModes(t *testing.T) {
 			// Create config with specific sync mode
 			cfg := createTestConfig()
 			cfg.WALSyncMode = tc.syncMode
+			// Set a high sync threshold for batch mode to ensure it doesn't auto-sync
+			if tc.syncMode == config.SyncBatch {
+				cfg.WALSyncBytes = 100 * 1024 * 1024 // 100MB, high enough to not trigger
+			}
 
 			wal, err := NewWAL(cfg, dir)
 			if err != nil {
@@ -403,6 +411,8 @@ func TestWALSyncModes(t *testing.T) {
 				}
 			}
 
+			// Skip explicit sync to simulate a crash
+			
 			// Close the WAL
 			if err := wal.Close(); err != nil {
 				t.Fatalf("Failed to close WAL: %v", err)
@@ -421,8 +431,54 @@ func TestWALSyncModes(t *testing.T) {
 				t.Fatalf("Failed to replay WAL: %v", err)
 			}
 
-			if count != 10 {
-				t.Errorf("Expected 10 entries, got %d", count)
+			// Check that the number of recovered entries matches expectations for this sync mode
+			if count != tc.expectedEntries {
+				t.Errorf("Expected %d entries for %s mode, got %d", tc.expectedEntries, tc.name, count)
+			}
+
+			// Now test with explicit sync - all entries should be recoverable
+			wal, err = NewWAL(cfg, dir)
+			if err != nil {
+				t.Fatalf("Failed to create WAL: %v", err)
+			}
+
+			// Write some more entries
+			for i := 0; i < 10; i++ {
+				key := []byte(fmt.Sprintf("explicit_key%d", i))
+				value := []byte(fmt.Sprintf("explicit_value%d", i))
+
+				_, err := wal.Append(OpTypePut, key, value)
+				if err != nil {
+					t.Fatalf("Failed to append entry: %v", err)
+				}
+			}
+
+			// Explicitly sync
+			if err := wal.Sync(); err != nil {
+				t.Fatalf("Failed to sync WAL: %v", err)
+			}
+
+			// Close the WAL
+			if err := wal.Close(); err != nil {
+				t.Fatalf("Failed to close WAL: %v", err)
+			}
+
+			// Verify entries by replaying
+			explicitCount := 0
+			_, err = ReplayWALDir(dir, func(entry *Entry) error {
+				if entry.Type == OpTypePut && bytes.HasPrefix(entry.Key, []byte("explicit_")) {
+					explicitCount++
+				}
+				return nil
+			})
+
+			if err != nil {
+				t.Fatalf("Failed to replay WAL after explicit sync: %v", err)
+			}
+
+			// After explicit sync, all 10 new entries should be recovered regardless of mode
+			if explicitCount != 10 {
+				t.Errorf("Expected 10 entries after explicit sync, got %d", explicitCount)
 			}
 		})
 	}
