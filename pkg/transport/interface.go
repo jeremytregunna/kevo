@@ -138,11 +138,23 @@ type Registry interface {
 	// RegisterServer adds a new server implementation to the registry
 	RegisterServer(name string, factory ServerFactory)
 
+	// RegisterReplicationClient adds a new replication client implementation
+	RegisterReplicationClient(name string, factory ReplicationClientFactory)
+
+	// RegisterReplicationServer adds a new replication server implementation
+	RegisterReplicationServer(name string, factory ReplicationServerFactory)
+
 	// CreateClient instantiates a client by name
 	CreateClient(name, endpoint string, options TransportOptions) (Client, error)
 
 	// CreateServer instantiates a server by name
 	CreateServer(name, address string, options TransportOptions) (Server, error)
+
+	// CreateReplicationClient instantiates a replication client by name
+	CreateReplicationClient(name, endpoint string, options TransportOptions) (ReplicationClient, error)
+
+	// CreateReplicationServer instantiates a replication server by name
+	CreateReplicationServer(name, address string, options TransportOptions) (ReplicationServer, error)
 
 	// ListTransports returns all available transport names
 	ListTransports() []string

@@ -1,0 +1,152 @@
+syntax = "proto3";
+
+package kevo;
+
+option go_package = "github.com/KevoDB/kevo/proto/kevo";
+
+service ReplicationService {
+  // Replica Registration and Status
+  rpc RegisterReplica(RegisterReplicaRequest) returns (RegisterReplicaResponse);
+  rpc ReplicaHeartbeat(ReplicaHeartbeatRequest) returns (ReplicaHeartbeatResponse);
+  rpc GetReplicaStatus(GetReplicaStatusRequest) returns (GetReplicaStatusResponse);
+  rpc ListReplicas(ListReplicasRequest) returns (ListReplicasResponse);
+
+  // WAL Replication
+  rpc GetWALEntries(GetWALEntriesRequest) returns (GetWALEntriesResponse);
+  rpc StreamWALEntries(StreamWALEntriesRequest) returns (stream WALEntryBatch);
+  rpc ReportAppliedEntries(ReportAppliedEntriesRequest) returns (ReportAppliedEntriesResponse);
+
+  // Bootstrap Operations
+  rpc RequestBootstrap(BootstrapRequest) returns (stream BootstrapBatch);
+}
+
+// Replication status enum
+enum ReplicaRole {
+  PRIMARY = 0;
+  REPLICA = 1;
+  READ_ONLY = 2;
+}
+
+enum ReplicaStatus {
+  CONNECTING = 0;
+  SYNCING = 1;
+  BOOTSTRAPPING = 2;
+  READY = 3;
+  DISCONNECTED = 4;
+  ERROR = 5;
+}
+
+// Replica Registration messages
+message RegisterReplicaRequest {
+  string replica_id = 1;
+  string address = 2;
+  ReplicaRole role = 3;
+}
+
+message RegisterReplicaResponse {
+  bool success = 1;
+  string error_message = 2;
+  uint64 current_lsn = 3; // Current Lamport Sequence Number on primary
+  bool bootstrap_required = 4;
+}
+
+// Heartbeat messages
+message ReplicaHeartbeatRequest {
+  string replica_id = 1;
+  ReplicaStatus status = 2;
+  uint64 current_lsn = 3; // Current Lamport Sequence Number on replica
+  string error_message = 4; // If status is ERROR
+}
+
+message ReplicaHeartbeatResponse {
+  bool success = 1;
+  uint64 primary_lsn = 2; // Current Lamport Sequence Number on primary
+  int64 replication_lag_ms = 3; // Estimated lag in milliseconds
+}
+
+// Status messages
+message GetReplicaStatusRequest {
+  string replica_id = 1;
+}
+
+message ReplicaInfo {
+  string replica_id = 1;
+  string address = 2;
+  ReplicaRole role = 3;
+  ReplicaStatus status = 4;
+  int64 last_seen_ms = 5; // Timestamp of last heartbeat in milliseconds since epoch
+  uint64 current_lsn = 6; // Current Lamport Sequence Number
+  int64 replication_lag_ms = 7; // Estimated lag in milliseconds
+  string error_message = 8; // If status is ERROR
+}
+
+message GetReplicaStatusResponse {
+  ReplicaInfo replica = 1;
+}
+
+message ListReplicasRequest {}
+
+message ListReplicasResponse {
+  repeated ReplicaInfo replicas = 1;
+}
+
+// WAL Replication messages
+message WALEntry {
+  uint64 sequence_number = 1; // Lamport Sequence Number
+  uint32 type = 2; // Entry type (put, delete, etc.)
+  bytes key = 3;
+  bytes value = 4; // Optional, depending on type
+  bytes checksum = 5; // Checksum for data integrity
+}
+
+message WALEntryBatch {
+  repeated WALEntry entries = 1;
+  uint64 first_lsn = 2; // LSN of the first entry in the batch
+  uint64 last_lsn = 3; // LSN of the last entry in the batch
+  uint32 count = 4; // Number of entries in the batch
+  bytes checksum = 5; // Checksum of the entire batch
+}
+
+message GetWALEntriesRequest {
+  string replica_id = 1;
+  uint64 from_lsn = 2; // Request entries starting from this LSN
+  uint32 max_entries = 3; // Maximum number of entries to return (0 for no limit)
+}
+
+message GetWALEntriesResponse {
+  WALEntryBatch batch = 1;
+  bool has_more = 2; // True if there are more entries available
+}
+
+message StreamWALEntriesRequest {
+  string replica_id = 1;
+  uint64 from_lsn = 2; // Request entries starting from this LSN
+  bool continuous = 3; // If true, keep streaming as new entries arrive
+}
+
+message ReportAppliedEntriesRequest {
+  string replica_id = 1;
+  uint64 applied_lsn = 2; // Highest LSN successfully applied on the replica
+}
+
+message ReportAppliedEntriesResponse {
+  bool success = 1;
+  uint64 primary_lsn = 2; // Current LSN on primary
+}
+
+// Bootstrap messages
+message BootstrapRequest {
+  string replica_id = 1;
+}
+
+message KeyValuePair {
+  bytes key = 1;
+  bytes value = 2;
+}
+
+message BootstrapBatch {
+  repeated KeyValuePair pairs = 1;
+  float progress = 2; // Progress from 0.0 to 1.0
+  bool is_last = 3; // True if this is the last batch
+  uint64 snapshot_lsn = 4; // LSN at which this snapshot was taken
+}
