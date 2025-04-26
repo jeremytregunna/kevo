@@ -81,10 +81,19 @@ type WAL struct {
 	status        int32 // Using atomic int32 for status flags
 	closed        int32 // Atomic flag indicating if WAL is closed
 	mu            sync.Mutex
+	
+	// Replication support
+	clock          LamportClock    // Lamport clock for logical timestamps
+	replicationHook ReplicationHook // Hook for replication events
 }
 
 // NewWAL creates a new write-ahead log
 func NewWAL(cfg *config.Config, dir string) (*WAL, error) {
+	return NewWALWithReplication(cfg, dir, nil, nil)
+}
+
+// NewWALWithReplication creates a new write-ahead log with replication support
+func NewWALWithReplication(cfg *config.Config, dir string, clock LamportClock, hook ReplicationHook) (*WAL, error) {
 	if cfg == nil {
 		return nil, errors.New("config cannot be nil")
 	}
@@ -103,13 +112,15 @@ func NewWAL(cfg *config.Config, dir string) (*WAL, error) {
 	}
 
 	wal := &WAL{
-		cfg:          cfg,
-		dir:          dir,
-		file:         file,
-		writer:       bufio.NewWriterSize(file, 64*1024), // 64KB buffer
-		nextSequence: 1,
-		lastSync:     time.Now(),
-		status:       WALStatusActive,
+		cfg:             cfg,
+		dir:             dir,
+		file:            file,
+		writer:          bufio.NewWriterSize(file, 64*1024), // 64KB buffer
+		nextSequence:    1,
+		lastSync:        time.Now(),
+		status:          WALStatusActive,
+		clock:           clock,
+		replicationHook: hook,
 	}
 
 	return wal, nil
@@ -118,6 +129,12 @@ func NewWAL(cfg *config.Config, dir string) (*WAL, error) {
 // ReuseWAL attempts to reuse an existing WAL file for appending
 // Returns nil, nil if no suitable WAL file is found
 func ReuseWAL(cfg *config.Config, dir string, nextSeq uint64) (*WAL, error) {
+	return ReuseWALWithReplication(cfg, dir, nextSeq, nil, nil)
+}
+
+// ReuseWALWithReplication attempts to reuse an existing WAL file for appending with replication support
+// Returns nil, nil if no suitable WAL file is found
+func ReuseWALWithReplication(cfg *config.Config, dir string, nextSeq uint64, clock LamportClock, hook ReplicationHook) (*WAL, error) {
 	if cfg == nil {
 		return nil, errors.New("config cannot be nil")
 	}
@@ -173,14 +190,16 @@ func ReuseWAL(cfg *config.Config, dir string, nextSeq uint64) (*WAL, error) {
 	}
 
 	wal := &WAL{
-		cfg:          cfg,
-		dir:          dir,
-		file:         file,
-		writer:       bufio.NewWriterSize(file, 64*1024), // 64KB buffer
-		nextSequence: nextSeq,
-		bytesWritten: stat.Size(),
-		lastSync:     time.Now(),
-		status:       WALStatusActive,
+		cfg:             cfg,
+		dir:             dir,
+		file:            file,
+		writer:          bufio.NewWriterSize(file, 64*1024), // 64KB buffer
+		nextSequence:    nextSeq,
+		bytesWritten:    stat.Size(),
+		lastSync:        time.Now(),
+		status:          WALStatusActive,
+		clock:           clock,
+		replicationHook: hook,
 	}
 
 	return wal, nil
@@ -202,9 +221,16 @@ func (w *WAL) Append(entryType uint8, key, value []byte) (uint64, error) {
 		return 0, ErrInvalidOpType
 	}
 
-	// Sequence number for this entry
-	seqNum := w.nextSequence
-	w.nextSequence++
+	// Sequence number for this entry - use Lamport clock if available
+	var seqNum uint64
+	if w.clock != nil {
+		// Generate Lamport timestamp (reusing SequenceNumber field)
+		seqNum = w.clock.Tick()
+	} else {
+		// Use traditional sequence number
+		seqNum = w.nextSequence
+	}
+	w.nextSequence = seqNum + 1
 
 	// Encode the entry
 	// Format: type(1) + seq(8) + keylen(4) + key + vallen(4) + val
@@ -230,6 +256,17 @@ func (w *WAL) Append(entryType uint8, key, value []byte) (uint64, error) {
 	// Sync the file if needed
 	if err := w.maybeSync(); err != nil {
 		return 0, err
+	}
+	
+	// Notify replication hook if available
+	if w.replicationHook != nil {
+		entry := &Entry{
+			SequenceNumber: seqNum,  // This now represents the Lamport timestamp
+			Type:           entryType,
+			Key:            key,
+			Value:          value,
+		}
+		w.replicationHook.OnEntryWritten(entry)
 	}
 
 	return seqNum, nil
@@ -469,8 +506,15 @@ func (w *WAL) AppendBatch(entries []*Entry) (uint64, error) {
 		return w.nextSequence, nil
 	}
 
-	// Start sequence number for the batch
-	startSeqNum := w.nextSequence
+	// Start sequence number for the batch - use Lamport clock if available
+	var startSeqNum uint64
+	if w.clock != nil {
+		// Generate Lamport timestamp for the batch
+		startSeqNum = w.clock.Tick()
+	} else {
+		// Use traditional sequence number
+		startSeqNum = w.nextSequence
+	}
 
 	// Record this as a batch operation with the number of entries
 	batchHeader := make([]byte, 1+8+4) // opType(1) + seqNum(8) + entryCount(4)
@@ -492,10 +536,17 @@ func (w *WAL) AppendBatch(entries []*Entry) (uint64, error) {
 		return 0, fmt.Errorf("failed to write batch header: %w", err)
 	}
 
+	// Prepare entries for replication notification
+	entriesForReplication := make([]*Entry, len(entries))
+
 	// Process each entry in the batch
 	for i, entry := range entries {
 		// Assign sequential sequence numbers to each entry
 		seqNum := startSeqNum + uint64(i)
+		
+		// Save sequence number in the entry for replication
+		entry.SequenceNumber = seqNum
+		entriesForReplication[i] = entry
 
 		// Write the entry
 		if entry.Value == nil {
@@ -517,6 +568,11 @@ func (w *WAL) AppendBatch(entries []*Entry) (uint64, error) {
 	// Sync if needed
 	if err := w.maybeSync(); err != nil {
 		return 0, err
+	}
+	
+	// Notify replication hook if available
+	if w.replicationHook != nil {
+		w.replicationHook.OnBatchWritten(entriesForReplication)
 	}
 
 	return startSeqNum, nil
@@ -567,6 +623,22 @@ func (w *WAL) UpdateNextSequence(nextSeq uint64) {
 	if nextSeq > w.nextSequence {
 		w.nextSequence = nextSeq
 	}
+}
+
+// SetReplicationHook sets or updates the replication hook
+func (w *WAL) SetReplicationHook(hook ReplicationHook) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	
+	w.replicationHook = hook
+}
+
+// SetLamportClock sets or updates the Lamport clock
+func (w *WAL) SetLamportClock(clock LamportClock) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	
+	w.clock = clock
 }
 
 func min(a, b int) int {
