@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"sync/atomic"
 )
 
 const (
@@ -133,7 +134,7 @@ func (b *Batch) Write(w *WAL) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	if w.closed {
+	if atomic.LoadInt32(&w.closed) == 1 {
 		return ErrWALClosed
 	}
 
