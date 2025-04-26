@@ -9,25 +9,25 @@ import (
 var (
 	// ErrMaxRetriesExceeded indicates the operation failed after all retries
 	ErrMaxRetriesExceeded = errors.New("maximum retries exceeded")
-	
+
 	// ErrCircuitOpen indicates the circuit breaker is open
 	ErrCircuitOpen = errors.New("circuit breaker is open")
-	
+
 	// ErrConnectionFailed indicates a connection failure
 	ErrConnectionFailed = errors.New("connection failed")
-	
+
 	// ErrDisconnected indicates the connection was lost
 	ErrDisconnected = errors.New("connection was lost")
-	
+
 	// ErrReconnectionFailed indicates reconnection attempts failed
 	ErrReconnectionFailed = errors.New("reconnection failed")
-	
+
 	// ErrStreamClosed indicates the stream was closed
 	ErrStreamClosed = errors.New("stream was closed")
-	
+
 	// ErrInvalidState indicates an invalid state
 	ErrInvalidState = errors.New("invalid state")
-	
+
 	// ErrReplicaNotRegistered indicates the replica is not registered
 	ErrReplicaNotRegistered = errors.New("replica not registered")
 )

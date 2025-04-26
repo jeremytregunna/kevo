@@ -214,45 +214,45 @@ func (s *BatchSerializer) SerializeBatch(entries []*wal.Entry) []byte {
 		// Empty batch - just return header with count 0
 		result := make([]byte, 12) // checksum(4) + count(4) + timestamp(4)
 		binary.LittleEndian.PutUint32(result[4:8], 0)
-		
+
 		// Calculate and store checksum
 		checksum := crc32.ChecksumIEEE(result[4:])
 		binary.LittleEndian.PutUint32(result[0:4], checksum)
-		
+
 		return result
 	}
 
 	// First pass: calculate total size needed
 	var totalSize int = 12 // header: checksum(4) + count(4) + base timestamp(4)
-	
+
 	for _, entry := range entries {
 		// For each entry: size(4) + serialized entry data
 		entrySize := entryHeaderSize + len(entry.Key)
 		if entry.Value != nil {
 			entrySize += 4 + len(entry.Value)
 		}
-		
+
 		totalSize += 4 + entrySize
 	}
-	
+
 	// Allocate buffer
 	result := make([]byte, totalSize)
 	offset := 4 // Skip checksum for now
-	
+
 	// Write entry count
 	binary.LittleEndian.PutUint32(result[offset:offset+4], uint32(len(entries)))
 	offset += 4
-	
+
 	// Write base timestamp (from first entry)
 	binary.LittleEndian.PutUint32(result[offset:offset+4], uint32(entries[0].SequenceNumber))
 	offset += 4
-	
+
 	// Write each entry
 	for _, entry := range entries {
 		// Reserve space for entry size
 		sizeOffset := offset
 		offset += 4
-		
+
 		// Serialize entry directly into the buffer
 		entrySize, err := s.entrySerializer.SerializeEntryToBuffer(entry, result[offset:])
 		if err != nil {
@@ -260,17 +260,17 @@ func (s *BatchSerializer) SerializeBatch(entries []*wal.Entry) []byte {
 			// but handle it gracefully just in case
 			panic("buffer too small for entry serialization")
 		}
-		
+
 		offset += entrySize
-		
+
 		// Write the actual entry size
 		binary.LittleEndian.PutUint32(result[sizeOffset:sizeOffset+4], uint32(entrySize))
 	}
-	
+
 	// Calculate and store checksum
 	checksum := crc32.ChecksumIEEE(result[4:offset])
 	binary.LittleEndian.PutUint32(result[0:4], checksum)
-	
+
 	return result
 }
 
@@ -280,28 +280,28 @@ func (s *BatchSerializer) DeserializeBatch(data []byte) ([]*wal.Entry, error) {
 	if len(data) < 12 {
 		return nil, ErrInvalidFormat
 	}
-	
+
 	// Verify checksum
 	storedChecksum := binary.LittleEndian.Uint32(data[0:4])
 	calculatedChecksum := crc32.ChecksumIEEE(data[4:])
 	if storedChecksum != calculatedChecksum {
 		return nil, ErrInvalidChecksum
 	}
-	
+
 	offset := 4 // Skip checksum
-	
+
 	// Read entry count
-	count := binary.LittleEndian.Uint32(data[offset:offset+4])
+	count := binary.LittleEndian.Uint32(data[offset : offset+4])
 	offset += 4
-	
+
 	// Read base timestamp (we don't use this currently, but read past it)
 	offset += 4 // Skip base timestamp
-	
+
 	// Early return for empty batch
 	if count == 0 {
 		return []*wal.Entry{}, nil
 	}
-	
+
 	// Deserialize each entry
 	entries := make([]*wal.Entry, count)
 	for i := uint32(0); i < count; i++ {
@@ -309,26 +309,26 @@ func (s *BatchSerializer) DeserializeBatch(data []byte) ([]*wal.Entry, error) {
 		if offset+4 > len(data) {
 			return nil, ErrInvalidFormat
 		}
-		
+
 		// Read entry size
-		entrySize := binary.LittleEndian.Uint32(data[offset:offset+4])
+		entrySize := binary.LittleEndian.Uint32(data[offset : offset+4])
 		offset += 4
-		
+
 		// Validate entry size
 		if offset+int(entrySize) > len(data) {
 			return nil, ErrInvalidFormat
 		}
-		
+
 		// Deserialize entry
-		entry, err := s.entrySerializer.DeserializeEntry(data[offset:offset+int(entrySize)])
+		entry, err := s.entrySerializer.DeserializeEntry(data[offset : offset+int(entrySize)])
 		if err != nil {
 			return nil, err
 		}
-		
+
 		entries[i] = entry
 		offset += int(entrySize)
 	}
-	
+
 	return entries, nil
 }
 
@@ -346,13 +346,13 @@ func EstimateBatchSize(entries []*wal.Entry) int {
 	if len(entries) == 0 {
 		return 12 // Empty batch header
 	}
-	
+
 	size := 12 // Batch header: checksum(4) + count(4) + base timestamp(4)
-	
+
 	for _, entry := range entries {
 		entrySize := EstimateEntrySize(entry)
 		size += 4 + entrySize // size field(4) + entry data
 	}
-	
+
 	return size
 }

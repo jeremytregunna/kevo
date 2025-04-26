@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"hash/crc32"
-	"io"
 	"sync"
 	"time"
 
@@ -23,74 +22,85 @@ type ReplicationServiceServer struct {
 	kevo.UnimplementedReplicationServiceServer
 
 	// Replication components
-	replicator    *replication.WALReplicator
-	applier       *replication.WALApplier
+	replicator    replication.EntryReplicator
+	applier       replication.EntryApplier
 	serializer    *replication.EntrySerializer
 	highestLSN    uint64
 	replicas      map[string]*transport.ReplicaInfo
 	replicasMutex sync.RWMutex
 
 	// For snapshot/bootstrap
-	storageSnapshot replication.StorageSnapshot
-	
+	storageSnapshot  replication.StorageSnapshot
+	bootstrapService *bootstrapService
+
 	// Access control and persistence
 	accessControl *transport.AccessController
 	persistence   *transport.ReplicaPersistence
+
+	// Metrics collection
+	metrics *transport.ReplicationMetrics
 }
 
 // ReplicationServiceOptions contains configuration for the replication service
 type ReplicationServiceOptions struct {
 	// Data directory for persisting replica information
 	DataDir string
-	
+
 	// Whether to enable access control
 	EnableAccessControl bool
-	
+
 	// Whether to enable persistence
 	EnablePersistence bool
-	
+
 	// Default authentication method
 	DefaultAuthMethod transport.AuthMethod
+
+	// Bootstrap service configuration
+	BootstrapOptions *BootstrapServiceOptions
 }
 
 // DefaultReplicationServiceOptions returns sensible defaults
 func DefaultReplicationServiceOptions() *ReplicationServiceOptions {
 	return &ReplicationServiceOptions{
-		DataDir:            "./replication-data",
-		EnableAccessControl: false,  // Disabled by default for backward compatibility
-		EnablePersistence:   false,  // Disabled by default for backward compatibility
+		DataDir:             "./replication-data",
+		EnableAccessControl: false, // Disabled by default for backward compatibility
+		EnablePersistence:   false, // Disabled by default for backward compatibility
 		DefaultAuthMethod:   transport.AuthNone,
+		BootstrapOptions:    DefaultBootstrapServiceOptions(),
 	}
 }
 
 // NewReplicationService creates a new ReplicationService
 func NewReplicationService(
-	replicator *replication.WALReplicator,
-	applier *replication.WALApplier,
+	replicator EntryReplicator,
+	applier EntryApplier,
 	serializer *replication.EntrySerializer,
-	storageSnapshot replication.StorageSnapshot,
+	storageSnapshot SnapshotProvider,
 	options *ReplicationServiceOptions,
 ) (*ReplicationServiceServer, error) {
 	if options == nil {
 		options = DefaultReplicationServiceOptions()
 	}
-	
+
 	// Create access controller
 	accessControl := transport.NewAccessController(
 		options.EnableAccessControl,
 		options.DefaultAuthMethod,
 	)
-	
+
 	// Create persistence manager
 	persistence, err := transport.NewReplicaPersistence(
-		options.DataDir, 
+		options.DataDir,
 		options.EnablePersistence,
 		true, // Auto-save
 	)
 	if err != nil && options.EnablePersistence {
 		return nil, fmt.Errorf("failed to initialize replica persistence: %w", err)
 	}
-	
+
+	// Create metrics collector
+	metrics := transport.NewReplicationMetrics()
+
 	server := &ReplicationServiceServer{
 		replicator:      replicator,
 		applier:         applier,
@@ -99,26 +109,35 @@ func NewReplicationService(
 		storageSnapshot: storageSnapshot,
 		accessControl:   accessControl,
 		persistence:     persistence,
+		metrics:         metrics,
 	}
-	
+
 	// Load persisted replica data if persistence is enabled
 	if options.EnablePersistence && persistence != nil {
 		infoMap, credsMap, err := persistence.GetAllReplicas()
 		if err != nil {
 			return nil, fmt.Errorf("failed to load persisted replicas: %w", err)
 		}
-		
+
 		// Restore replicas and credentials
 		for id, info := range infoMap {
 			server.replicas[id] = info
-			
+
 			// Register credentials
 			if creds, exists := credsMap[id]; exists && options.EnableAccessControl {
 				accessControl.RegisterReplica(creds)
 			}
 		}
 	}
-	
+
+	// Initialize bootstrap service if bootstrap options are provided
+	if options.BootstrapOptions != nil {
+		if err := server.InitBootstrapService(options.BootstrapOptions); err != nil {
+			// Log the error but continue - bootstrap service is optional
+			fmt.Printf("Warning: Failed to initialize bootstrap service: %v\n", err)
+		}
+	}
+
 	return server, nil
 }
 
@@ -147,7 +166,7 @@ func (s *ReplicationServiceServer) RegisterReplica(
 	default:
 		return nil, status.Error(codes.InvalidArgument, "invalid role")
 	}
-	
+
 	// Check if access control is enabled
 	if s.accessControl.IsEnabled() {
 		// For existing replicas, authenticate with token from metadata
@@ -155,13 +174,13 @@ func (s *ReplicationServiceServer) RegisterReplica(
 		if !ok {
 			return nil, status.Error(codes.Unauthenticated, "missing authentication metadata")
 		}
-		
+
 		tokens := md.Get("x-replica-token")
 		token := ""
 		if len(tokens) > 0 {
 			token = tokens[0]
 		}
-		
+
 		// Try to authenticate if not the first registration
 		existingReplicaErr := s.accessControl.AuthenticateReplica(req.ReplicaId, token)
 		if existingReplicaErr != nil && existingReplicaErr != transport.ErrAccessDenied {
@@ -172,9 +191,9 @@ func (s *ReplicationServiceServer) RegisterReplica(
 	// Register the replica
 	s.replicasMutex.Lock()
 	defer s.replicasMutex.Unlock()
-	
+
 	var replicaInfo *transport.ReplicaInfo
-	
+
 	// If already registered, update address and role
 	if replica, exists := s.replicas[req.ReplicaId]; exists {
 		// If access control is enabled, make sure replica is authorized for the requested role
@@ -188,12 +207,12 @@ func (s *ReplicationServiceServer) RegisterReplica(
 			} else {
 				requiredLevel = transport.AccessReadOnly
 			}
-			
+
 			if err := s.accessControl.AuthorizeReplicaAction(req.ReplicaId, requiredLevel); err != nil {
 				return nil, status.Error(codes.PermissionDenied, "not authorized for requested role")
 			}
 		}
-		
+
 		// Update existing replica
 		replica.Address = req.Address
 		replica.Role = role
@@ -203,25 +222,25 @@ func (s *ReplicationServiceServer) RegisterReplica(
 	} else {
 		// Create new replica info
 		replicaInfo = &transport.ReplicaInfo{
-			ID:      req.ReplicaId,
-			Address: req.Address,
-			Role:    role,
-			Status:  transport.StatusConnecting,
+			ID:       req.ReplicaId,
+			Address:  req.Address,
+			Role:     role,
+			Status:   transport.StatusConnecting,
 			LastSeen: time.Now(),
 		}
 		s.replicas[req.ReplicaId] = replicaInfo
-		
+
 		// For new replicas, register with access control
 		if s.accessControl.IsEnabled() {
 			// Generate or use token based on settings
 			token := ""
 			authMethod := s.accessControl.DefaultAuthMethod()
-			
+
 			if authMethod == transport.AuthToken {
 				// In a real system, we'd generate a secure random token
 				token = fmt.Sprintf("token-%s-%d", req.ReplicaId, time.Now().UnixNano())
 			}
-			
+
 			// Set appropriate access level based on role
 			var accessLevel transport.AccessLevel
 			if role == transport.RolePrimary {
@@ -231,7 +250,7 @@ func (s *ReplicationServiceServer) RegisterReplica(
 			} else {
 				accessLevel = transport.AccessReadOnly
 			}
-			
+
 			// Register replica credentials
 			creds := &transport.ReplicaCredentials{
 				ReplicaID:   req.ReplicaId,
@@ -239,11 +258,11 @@ func (s *ReplicationServiceServer) RegisterReplica(
 				Token:       token,
 				AccessLevel: accessLevel,
 			}
-			
+
 			if err := s.accessControl.RegisterReplica(creds); err != nil {
 				return nil, status.Errorf(codes.Internal, "failed to register credentials: %v", err)
 			}
-			
+
 			// Persist replica data with credentials
 			if s.persistence != nil && s.persistence.IsEnabled() {
 				if err := s.persistence.SaveReplica(replicaInfo, creds); err != nil {
@@ -253,7 +272,7 @@ func (s *ReplicationServiceServer) RegisterReplica(
 			}
 		}
 	}
-	
+
 	// Persist replica data without credentials for existing replicas
 	if s.persistence != nil && s.persistence.IsEnabled() {
 		if err := s.persistence.SaveReplica(replicaInfo, nil); err != nil {
@@ -267,6 +286,11 @@ func (s *ReplicationServiceServer) RegisterReplica(
 
 	// Return current highest LSN
 	currentLSN := s.replicator.GetHighestTimestamp()
+
+	// Update metrics with primary LSN
+	if s.metrics != nil {
+		s.metrics.UpdatePrimaryLSN(currentLSN)
+	}
 
 	return &kevo.RegisterReplicaResponse{
 		Success:           true,
@@ -291,17 +315,17 @@ func (s *ReplicationServiceServer) ReplicaHeartbeat(
 		if !ok {
 			return nil, status.Error(codes.Unauthenticated, "missing authentication metadata")
 		}
-		
+
 		tokens := md.Get("x-replica-token")
 		token := ""
 		if len(tokens) > 0 {
 			token = tokens[0]
 		}
-		
+
 		if err := s.accessControl.AuthenticateReplica(req.ReplicaId, token); err != nil {
 			return nil, status.Error(codes.Unauthenticated, "authentication failed")
 		}
-		
+
 		// Sending heartbeats requires at least read access
 		if err := s.accessControl.AuthorizeReplicaAction(req.ReplicaId, transport.AccessReadOnly); err != nil {
 			return nil, status.Error(codes.PermissionDenied, "not authorized to send heartbeats")
@@ -311,7 +335,7 @@ func (s *ReplicationServiceServer) ReplicaHeartbeat(
 	// Lock for updating replica info
 	s.replicasMutex.Lock()
 	defer s.replicasMutex.Unlock()
-	
+
 	replica, exists := s.replicas[req.ReplicaId]
 	if !exists {
 		return nil, status.Error(codes.NotFound, "replica not registered")
@@ -319,7 +343,7 @@ func (s *ReplicationServiceServer) ReplicaHeartbeat(
 
 	// Update replica status
 	replica.LastSeen = time.Now()
-	
+
 	// Convert status enum to string
 	switch req.Status {
 	case kevo.ReplicaStatus_CONNECTING:
@@ -352,13 +376,21 @@ func (s *ReplicationServiceServer) ReplicaHeartbeat(
 	}
 
 	replica.ReplicationLag = time.Duration(replicationLagMs) * time.Millisecond
-	
+
 	// Persist updated replica status if persistence is enabled
 	if s.persistence != nil && s.persistence.IsEnabled() {
 		if err := s.persistence.SaveReplica(replica, nil); err != nil {
 			// Log error but continue
 			fmt.Printf("Error persisting replica status: %v\n", err)
 		}
+	}
+
+	// Update metrics
+	if s.metrics != nil {
+		// Record the heartbeat
+		s.metrics.UpdateReplicaStatus(req.ReplicaId, replica.Status, replica.CurrentLSN)
+		// Make sure primary LSN is current
+		s.metrics.UpdatePrimaryLSN(primaryLSN)
 	}
 
 	return &kevo.ReplicaHeartbeatResponse{
@@ -381,7 +413,7 @@ func (s *ReplicationServiceServer) GetReplicaStatus(
 	// Get replica info
 	s.replicasMutex.RLock()
 	defer s.replicasMutex.RUnlock()
-	
+
 	replica, exists := s.replicas[req.ReplicaId]
 	if !exists {
 		return nil, status.Error(codes.NotFound, "replica not found")
@@ -402,7 +434,7 @@ func (s *ReplicationServiceServer) ListReplicas(
 ) (*kevo.ListReplicasResponse, error) {
 	s.replicasMutex.RLock()
 	defer s.replicasMutex.RUnlock()
-	
+
 	// Convert all replicas to proto messages
 	pbReplicas := make([]*kevo.ReplicaInfo, 0, len(s.replicas))
 	for _, replica := range s.replicas {
@@ -428,7 +460,7 @@ func (s *ReplicationServiceServer) GetWALEntries(
 	s.replicasMutex.RLock()
 	_, exists := s.replicas[req.ReplicaId]
 	s.replicasMutex.RUnlock()
-	
+
 	if !exists {
 		return nil, status.Error(codes.NotFound, "replica not registered")
 	}
@@ -458,7 +490,7 @@ func (s *ReplicationServiceServer) GetWALEntries(
 		LastLsn:  entries[len(entries)-1].SequenceNumber,
 		Count:    uint32(len(entries)),
 	}
-	
+
 	// Calculate batch checksum
 	pbBatch.Checksum = calculateBatchChecksum(pbBatch)
 
@@ -485,7 +517,7 @@ func (s *ReplicationServiceServer) StreamWALEntries(
 	s.replicasMutex.RLock()
 	_, exists := s.replicas[req.ReplicaId]
 	s.replicasMutex.RUnlock()
-	
+
 	if !exists {
 		return status.Error(codes.NotFound, "replica not registered")
 	}
@@ -539,8 +571,8 @@ func (s *ReplicationServiceServer) StreamWALEntries(
 			LastLsn:  entries[len(entries)-1].SequenceNumber,
 			Count:    uint32(len(entries)),
 		}
-			// Calculate batch checksum for integrity validation
-			pbBatch.Checksum = calculateBatchChecksum(pbBatch)
+		// Calculate batch checksum for integrity validation
+		pbBatch.Checksum = calculateBatchChecksum(pbBatch)
 
 		// Send batch
 		if err := stream.Send(pbBatch); err != nil {
@@ -587,118 +619,7 @@ func (s *ReplicationServiceServer) ReportAppliedEntries(
 	}, nil
 }
 
-// RequestBootstrap handles bootstrap requests from replicas
-func (s *ReplicationServiceServer) RequestBootstrap(
-	req *kevo.BootstrapRequest,
-	stream kevo.ReplicationService_RequestBootstrapServer,
-) error {
-	// Validate request
-	if req.ReplicaId == "" {
-		return status.Error(codes.InvalidArgument, "replica_id is required")
-	}
-
-	// Check if replica is registered
-	s.replicasMutex.RLock()
-	replica, exists := s.replicas[req.ReplicaId]
-	s.replicasMutex.RUnlock()
-	
-	if !exists {
-		return status.Error(codes.NotFound, "replica not registered")
-	}
-
-	// Update replica status
-	s.replicasMutex.Lock()
-	replica.Status = transport.StatusBootstrapping
-	s.replicasMutex.Unlock()
-
-	// Create snapshot of current data
-	snapshotLSN := s.replicator.GetHighestTimestamp()
-	iterator, err := s.storageSnapshot.CreateSnapshotIterator()
-	if err != nil {
-		s.replicasMutex.Lock()
-		replica.Status = transport.StatusError
-		replica.Error = err
-		s.replicasMutex.Unlock()
-		return status.Errorf(codes.Internal, "failed to create snapshot: %v", err)
-	}
-	defer iterator.Close()
-
-	// Stream key-value pairs in batches
-	batchSize := 100 // Can be configurable
-	totalCount := s.storageSnapshot.KeyCount()
-	sentCount := 0
-	batch := make([]*kevo.KeyValuePair, 0, batchSize)
-
-	for {
-		// Get next key-value pair
-		key, value, err := iterator.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			s.replicasMutex.Lock()
-			replica.Status = transport.StatusError
-			replica.Error = err
-			s.replicasMutex.Unlock()
-			return status.Errorf(codes.Internal, "error reading snapshot: %v", err)
-		}
-
-		// Add to batch
-		batch = append(batch, &kevo.KeyValuePair{
-			Key:   key,
-			Value: value,
-		})
-
-		// Send batch if full
-		if len(batch) >= batchSize {
-			progress := float32(sentCount) / float32(totalCount)
-			if err := stream.Send(&kevo.BootstrapBatch{
-				Pairs:       batch,
-				Progress:    progress,
-				IsLast:      false,
-				SnapshotLsn: snapshotLSN,
-			}); err != nil {
-				return err
-			}
-
-			// Reset batch and update count
-			sentCount += len(batch)
-			batch = batch[:0]
-		}
-	}
-
-	// Send final batch
-	if len(batch) > 0 {
-		sentCount += len(batch)
-		progress := float32(sentCount) / float32(totalCount)
-		if err := stream.Send(&kevo.BootstrapBatch{
-			Pairs:       batch,
-			Progress:    progress,
-			IsLast:      true,
-			SnapshotLsn: snapshotLSN,
-		}); err != nil {
-			return err
-		}
-	} else if sentCount > 0 {
-		// Send empty final batch to mark the end
-		if err := stream.Send(&kevo.BootstrapBatch{
-			Pairs:       []*kevo.KeyValuePair{},
-			Progress:    1.0,
-			IsLast:      true,
-			SnapshotLsn: snapshotLSN,
-		}); err != nil {
-			return err
-		}
-	}
-
-	// Update replica status
-	s.replicasMutex.Lock()
-	replica.Status = transport.StatusSyncing
-	replica.CurrentLSN = snapshotLSN
-	s.replicasMutex.Unlock()
-
-	return nil
-}
+// Legacy implementation moved to replication_service_bootstrap.go
 
 // Helper to convert replica info to proto message
 func convertReplicaInfoToProto(replica *transport.ReplicaInfo) *kevo.ReplicaInfo {
@@ -736,12 +657,12 @@ func convertReplicaInfoToProto(replica *transport.ReplicaInfo) *kevo.ReplicaInfo
 
 	// Create proto message
 	pbReplica := &kevo.ReplicaInfo{
-		ReplicaId:       replica.ID,
-		Address:         replica.Address,
-		Role:            pbRole,
-		Status:          pbStatus,
-		LastSeenMs:      replica.LastSeen.UnixMilli(),
-		CurrentLsn:      replica.CurrentLSN,
+		ReplicaId:        replica.ID,
+		Address:          replica.Address,
+		Role:             pbRole,
+		Status:           pbStatus,
+		LastSeenMs:       replica.LastSeen.UnixMilli(),
+		CurrentLsn:       replica.CurrentLSN,
 		ReplicationLagMs: replica.ReplicationLag.Milliseconds(),
 	}
 
@@ -761,7 +682,7 @@ func convertWALEntryToProto(entry *wal.Entry) *kevo.WALEntry {
 		Key:            entry.Key,
 		Value:          entry.Value,
 	}
-	
+
 	// Calculate checksum for data integrity
 	pbEntry.Checksum = calculateEntryChecksum(pbEntry)
 	return pbEntry
@@ -771,7 +692,7 @@ func convertWALEntryToProto(entry *wal.Entry) *kevo.WALEntry {
 func calculateEntryChecksum(entry *kevo.WALEntry) []byte {
 	// Create a checksum calculator
 	hasher := crc32.NewIEEE()
-	
+
 	// Write all fields to the hasher
 	binary.Write(hasher, binary.LittleEndian, entry.SequenceNumber)
 	binary.Write(hasher, binary.LittleEndian, entry.Type)
@@ -779,7 +700,7 @@ func calculateEntryChecksum(entry *kevo.WALEntry) []byte {
 	if entry.Value != nil {
 		hasher.Write(entry.Value)
 	}
-	
+
 	// Return the checksum as a byte slice
 	checksum := make([]byte, 4)
 	binary.LittleEndian.PutUint32(checksum, hasher.Sum32())
@@ -790,12 +711,12 @@ func calculateEntryChecksum(entry *kevo.WALEntry) []byte {
 func calculateBatchChecksum(batch *kevo.WALEntryBatch) []byte {
 	// Create a checksum calculator
 	hasher := crc32.NewIEEE()
-	
+
 	// Write batch metadata to the hasher
 	binary.Write(hasher, binary.LittleEndian, batch.FirstLsn)
 	binary.Write(hasher, binary.LittleEndian, batch.LastLsn)
 	binary.Write(hasher, binary.LittleEndian, batch.Count)
-	
+
 	// Write the checksum of each entry to the hasher
 	for _, entry := range batch.Entries {
 		// We're using entry checksums as part of the batch checksum
@@ -804,7 +725,7 @@ func calculateBatchChecksum(batch *kevo.WALEntryBatch) []byte {
 			hasher.Write(entry.Checksum)
 		}
 	}
-	
+
 	// Return the checksum as a byte slice
 	checksum := make([]byte, 4)
 	binary.LittleEndian.PutUint32(checksum, hasher.Sum32())
@@ -845,7 +766,7 @@ func (n *entryNotifier) ProcessBatch(entries []*wal.Entry) error {
 type StorageSnapshot interface {
 	// CreateSnapshotIterator creates an iterator for a storage snapshot
 	CreateSnapshotIterator() (SnapshotIterator, error)
-	
+
 	// KeyCount returns the approximate number of keys in storage
 	KeyCount() int64
 }
@@ -854,7 +775,7 @@ type StorageSnapshot interface {
 type SnapshotIterator interface {
 	// Next returns the next key-value pair
 	Next() (key []byte, value []byte, err error)
-	
+
 	// Close closes the iterator
 	Close() error
 }
@@ -863,12 +784,12 @@ type SnapshotIterator interface {
 func (s *ReplicationServiceServer) IsReplicaStale(replicaID string, threshold time.Duration) bool {
 	s.replicasMutex.RLock()
 	defer s.replicasMutex.RUnlock()
-	
+
 	replica, exists := s.replicas[replicaID]
 	if !exists {
 		return true // Consider non-existent replicas as stale
 	}
-	
+
 	// Check if the last seen time is older than the threshold
 	return time.Since(replica.LastSeen) > threshold
 }
@@ -877,15 +798,115 @@ func (s *ReplicationServiceServer) IsReplicaStale(replicaID string, threshold ti
 func (s *ReplicationServiceServer) DetectStaleReplicas(threshold time.Duration) []string {
 	s.replicasMutex.RLock()
 	defer s.replicasMutex.RUnlock()
-	
+
 	staleReplicas := make([]string, 0)
 	now := time.Now()
-	
+
 	for id, replica := range s.replicas {
 		if now.Sub(replica.LastSeen) > threshold {
 			staleReplicas = append(staleReplicas, id)
 		}
 	}
-	
+
 	return staleReplicas
+}
+
+// GetMetrics returns the current replication metrics
+func (s *ReplicationServiceServer) GetMetrics() map[string]interface{} {
+	if s.metrics == nil {
+		return map[string]interface{}{
+			"error": "metrics collection is not enabled",
+		}
+	}
+
+	// Get summary metrics
+	summary := s.metrics.GetSummaryMetrics()
+
+	// Add replica-specific metrics
+	replicaMetrics := s.metrics.GetAllReplicaMetrics()
+	replicasData := make(map[string]interface{})
+
+	for id, metrics := range replicaMetrics {
+		replicaData := map[string]interface{}{
+			"status":             string(metrics.Status),
+			"last_seen":          metrics.LastSeen.Format(time.RFC3339),
+			"replication_lag_ms": metrics.ReplicationLag.Milliseconds(),
+			"applied_lsn":        metrics.AppliedLSN,
+			"connected_duration": metrics.ConnectedDuration.String(),
+			"heartbeat_count":    metrics.HeartbeatCount,
+			"wal_entries_sent":   metrics.WALEntriesSent,
+			"bytes_sent":         metrics.BytesSent,
+			"error_count":        metrics.ErrorCount,
+		}
+
+		// Add bootstrap metrics if available
+		replicaData["bootstrap_count"] = metrics.BootstrapCount
+		if !metrics.LastBootstrapTime.IsZero() {
+			replicaData["last_bootstrap_time"] = metrics.LastBootstrapTime.Format(time.RFC3339)
+			replicaData["last_bootstrap_duration"] = metrics.LastBootstrapDuration.String()
+		}
+
+		replicasData[id] = replicaData
+	}
+
+	summary["replicas"] = replicasData
+
+	// Add bootstrap service status if available
+	if s.bootstrapService != nil {
+		summary["bootstrap"] = s.bootstrapService.getBootstrapStatus()
+	}
+
+	return summary
+}
+
+// GetReplicaMetrics returns metrics for a specific replica
+func (s *ReplicationServiceServer) GetReplicaMetrics(replicaID string) (map[string]interface{}, error) {
+	if s.metrics == nil {
+		return nil, fmt.Errorf("metrics collection is not enabled")
+	}
+
+	metrics, found := s.metrics.GetReplicaMetrics(replicaID)
+	if !found {
+		return nil, fmt.Errorf("no metrics found for replica %s", replicaID)
+	}
+
+	result := map[string]interface{}{
+		"status":             string(metrics.Status),
+		"last_seen":          metrics.LastSeen.Format(time.RFC3339),
+		"replication_lag_ms": metrics.ReplicationLag.Milliseconds(),
+		"applied_lsn":        metrics.AppliedLSN,
+		"connected_duration": metrics.ConnectedDuration.String(),
+		"heartbeat_count":    metrics.HeartbeatCount,
+		"wal_entries_sent":   metrics.WALEntriesSent,
+		"bytes_sent":         metrics.BytesSent,
+		"error_count":        metrics.ErrorCount,
+		"bootstrap_count":    metrics.BootstrapCount,
+	}
+
+	// Add bootstrap time/duration if available
+	if !metrics.LastBootstrapTime.IsZero() {
+		result["last_bootstrap_time"] = metrics.LastBootstrapTime.Format(time.RFC3339)
+		result["last_bootstrap_duration"] = metrics.LastBootstrapDuration.String()
+	}
+
+	// Add bootstrap progress if available
+	if s.bootstrapService != nil {
+		bootstrapStatus := s.bootstrapService.getBootstrapStatus()
+		if bootstrapStatus != nil {
+			if bootstrapState, ok := bootstrapStatus["bootstrap_state"].(map[string]interface{}); ok {
+				if bootstrapState["replica_id"] == replicaID {
+					result["bootstrap_progress"] = bootstrapState["progress"]
+					result["bootstrap_status"] = map[string]interface{}{
+						"started_at":   bootstrapState["started_at"],
+						"completed":    bootstrapState["completed"],
+						"applied_keys": bootstrapState["applied_keys"],
+						"total_keys":   bootstrapState["total_keys"],
+						"snapshot_lsn": bootstrapState["snapshot_lsn"],
+					}
+				}
+			}
+		}
+	}
+
+	return result, nil
 }

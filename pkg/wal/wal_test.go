@@ -377,8 +377,8 @@ func TestWALSyncModes(t *testing.T) {
 		syncMode        config.SyncMode
 		expectedEntries int // Expected number of entries after crash (without explicit sync)
 	}{
-		{"SyncNone", config.SyncNone, 0}, // No entries should be recovered without explicit sync
-		{"SyncBatch", config.SyncBatch, 0}, // No entries should be recovered if batch threshold not reached
+		{"SyncNone", config.SyncNone, 0},            // No entries should be recovered without explicit sync
+		{"SyncBatch", config.SyncBatch, 0},          // No entries should be recovered if batch threshold not reached
 		{"SyncImmediate", config.SyncImmediate, 10}, // All entries should be recovered
 	}
 
@@ -412,7 +412,7 @@ func TestWALSyncModes(t *testing.T) {
 			}
 
 			// Skip explicit sync to simulate a crash
-			
+
 			// Close the WAL
 			if err := wal.Close(); err != nil {
 				t.Fatalf("Failed to close WAL: %v", err)

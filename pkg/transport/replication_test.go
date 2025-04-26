@@ -10,7 +10,7 @@ import (
 
 // MockReplicationClient implements ReplicationClient for testing
 type MockReplicationClient struct {
-	connected          bool
+	connected           bool
 	registeredAsReplica bool
 	heartbeatSent       bool
 	walEntriesRequested bool
@@ -23,7 +23,7 @@ type MockReplicationClient struct {
 
 func NewMockReplicationClient() *MockReplicationClient {
 	return &MockReplicationClient{
-		connected:          false,
+		connected:           false,
 		registeredAsReplica: false,
 		heartbeatSent:       false,
 		walEntriesRequested: false,
@@ -114,11 +114,11 @@ func (it *MockBootstrapIterator) Next() ([]byte, []byte, error) {
 	if it.position >= len(it.pairs) {
 		return nil, nil, nil
 	}
-	
+
 	pair := it.pairs[it.position]
 	it.position++
 	it.progress = float64(it.position) / float64(len(it.pairs))
-	
+
 	return pair.key, pair.value, nil
 }
 
@@ -136,25 +136,25 @@ func (it *MockBootstrapIterator) Progress() float64 {
 func TestReplicationClientInterface(t *testing.T) {
 	// Create a mock client
 	client := NewMockReplicationClient()
-	
+
 	// Test Connect
 	ctx := context.Background()
 	err := client.Connect(ctx)
 	if err != nil {
 		t.Errorf("Connect failed: %v", err)
 	}
-	
+
 	// Test IsConnected
 	if !client.IsConnected() {
 		t.Errorf("Expected client to be connected")
 	}
-	
+
 	// Test Status
 	status := client.Status()
 	if !status.Connected {
 		t.Errorf("Expected status.Connected to be true")
 	}
-	
+
 	// Test RegisterAsReplica
 	err = client.RegisterAsReplica(ctx, "replica1")
 	if err != nil {
@@ -166,15 +166,15 @@ func TestReplicationClientInterface(t *testing.T) {
 	if client.replicaID != "replica1" {
 		t.Errorf("Expected replicaID to be 'replica1', got '%s'", client.replicaID)
 	}
-	
+
 	// Test SendHeartbeat
 	replicaInfo := &ReplicaInfo{
-		ID:            "replica1",
-		Address:       "localhost:50051",
-		Role:          RoleReplica,
-		Status:        StatusReady,
-		LastSeen:      time.Now(),
-		CurrentLSN:    100,
+		ID:             "replica1",
+		Address:        "localhost:50051",
+		Role:           RoleReplica,
+		Status:         StatusReady,
+		LastSeen:       time.Now(),
+		CurrentLSN:     100,
 		ReplicationLag: 0,
 	}
 	err = client.SendHeartbeat(ctx, replicaInfo)
@@ -184,7 +184,7 @@ func TestReplicationClientInterface(t *testing.T) {
 	if !client.heartbeatSent {
 		t.Errorf("Expected heartbeat to be sent")
 	}
-	
+
 	// Test RequestWALEntries
 	client.walEntries = []*wal.Entry{
 		{SequenceNumber: 101, Type: 1, Key: []byte("key1"), Value: []byte("value1")},
@@ -200,7 +200,7 @@ func TestReplicationClientInterface(t *testing.T) {
 	if len(entries) != 2 {
 		t.Errorf("Expected 2 entries, got %d", len(entries))
 	}
-	
+
 	// Test RequestBootstrap
 	client.bootstrapIterator = NewMockBootstrapIterator()
 	iterator, err := client.RequestBootstrap(ctx)
@@ -210,7 +210,7 @@ func TestReplicationClientInterface(t *testing.T) {
 	if !client.bootstrapRequested {
 		t.Errorf("Expected bootstrap to be requested")
 	}
-	
+
 	// Test iterator
 	key, value, err := iterator.Next()
 	if err != nil {
@@ -219,12 +219,12 @@ func TestReplicationClientInterface(t *testing.T) {
 	if string(key) != "key1" || string(value) != "value1" {
 		t.Errorf("Expected key1/value1, got %s/%s", string(key), string(value))
 	}
-	
+
 	progress := iterator.Progress()
 	if progress != 1.0/3.0 {
 		t.Errorf("Expected progress to be 1/3, got %f", progress)
 	}
-	
+
 	// Test Close
 	err = client.Close()
 	if err != nil {
@@ -233,7 +233,7 @@ func TestReplicationClientInterface(t *testing.T) {
 	if client.IsConnected() {
 		t.Errorf("Expected client to be disconnected")
 	}
-	
+
 	// Test iterator Close
 	err = iterator.Close()
 	if err != nil {
@@ -291,7 +291,7 @@ func (s *MockReplicationServer) UpdateReplicaStatus(replicaID string, status Rep
 	if !exists {
 		return ErrInvalidRequest
 	}
-	
+
 	replica.Status = status
 	replica.CurrentLSN = lsn
 	return nil
@@ -302,7 +302,7 @@ func (s *MockReplicationServer) GetReplicaInfo(replicaID string) (*ReplicaInfo, 
 	if !exists {
 		return nil, ErrInvalidRequest
 	}
-	
+
 	return replica, nil
 }
 
@@ -311,7 +311,7 @@ func (s *MockReplicationServer) ListReplicas() ([]*ReplicaInfo, error) {
 	for _, replica := range s.replicas {
 		result = append(result, replica)
 	}
-	
+
 	return result, nil
 }
 
@@ -320,7 +320,7 @@ func (s *MockReplicationServer) StreamWALEntriesToReplica(ctx context.Context, r
 	if !exists {
 		return ErrInvalidRequest
 	}
-	
+
 	s.streamingReplicas[replicaID] = true
 	return nil
 }
@@ -328,7 +328,7 @@ func (s *MockReplicationServer) StreamWALEntriesToReplica(ctx context.Context, r
 func TestReplicationServerInterface(t *testing.T) {
 	// Create a mock server
 	server := NewMockReplicationServer()
-	
+
 	// Test Start
 	err := server.Start()
 	if err != nil {
@@ -337,28 +337,28 @@ func TestReplicationServerInterface(t *testing.T) {
 	if !server.started {
 		t.Errorf("Expected server to be started")
 	}
-	
+
 	// Test RegisterReplica
 	replica1 := &ReplicaInfo{
-		ID:            "replica1",
-		Address:       "localhost:50051",
-		Role:          RoleReplica,
-		Status:        StatusConnecting,
-		LastSeen:      time.Now(),
-		CurrentLSN:    0,
+		ID:             "replica1",
+		Address:        "localhost:50051",
+		Role:           RoleReplica,
+		Status:         StatusConnecting,
+		LastSeen:       time.Now(),
+		CurrentLSN:     0,
 		ReplicationLag: 0,
 	}
 	err = server.RegisterReplica(replica1)
 	if err != nil {
 		t.Errorf("RegisterReplica failed: %v", err)
 	}
-	
+
 	// Test UpdateReplicaStatus
 	err = server.UpdateReplicaStatus("replica1", StatusReady, 100)
 	if err != nil {
 		t.Errorf("UpdateReplicaStatus failed: %v", err)
 	}
-	
+
 	// Test GetReplicaInfo
 	replica, err := server.GetReplicaInfo("replica1")
 	if err != nil {
@@ -370,7 +370,7 @@ func TestReplicationServerInterface(t *testing.T) {
 	if replica.CurrentLSN != 100 {
 		t.Errorf("Expected LSN to be 100, got %d", replica.CurrentLSN)
 	}
-	
+
 	// Test ListReplicas
 	replicas, err := server.ListReplicas()
 	if err != nil {
@@ -379,7 +379,7 @@ func TestReplicationServerInterface(t *testing.T) {
 	if len(replicas) != 1 {
 		t.Errorf("Expected 1 replica, got %d", len(replicas))
 	}
-	
+
 	// Test StreamWALEntriesToReplica
 	ctx := context.Background()
 	err = server.StreamWALEntriesToReplica(ctx, "replica1", 0)
@@ -389,7 +389,7 @@ func TestReplicationServerInterface(t *testing.T) {
 	if !server.streamingReplicas["replica1"] {
 		t.Errorf("Expected replica1 to be streaming")
 	}
-	
+
 	// Test Stop
 	err = server.Stop(ctx)
 	if err != nil {

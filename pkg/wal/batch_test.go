@@ -47,10 +47,10 @@ func TestBatchEncoding(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	cfg := createTestConfig()
-	
+
 	// Create a mock Lamport clock for the test
 	clock := &MockLamportClock{counter: 0}
-	
+
 	wal, err := NewWALWithReplication(cfg, dir, clock, nil)
 	if err != nil {
 		t.Fatalf("Failed to create WAL: %v", err)

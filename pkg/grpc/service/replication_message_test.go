@@ -178,17 +178,17 @@ func TestWALEntryRoundTrip(t *testing.T) {
 
 			// Verify fields were correctly converted
 			if pbEntry.SequenceNumber != tc.entry.SequenceNumber {
-				t.Errorf("SequenceNumber mismatch, expected: %d, got: %d", 
+				t.Errorf("SequenceNumber mismatch, expected: %d, got: %d",
 					tc.entry.SequenceNumber, pbEntry.SequenceNumber)
 			}
 
 			if pbEntry.Type != uint32(tc.entry.Type) {
-				t.Errorf("Type mismatch, expected: %d, got: %d", 
+				t.Errorf("Type mismatch, expected: %d, got: %d",
 					tc.entry.Type, pbEntry.Type)
 			}
 
 			if string(pbEntry.Key) != string(tc.entry.Key) {
-				t.Errorf("Key mismatch, expected: %s, got: %s", 
+				t.Errorf("Key mismatch, expected: %s, got: %s",
 					string(tc.entry.Key), string(pbEntry.Key))
 			}
 
@@ -199,7 +199,7 @@ func TestWALEntryRoundTrip(t *testing.T) {
 			}
 
 			if string(pbEntry.Value) != string(expectedValue) {
-				t.Errorf("Value mismatch, expected: %s, got: %s", 
+				t.Errorf("Value mismatch, expected: %s, got: %s",
 					string(expectedValue), string(pbEntry.Value))
 			}
 

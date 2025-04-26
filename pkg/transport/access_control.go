@@ -9,10 +9,10 @@ import (
 var (
 	// ErrAccessDenied indicates the replica is not authorized
 	ErrAccessDenied = errors.New("access denied")
-	
+
 	// ErrAuthenticationFailed indicates authentication failure
 	ErrAuthenticationFailed = errors.New("authentication failed")
-	
+
 	// ErrInvalidToken indicates an invalid or expired token
 	ErrInvalidToken = errors.New("invalid or expired token")
 )
@@ -23,7 +23,7 @@ type AuthMethod string
 const (
 	// AuthNone means no authentication required (not recommended for production)
 	AuthNone AuthMethod = "none"
-	
+
 	// AuthToken uses a pre-shared token for authentication
 	AuthToken AuthMethod = "token"
 )
@@ -34,24 +34,24 @@ type AccessLevel int
 const (
 	// AccessNone has no permissions
 	AccessNone AccessLevel = iota
-	
+
 	// AccessReadOnly can only read from the primary
 	AccessReadOnly
-	
+
 	// AccessReadWrite can read and receive updates from the primary
 	AccessReadWrite
-	
+
 	// AccessAdmin has full control including management operations
 	AccessAdmin
 )
 
 // ReplicaCredentials contains authentication information for a replica
 type ReplicaCredentials struct {
-	ReplicaID     string
-	AuthMethod    AuthMethod
-	Token         string      // Token for authentication (in a production system, this would be hashed)
-	AccessLevel   AccessLevel
-	ExpiresAt     time.Time   // Token expiration time (zero means no expiration)
+	ReplicaID   string
+	AuthMethod  AuthMethod
+	Token       string // Token for authentication (in a production system, this would be hashed)
+	AccessLevel AccessLevel
+	ExpiresAt   time.Time // Token expiration time (zero means no expiration)
 }
 
 // AccessController manages authentication and authorization for replicas
@@ -87,10 +87,10 @@ func (ac *AccessController) RegisterReplica(creds *ReplicaCredentials) error {
 		// If access control is disabled, we still register the replica but don't enforce controls
 		creds.AccessLevel = AccessAdmin
 	}
-	
+
 	ac.mu.Lock()
 	defer ac.mu.Unlock()
-	
+
 	// Store credentials (in a real system, we'd hash tokens here)
 	ac.credentials[creds.ReplicaID] = creds
 	return nil
@@ -100,7 +100,7 @@ func (ac *AccessController) RegisterReplica(creds *ReplicaCredentials) error {
 func (ac *AccessController) RemoveReplica(replicaID string) {
 	ac.mu.Lock()
 	defer ac.mu.Unlock()
-	
+
 	delete(ac.credentials, replicaID)
 }
 
@@ -109,32 +109,32 @@ func (ac *AccessController) AuthenticateReplica(replicaID, token string) error {
 	if !ac.enabled {
 		return nil // Authentication disabled
 	}
-	
+
 	ac.mu.RLock()
 	defer ac.mu.RUnlock()
-	
+
 	creds, exists := ac.credentials[replicaID]
 	if !exists {
 		return ErrAccessDenied
 	}
-	
+
 	// Check if credentials are expired
 	if !creds.ExpiresAt.IsZero() && time.Now().After(creds.ExpiresAt) {
 		return ErrInvalidToken
 	}
-	
+
 	// Authenticate based on method
 	switch creds.AuthMethod {
 	case AuthNone:
 		return nil // No authentication required
-		
+
 	case AuthToken:
 		// In a real system, we'd compare hashed tokens
 		if token != creds.Token {
 			return ErrAuthenticationFailed
 		}
 		return nil
-		
+
 	default:
 		return ErrAuthenticationFailed
 	}
@@ -145,20 +145,20 @@ func (ac *AccessController) AuthorizeReplicaAction(replicaID string, requiredLev
 	if !ac.enabled {
 		return nil // Authorization disabled
 	}
-	
+
 	ac.mu.RLock()
 	defer ac.mu.RUnlock()
-	
+
 	creds, exists := ac.credentials[replicaID]
 	if !exists {
 		return ErrAccessDenied
 	}
-	
+
 	// Check permissions
 	if creds.AccessLevel < requiredLevel {
 		return ErrAccessDenied
 	}
-	
+
 	return nil
 }
 
@@ -167,15 +167,15 @@ func (ac *AccessController) GetReplicaAccessLevel(replicaID string) (AccessLevel
 	if !ac.enabled {
 		return AccessAdmin, nil // If disabled, return highest access level
 	}
-	
+
 	ac.mu.RLock()
 	defer ac.mu.RUnlock()
-	
+
 	creds, exists := ac.credentials[replicaID]
 	if !exists {
 		return AccessNone, ErrAccessDenied
 	}
-	
+
 	return creds.AccessLevel, nil
 }
 
@@ -183,12 +183,12 @@ func (ac *AccessController) GetReplicaAccessLevel(replicaID string) (AccessLevel
 func (ac *AccessController) SetReplicaAccessLevel(replicaID string, level AccessLevel) error {
 	ac.mu.Lock()
 	defer ac.mu.Unlock()
-	
+
 	creds, exists := ac.credentials[replicaID]
 	if !exists {
 		return ErrAccessDenied
 	}
-	
+
 	creds.AccessLevel = level
 	return nil
 }

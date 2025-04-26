@@ -12,25 +12,25 @@ import (
 	"github.com/KevoDB/kevo/pkg/wal"
 	"github.com/KevoDB/kevo/proto/kevo"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/status"
 )
 
 // ReplicationGRPCClient implements the ReplicationClient interface using gRPC
 type ReplicationGRPCClient struct {
-	conn             *grpc.ClientConn
-	client           kevo.ReplicationServiceClient
-	endpoint         string
-	options          transport.TransportOptions
-	replicaID        string
-	status           transport.TransportStatus
-	applier          *replication.WALApplier
-	serializer       *replication.EntrySerializer
+	conn              *grpc.ClientConn
+	client            kevo.ReplicationServiceClient
+	endpoint          string
+	options           transport.TransportOptions
+	replicaID         string
+	status            transport.TransportStatus
+	applier           *replication.WALApplier
+	serializer        *replication.EntrySerializer
 	highestAppliedLSN uint64
-	currentLSN       uint64
-	mu               sync.RWMutex
-	
+	currentLSN        uint64
+	mu                sync.RWMutex
+
 	// Reliability components
 	circuitBreaker   *transport.CircuitBreaker
 	reconnectAttempt int
@@ -68,11 +68,11 @@ func NewReplicationGRPCClient(
 	cb := transport.NewCircuitBreaker(3, 5*time.Second)
 
 	return &ReplicationGRPCClient{
-		endpoint:    endpoint,
-		options:     options,
-		replicaID:   replicaID,
-		applier:     applier,
-		serializer:  serializer,
+		endpoint:   endpoint,
+		options:    options,
+		replicaID:  replicaID,
+		applier:    applier,
+		serializer: serializer,
 		status: transport.TransportStatus{
 			Connected:     false,
 			LastConnected: time.Time{},
@@ -132,9 +132,9 @@ func (c *ReplicationGRPCClient) Connect(ctx context.Context) error {
 		if err != nil {
 			c.logger.Error("Failed to connect to %s: %v", c.endpoint, err)
 			c.status.LastError = err
-			
+
 			// Classify error for retry logic
-			if status.Code(err) == codes.Unavailable || 
+			if status.Code(err) == codes.Unavailable ||
 				status.Code(err) == codes.DeadlineExceeded {
 				return transport.NewTemporaryError(err, true)
 			}
@@ -160,31 +160,31 @@ func (c *ReplicationGRPCClient) Connect(ctx context.Context) error {
 // Close closes the connection
 func (c *ReplicationGRPCClient) Close() error {
 	c.mu.Lock()
-	
+
 	// Mark as shutting down to prevent reconnection attempts
 	c.shuttingDown = true
-	
+
 	// Check if already closed
 	if c.conn == nil {
 		c.mu.Unlock()
 		return nil
 	}
-	
+
 	c.logger.Info("Closing connection to %s", c.endpoint)
-	
+
 	// Close the connection
 	err := c.conn.Close()
 	c.conn = nil
 	c.client = nil
 	c.status.Connected = false
-	
+
 	if err != nil {
 		c.status.LastError = err
 		c.logger.Error("Error closing connection: %v", err)
 		c.mu.Unlock()
 		return err
 	}
-	
+
 	c.mu.Unlock()
 	c.logger.Info("Connection to %s closed successfully", c.endpoint)
 	return nil
@@ -202,7 +202,7 @@ func (c *ReplicationGRPCClient) IsConnected() bool {
 	// Check actual connection state
 	state := c.conn.GetState()
 	isConnected := state == connectivity.Ready || state == connectivity.Idle
-	
+
 	// If we think we're connected but the connection is not ready or idle,
 	// update our status to reflect the actual state
 	if c.status.Connected && !isConnected {
@@ -212,7 +212,7 @@ func (c *ReplicationGRPCClient) IsConnected() bool {
 		c.status.Connected = false
 		c.mu.Unlock()
 		c.mu.RLock()
-		
+
 		// Start reconnection in a separate goroutine
 		if !c.shuttingDown {
 			go c.maybeReconnect()
@@ -290,7 +290,7 @@ func (c *ReplicationGRPCClient) RegisterAsReplica(ctx context.Context, replicaID
 			c.mu.Unlock()
 
 			// Classify error for retry logic
-			if status.Code(err) == codes.Unavailable || 
+			if status.Code(err) == codes.Unavailable ||
 				status.Code(err) == codes.DeadlineExceeded ||
 				status.Code(err) == codes.ResourceExhausted {
 				return transport.NewTemporaryError(err, true)
@@ -310,7 +310,7 @@ func (c *ReplicationGRPCClient) RegisterAsReplica(ctx context.Context, replicaID
 		c.currentLSN = resp.CurrentLsn
 		c.mu.Unlock()
 
-		c.logger.Info("Successfully registered as replica %s (current LSN: %d)", 
+		c.logger.Info("Successfully registered as replica %s (current LSN: %d)",
 			replicaID, resp.CurrentLsn)
 
 		return nil
@@ -381,7 +381,7 @@ func (c *ReplicationGRPCClient) SendHeartbeat(ctx context.Context, info *transpo
 			req.ErrorMessage = info.Error.Error()
 		}
 
-		c.logger.Debug("Sending heartbeat (LSN: %d, status: %s)", 
+		c.logger.Debug("Sending heartbeat (LSN: %d, status: %s)",
 			highestAppliedLSN, info.Status)
 
 		// Call the service with timeout
@@ -392,13 +392,13 @@ func (c *ReplicationGRPCClient) SendHeartbeat(ctx context.Context, info *transpo
 		resp, err := client.ReplicaHeartbeat(timeoutCtx, req)
 		if err != nil {
 			c.logger.Error("Failed to send heartbeat: %v", err)
-			
+
 			c.mu.Lock()
 			c.status.LastError = err
 			c.mu.Unlock()
 
 			// Classify error for retry logic
-			if status.Code(err) == codes.Unavailable || 
+			if status.Code(err) == codes.Unavailable ||
 				status.Code(err) == codes.DeadlineExceeded {
 				return transport.NewTemporaryError(err, true)
 			}
@@ -416,7 +416,7 @@ func (c *ReplicationGRPCClient) SendHeartbeat(ctx context.Context, info *transpo
 		c.currentLSN = resp.PrimaryLsn
 		c.mu.Unlock()
 
-		c.logger.Debug("Heartbeat successful (primary LSN: %d, lag: %dms)", 
+		c.logger.Debug("Heartbeat successful (primary LSN: %d, lag: %dms)",
 			resp.PrimaryLsn, resp.ReplicationLagMs)
 
 		return nil
@@ -467,9 +467,9 @@ func (c *ReplicationGRPCClient) RequestWALEntries(ctx context.Context, fromLSN u
 
 		// Create request
 		req := &kevo.GetWALEntriesRequest{
-			ReplicaId:   replicaID,
-			FromLsn:     fromLSN,
-			MaxEntries:  1000, // Configurable
+			ReplicaId:  replicaID,
+			FromLsn:    fromLSN,
+			MaxEntries: 1000, // Configurable
 		}
 
 		c.logger.Debug("Requesting WAL entries from LSN %d", fromLSN)
@@ -482,13 +482,13 @@ func (c *ReplicationGRPCClient) RequestWALEntries(ctx context.Context, fromLSN u
 		resp, err := client.GetWALEntries(timeoutCtx, req)
 		if err != nil {
 			c.logger.Error("Failed to request WAL entries: %v", err)
-			
+
 			c.mu.Lock()
 			c.status.LastError = err
 			c.mu.Unlock()
 
 			// Classify error for retry logic
-			if status.Code(err) == codes.Unavailable || 
+			if status.Code(err) == codes.Unavailable ||
 				status.Code(err) == codes.DeadlineExceeded ||
 				status.Code(err) == codes.ResourceExhausted {
 				return transport.NewTemporaryError(err, true)
@@ -575,13 +575,13 @@ func (c *ReplicationGRPCClient) RequestBootstrap(ctx context.Context) (transport
 		stream, err := client.RequestBootstrap(timeoutCtx, req)
 		if err != nil {
 			c.logger.Error("Failed to request bootstrap: %v", err)
-			
+
 			c.mu.Lock()
 			c.status.LastError = err
 			c.mu.Unlock()
 
 			// Classify error for retry logic
-			if status.Code(err) == codes.Unavailable || 
+			if status.Code(err) == codes.Unavailable ||
 				status.Code(err) == codes.DeadlineExceeded {
 				return transport.NewTemporaryError(err, true)
 			}
@@ -671,13 +671,13 @@ func (c *ReplicationGRPCClient) StartReplicationStream(ctx context.Context) erro
 		stream, err := client.StreamWALEntries(timeoutCtx, req)
 		if err != nil {
 			c.logger.Error("Failed to start replication stream: %v", err)
-			
+
 			c.mu.Lock()
 			c.status.LastError = err
 			c.mu.Unlock()
 
 			// Classify error for retry logic
-			if status.Code(err) == codes.Unavailable || 
+			if status.Code(err) == codes.Unavailable ||
 				status.Code(err) == codes.DeadlineExceeded {
 				return transport.NewTemporaryError(err, true)
 			}
@@ -716,10 +716,10 @@ func (c *ReplicationGRPCClient) StartReplicationStream(ctx context.Context) erro
 // processWALStream handles the incoming WAL entry stream
 func (c *ReplicationGRPCClient) processWALStream(ctx context.Context, stream kevo.ReplicationService_StreamWALEntriesClient) {
 	c.logger.Info("Starting WAL stream processor")
-	
+
 	// Track consecutive errors for backoff
 	consecutiveErrors := 0
-	
+
 	for {
 		// Check if context is cancelled or client is shutting down
 		select {
@@ -729,7 +729,7 @@ func (c *ReplicationGRPCClient) processWALStream(ctx context.Context, stream kev
 		default:
 			// Continue processing
 		}
-		
+
 		if c.shuttingDown {
 			c.logger.Info("WAL stream processor stopped: client shutting down")
 			return
@@ -739,34 +739,34 @@ func (c *ReplicationGRPCClient) processWALStream(ctx context.Context, stream kev
 		_, cancel := context.WithTimeout(ctx, c.options.Timeout)
 		batch, err := stream.Recv()
 		cancel()
-		
+
 		if err == io.EOF {
 			// Stream completed normally
 			c.logger.Info("WAL stream completed normally")
 			return
 		}
-		
+
 		if err != nil {
 			// Stream error
 			c.mu.Lock()
 			c.status.LastError = err
 			c.mu.Unlock()
-			
+
 			c.logger.Error("Error receiving from WAL stream: %v", err)
-			
+
 			// Check for connection loss
-			if status.Code(err) == codes.Unavailable || 
+			if status.Code(err) == codes.Unavailable ||
 				status.Code(err) == codes.DeadlineExceeded ||
 				!c.IsConnected() {
-				
+
 				// Handle connection error
 				c.handleConnectionError(err)
-				
+
 				// Try to restart the stream after a delay
 				consecutiveErrors++
 				backoff := calculateBackoff(consecutiveErrors, c.options.RetryPolicy)
 				c.logger.Info("Will attempt to restart stream in %v", backoff)
-				
+
 				// Sleep with context awareness
 				select {
 				case <-ctx.Done():
@@ -774,7 +774,7 @@ func (c *ReplicationGRPCClient) processWALStream(ctx context.Context, stream kev
 				case <-time.After(backoff):
 					// Continue and try to restart stream
 				}
-				
+
 				// Try to restart the stream
 				if !c.shuttingDown {
 					c.logger.Info("Attempting to restart replication stream")
@@ -786,24 +786,24 @@ func (c *ReplicationGRPCClient) processWALStream(ctx context.Context, stream kev
 						}
 					}()
 				}
-				
+
 				return
 			}
-			
+
 			// Other error, try to continue with a short delay
 			time.Sleep(100 * time.Millisecond)
 			continue
 		}
-		
+
 		// Reset consecutive errors on successful receive
 		consecutiveErrors = 0
-		
+
 		// No entries in batch, continue
 		if len(batch.Entries) == 0 {
 			continue
 		}
 
-		c.logger.Debug("Received WAL batch with %d entries (LSN range: %d-%d)", 
+		c.logger.Debug("Received WAL batch with %d entries (LSN range: %d-%d)",
 			len(batch.Entries), batch.FirstLsn, batch.LastLsn)
 
 		// Process entries in batch
@@ -826,7 +826,7 @@ func (c *ReplicationGRPCClient) processWALStream(ctx context.Context, stream kev
 				c.mu.Lock()
 				c.status.LastError = err
 				c.mu.Unlock()
-				
+
 				// Short delay before continuing
 				time.Sleep(100 * time.Millisecond)
 				continue
@@ -837,7 +837,7 @@ func (c *ReplicationGRPCClient) processWALStream(ctx context.Context, stream kev
 			c.highestAppliedLSN = batch.LastLsn
 			c.mu.Unlock()
 
-			c.logger.Debug("Applied %d WAL entries, new highest LSN: %d", 
+			c.logger.Debug("Applied %d WAL entries, new highest LSN: %d",
 				len(entries), batch.LastLsn)
 
 			// Report applied entries asynchronously
@@ -848,7 +848,7 @@ func (c *ReplicationGRPCClient) processWALStream(ctx context.Context, stream kev
 
 // reportAppliedEntries reports the highest applied LSN to the primary
 func (c *ReplicationGRPCClient) reportAppliedEntries(ctx context.Context, appliedLSN uint64) {
-	// Check if we're connected 
+	// Check if we're connected
 	if !c.IsConnected() {
 		c.logger.Debug("Not connected, skipping report of applied entries")
 		return
@@ -873,8 +873,8 @@ func (c *ReplicationGRPCClient) reportAppliedEntries(ctx context.Context, applie
 
 		// Create request
 		req := &kevo.ReportAppliedEntriesRequest{
-			ReplicaId:   replicaID,
-			AppliedLsn:  appliedLSN,
+			ReplicaId:  replicaID,
+			AppliedLsn: appliedLSN,
 		}
 
 		c.logger.Debug("Reporting applied entries (LSN: %d)", appliedLSN)
@@ -887,13 +887,13 @@ func (c *ReplicationGRPCClient) reportAppliedEntries(ctx context.Context, applie
 		_, err := client.ReportAppliedEntries(timeoutCtx, req)
 		if err != nil {
 			c.logger.Debug("Failed to report applied entries: %v", err)
-			
+
 			c.mu.Lock()
 			c.status.LastError = err
 			c.mu.Unlock()
 
 			// Classify error for retry logic
-			if status.Code(err) == codes.Unavailable || 
+			if status.Code(err) == codes.Unavailable ||
 				status.Code(err) == codes.DeadlineExceeded {
 				return transport.NewTemporaryError(err, true)
 			}

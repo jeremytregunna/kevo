@@ -60,7 +60,7 @@ func TestEntrySerializer(t *testing.T) {
 
 			// Compare entries
 			if result.SequenceNumber != tc.entry.SequenceNumber {
-				t.Errorf("Expected sequence number %d, got %d", 
+				t.Errorf("Expected sequence number %d, got %d",
 					tc.entry.SequenceNumber, result.SequenceNumber)
 			}
 
@@ -138,11 +138,11 @@ func TestEntrySerializerInvalidFormat(t *testing.T) {
 	data[offset] = wal.OpTypePut // type
 	offset++
 	binary.LittleEndian.PutUint32(data[offset:offset+4], 1000) // key length (too large)
-	
+
 	// Calculate a valid checksum for this data
 	checksum := crc32.ChecksumIEEE(data[4:])
 	binary.LittleEndian.PutUint32(data[0:4], checksum)
-	
+
 	_, err = serializer.DeserializeEntry(data)
 	if err != ErrInvalidFormat {
 		t.Errorf("Expected format error for invalid key length, got %v", err)
@@ -314,7 +314,7 @@ func TestEstimateEntrySize(t *testing.T) {
 			serializer := NewEntrySerializer()
 			data := serializer.SerializeEntry(tc.entry)
 			if len(data) != size {
-				t.Errorf("Estimated size %d doesn't match actual size %d", 
+				t.Errorf("Estimated size %d doesn't match actual size %d",
 					size, len(data))
 			}
 		})
@@ -358,7 +358,7 @@ func TestEstimateBatchSize(t *testing.T) {
 			serializer := NewBatchSerializer()
 			data := serializer.SerializeBatch(tc.entries)
 			if len(data) != size {
-				t.Errorf("Estimated size %d doesn't match actual size %d", 
+				t.Errorf("Estimated size %d doesn't match actual size %d",
 					size, len(data))
 			}
 		})
@@ -367,7 +367,7 @@ func TestEstimateBatchSize(t *testing.T) {
 
 func TestSerializeToBuffer(t *testing.T) {
 	serializer := NewEntrySerializer()
-	
+
 	// Create a test entry
 	entry := &wal.Entry{
 		SequenceNumber: 101,
@@ -375,33 +375,33 @@ func TestSerializeToBuffer(t *testing.T) {
 		Key:            []byte("key1"),
 		Value:          []byte("value1"),
 	}
-	
+
 	// Estimate the size
 	estimatedSize := EstimateEntrySize(entry)
-	
+
 	// Create a buffer of the estimated size
 	buffer := make([]byte, estimatedSize)
-	
+
 	// Serialize to buffer
 	n, err := serializer.SerializeEntryToBuffer(entry, buffer)
 	if err != nil {
 		t.Fatalf("Error serializing to buffer: %v", err)
 	}
-	
+
 	// Check bytes written
 	if n != estimatedSize {
 		t.Errorf("Expected %d bytes written, got %d", estimatedSize, n)
 	}
-	
+
 	// Verify by deserializing
 	result, err := serializer.DeserializeEntry(buffer)
 	if err != nil {
 		t.Fatalf("Error deserializing from buffer: %v", err)
 	}
-	
+
 	// Check result
 	if result.SequenceNumber != entry.SequenceNumber {
-		t.Errorf("Expected sequence number %d, got %d", 
+		t.Errorf("Expected sequence number %d, got %d",
 			entry.SequenceNumber, result.SequenceNumber)
 	}
 	if !bytes.Equal(result.Key, entry.Key) {
@@ -410,9 +410,9 @@ func TestSerializeToBuffer(t *testing.T) {
 	if !bytes.Equal(result.Value, entry.Value) {
 		t.Errorf("Expected value %q, got %q", entry.Value, result.Value)
 	}
-	
+
 	// Test with too small buffer
-	smallBuffer := make([]byte, estimatedSize - 1)
+	smallBuffer := make([]byte, estimatedSize-1)
 	_, err = serializer.SerializeEntryToBuffer(entry, smallBuffer)
 	if err != ErrBufferTooSmall {
 		t.Errorf("Expected buffer too small error, got %v", err)

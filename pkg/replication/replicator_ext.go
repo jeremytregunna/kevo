@@ -7,7 +7,7 @@ package replication
 func (r *WALReplicator) processorIndex(target EntryProcessor) int {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	
+
 	for i, p := range r.processors {
 		if p == target {
 			return i

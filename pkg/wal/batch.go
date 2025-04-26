@@ -153,7 +153,7 @@ func (b *Batch) Write(w *WAL) error {
 		// Increment sequence for future operations
 		w.nextSequence += uint64(len(b.Operations))
 	}
-	
+
 	b.Seq = seqNum
 	binary.LittleEndian.PutUint64(data[4:12], b.Seq)
 

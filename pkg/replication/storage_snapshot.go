@@ -9,7 +9,7 @@ import (
 type StorageSnapshot interface {
 	// CreateSnapshotIterator creates an iterator for a storage snapshot
 	CreateSnapshotIterator() (SnapshotIterator, error)
-	
+
 	// KeyCount returns the approximate number of keys in storage
 	KeyCount() int64
 }
@@ -19,7 +19,7 @@ type SnapshotIterator interface {
 	// Next returns the next key-value pair
 	// Returns io.EOF when there are no more items
 	Next() (key []byte, value []byte, err error)
-	
+
 	// Close closes the iterator
 	Close() error
 }
@@ -33,8 +33,8 @@ type StorageSnapshotProvider interface {
 // MemoryStorageSnapshot is a simple in-memory implementation of StorageSnapshot
 // Useful for testing or small datasets
 type MemoryStorageSnapshot struct {
-	Pairs     []KeyValuePair
-	position  int
+	Pairs    []KeyValuePair
+	position int
 }
 
 // KeyValuePair represents a key-value pair in storage
@@ -67,10 +67,10 @@ func (it *MemorySnapshotIterator) Next() ([]byte, []byte, error) {
 	if it.position >= len(it.snapshot.Pairs) {
 		return nil, nil, io.EOF
 	}
-	
+
 	pair := it.snapshot.Pairs[it.position]
 	it.position++
-	
+
 	return pair.Key, pair.Value, nil
 }
 

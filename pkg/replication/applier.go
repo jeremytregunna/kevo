@@ -258,11 +258,11 @@ func (a *WALApplier) ResetHighestApplied(value uint64) {
 func (a *WALApplier) HasEntry(timestamp uint64) bool {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
-	
+
 	if timestamp <= a.highestApplied {
 		return true
 	}
-	
+
 	_, exists := a.pendingEntries[timestamp]
 	return exists
 }

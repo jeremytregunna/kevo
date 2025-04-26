@@ -12,35 +12,43 @@ import (
 
 // ReplicationGRPCServer implements the ReplicationServer interface using gRPC
 type ReplicationGRPCServer struct {
-	transportManager *GRPCTransportManager
+	transportManager   *GRPCTransportManager
 	replicationService *service.ReplicationServiceServer
-	options         transport.TransportOptions
-	replicas        map[string]*transport.ReplicaInfo
-	mu              sync.RWMutex
+	options            transport.TransportOptions
+	replicas           map[string]*transport.ReplicaInfo
+	mu                 sync.RWMutex
 }
 
 // NewReplicationGRPCServer creates a new ReplicationGRPCServer
 func NewReplicationGRPCServer(
 	transportManager *GRPCTransportManager,
-	replicator *replication.WALReplicator,
-	applier *replication.WALApplier,
+	replicator replication.EntryReplicator,
+	applier replication.EntryApplier,
 	serializer *replication.EntrySerializer,
 	storageSnapshot replication.StorageSnapshot,
 	options transport.TransportOptions,
 ) (*ReplicationGRPCServer, error) {
+	// Create replication service options with default settings
+	serviceOptions := service.DefaultReplicationServiceOptions()
+
 	// Create replication service
-	replicationService := service.NewReplicationService(
+	replicationService, err := service.NewReplicationService(
 		replicator,
 		applier,
 		serializer,
 		storageSnapshot,
+		serviceOptions,
 	)
 
+	if err != nil {
+		return nil, fmt.Errorf("failed to create replication service: %w", err)
+	}
+
 	return &ReplicationGRPCServer{
-		transportManager:    transportManager,
-		replicationService:  replicationService,
-		options:             options,
-		replicas:            make(map[string]*transport.ReplicaInfo),
+		transportManager:   transportManager,
+		replicationService: replicationService,
+		options:            options,
+		replicas:           make(map[string]*transport.ReplicaInfo),
 	}, nil
 }
 
@@ -85,7 +93,7 @@ func (s *ReplicationGRPCServer) SetRequestHandler(handler transport.RequestHandl
 func (s *ReplicationGRPCServer) RegisterReplica(replicaInfo *transport.ReplicaInfo) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	s.replicas[replicaInfo.ID] = replicaInfo
 	return nil
 }
@@ -94,12 +102,12 @@ func (s *ReplicationGRPCServer) RegisterReplica(replicaInfo *transport.ReplicaIn
 func (s *ReplicationGRPCServer) UpdateReplicaStatus(replicaID string, status transport.ReplicaStatus, lsn uint64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	replica, exists := s.replicas[replicaID]
 	if !exists {
 		return fmt.Errorf("replica not found: %s", replicaID)
 	}
-	
+
 	replica.Status = status
 	replica.CurrentLSN = lsn
 	return nil
@@ -109,12 +117,12 @@ func (s *ReplicationGRPCServer) UpdateReplicaStatus(replicaID string, status tra
 func (s *ReplicationGRPCServer) GetReplicaInfo(replicaID string) (*transport.ReplicaInfo, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	
+
 	replica, exists := s.replicas[replicaID]
 	if !exists {
 		return nil, fmt.Errorf("replica not found: %s", replicaID)
 	}
-	
+
 	return replica, nil
 }
 
@@ -122,12 +130,12 @@ func (s *ReplicationGRPCServer) GetReplicaInfo(replicaID string) (*transport.Rep
 func (s *ReplicationGRPCServer) ListReplicas() ([]*transport.ReplicaInfo, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	
+
 	result := make([]*transport.ReplicaInfo, 0, len(s.replicas))
 	for _, replica := range s.replicas {
 		result = append(result, replica)
 	}
-	
+
 	return result, nil
 }
 
@@ -147,7 +155,7 @@ func init() {
 			ConnectionTimeout: options.Timeout,
 			DialTimeout:       options.Timeout,
 		}
-		
+
 		// Add TLS configuration if enabled
 		if options.TLSEnabled {
 			tlsConfig, err := LoadServerTLSConfig(options.CertFile, options.KeyFile, options.CAFile)
@@ -156,13 +164,13 @@ func init() {
 			}
 			grpcOptions.TLSConfig = tlsConfig
 		}
-		
+
 		// Create transport manager
 		manager, err := NewGRPCTransportManager(grpcOptions)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create gRPC transport manager: %w", err)
 		}
-		
+
 		// For registration, we return a placeholder that will be properly initialized
 		// by the caller with the required components
 		return &ReplicationGRPCServer{
@@ -171,7 +179,7 @@ func init() {
 			replicas:         make(map[string]*transport.ReplicaInfo),
 		}, nil
 	})
-	
+
 	// Register replication client factory
 	transport.RegisterReplicationClientTransport("grpc", func(endpoint string, options transport.TransportOptions) (transport.ReplicationClient, error) {
 		// For registration, we return a placeholder that will be properly initialized
@@ -185,16 +193,29 @@ func init() {
 
 // WithReplicator adds a replicator to the replication server
 func (s *ReplicationGRPCServer) WithReplicator(
-	replicator *replication.WALReplicator,
-	applier *replication.WALApplier,
+	replicator replication.EntryReplicator,
+	applier replication.EntryApplier,
 	serializer *replication.EntrySerializer,
 	storageSnapshot replication.StorageSnapshot,
 ) *ReplicationGRPCServer {
-	s.replicationService = service.NewReplicationService(
+	// Create replication service options with default settings
+	serviceOptions := service.DefaultReplicationServiceOptions()
+
+	// Create replication service
+	replicationService, err := service.NewReplicationService(
 		replicator,
 		applier,
 		serializer,
 		storageSnapshot,
+		serviceOptions,
 	)
+
+	if err != nil {
+		// Log error but continue with nil service
+		fmt.Printf("Error creating replication service: %v\n", err)
+		return s
+	}
+
+	s.replicationService = replicationService
 	return s
 }

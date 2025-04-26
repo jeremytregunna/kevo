@@ -7,9 +7,9 @@ import (
 
 // registry implements the Registry interface
 type registry struct {
-	mu                      sync.RWMutex
-	clientFactories         map[string]ClientFactory
-	serverFactories         map[string]ServerFactory
+	mu                         sync.RWMutex
+	clientFactories            map[string]ClientFactory
+	serverFactories            map[string]ServerFactory
 	replicationClientFactories map[string]ReplicationClientFactory
 	replicationServerFactories map[string]ReplicationServerFactory
 }
@@ -17,8 +17,8 @@ type registry struct {
 // NewRegistry creates a new transport registry
 func NewRegistry() Registry {
 	return &registry{
-		clientFactories: make(map[string]ClientFactory),
-		serverFactories: make(map[string]ServerFactory),
+		clientFactories:            make(map[string]ClientFactory),
+		serverFactories:            make(map[string]ServerFactory),
 		replicationClientFactories: make(map[string]ReplicationClientFactory),
 		replicationServerFactories: make(map[string]ReplicationServerFactory),
 	}

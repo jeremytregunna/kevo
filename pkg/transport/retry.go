@@ -129,14 +129,14 @@ func (cb *CircuitBreaker) Execute(ctx context.Context, fn RetryableFunc) error {
 
 	// Execute the function
 	err := fn(ctx)
-	
+
 	// Handle result
 	if err != nil {
 		// Record failure
 		cb.recordFailure()
 		return err
 	}
-	
+
 	// Record success
 	cb.recordSuccess()
 	return nil
@@ -163,7 +163,7 @@ func (cb *CircuitBreaker) Reset() {
 // recordFailure records a failure and potentially opens the circuit
 func (cb *CircuitBreaker) recordFailure() {
 	cb.lastFailure = time.Now()
-	
+
 	switch cb.state {
 	case CircuitClosed:
 		cb.failureCount++
