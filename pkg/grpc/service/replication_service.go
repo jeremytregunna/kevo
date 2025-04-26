@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"sync"
 	"time"
@@ -259,6 +261,9 @@ func (s *ReplicationServiceServer) GetWALEntries(
 		LastLsn:  entries[len(entries)-1].SequenceNumber,
 		Count:    uint32(len(entries)),
 	}
+	
+	// Calculate batch checksum
+	pbBatch.Checksum = calculateBatchChecksum(pbBatch)
 
 	// Check if there are more entries
 	hasMore := s.replicator.GetHighestTimestamp() > entries[len(entries)-1].SequenceNumber
@@ -337,6 +342,8 @@ func (s *ReplicationServiceServer) StreamWALEntries(
 			LastLsn:  entries[len(entries)-1].SequenceNumber,
 			Count:    uint32(len(entries)),
 		}
+			// Calculate batch checksum for integrity validation
+			pbBatch.Checksum = calculateBatchChecksum(pbBatch)
 
 		// Send batch
 		if err := stream.Send(pbBatch); err != nil {
@@ -551,14 +558,60 @@ func convertReplicaInfoToProto(replica *transport.ReplicaInfo) *kevo.ReplicaInfo
 
 // Convert WAL entry to proto message
 func convertWALEntryToProto(entry *wal.Entry) *kevo.WALEntry {
-	return &kevo.WALEntry{
+	pbEntry := &kevo.WALEntry{
 		SequenceNumber: entry.SequenceNumber,
 		Type:           uint32(entry.Type),
 		Key:            entry.Key,
 		Value:          entry.Value,
-		// We'd normally calculate a checksum here
-		Checksum:       nil,
 	}
+	
+	// Calculate checksum for data integrity
+	pbEntry.Checksum = calculateEntryChecksum(pbEntry)
+	return pbEntry
+}
+
+// calculateEntryChecksum calculates a CRC32 checksum for a WAL entry
+func calculateEntryChecksum(entry *kevo.WALEntry) []byte {
+	// Create a checksum calculator
+	hasher := crc32.NewIEEE()
+	
+	// Write all fields to the hasher
+	binary.Write(hasher, binary.LittleEndian, entry.SequenceNumber)
+	binary.Write(hasher, binary.LittleEndian, entry.Type)
+	hasher.Write(entry.Key)
+	if entry.Value != nil {
+		hasher.Write(entry.Value)
+	}
+	
+	// Return the checksum as a byte slice
+	checksum := make([]byte, 4)
+	binary.LittleEndian.PutUint32(checksum, hasher.Sum32())
+	return checksum
+}
+
+// calculateBatchChecksum calculates a CRC32 checksum for a WAL entry batch
+func calculateBatchChecksum(batch *kevo.WALEntryBatch) []byte {
+	// Create a checksum calculator
+	hasher := crc32.NewIEEE()
+	
+	// Write batch metadata to the hasher
+	binary.Write(hasher, binary.LittleEndian, batch.FirstLsn)
+	binary.Write(hasher, binary.LittleEndian, batch.LastLsn)
+	binary.Write(hasher, binary.LittleEndian, batch.Count)
+	
+	// Write the checksum of each entry to the hasher
+	for _, entry := range batch.Entries {
+		// We're using entry checksums as part of the batch checksum
+		// to avoid recalculating entry data
+		if entry.Checksum != nil {
+			hasher.Write(entry.Checksum)
+		}
+	}
+	
+	// Return the checksum as a byte slice
+	checksum := make([]byte, 4)
+	binary.LittleEndian.PutUint32(checksum, hasher.Sum32())
+	return checksum
 }
 
 // entryNotifier is a helper struct that implements replication.EntryProcessor
