@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package kevo;
 
-option go_package = "github.com/jeremytregunna/kevo/pkg/grpc/proto;proto";
+option go_package = "github.com/KevoDB/kevo/proto/kevo";
 
 service KevoService {
   // Key-Value Operations

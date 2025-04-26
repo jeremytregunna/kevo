@@ -4,7 +4,7 @@
 // - protoc             v3.20.3
 // source: proto/kevo/service.proto
 
-package proto
+package kevo
 
 import (
 	context "context"
