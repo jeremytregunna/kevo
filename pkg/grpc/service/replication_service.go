@@ -14,6 +14,7 @@ import (
 	"github.com/KevoDB/kevo/pkg/wal"
 	"github.com/KevoDB/kevo/proto/kevo"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
@@ -31,6 +32,35 @@ type ReplicationServiceServer struct {
 
 	// For snapshot/bootstrap
 	storageSnapshot replication.StorageSnapshot
+	
+	// Access control and persistence
+	accessControl *transport.AccessController
+	persistence   *transport.ReplicaPersistence
+}
+
+// ReplicationServiceOptions contains configuration for the replication service
+type ReplicationServiceOptions struct {
+	// Data directory for persisting replica information
+	DataDir string
+	
+	// Whether to enable access control
+	EnableAccessControl bool
+	
+	// Whether to enable persistence
+	EnablePersistence bool
+	
+	// Default authentication method
+	DefaultAuthMethod transport.AuthMethod
+}
+
+// DefaultReplicationServiceOptions returns sensible defaults
+func DefaultReplicationServiceOptions() *ReplicationServiceOptions {
+	return &ReplicationServiceOptions{
+		DataDir:            "./replication-data",
+		EnableAccessControl: false,  // Disabled by default for backward compatibility
+		EnablePersistence:   false,  // Disabled by default for backward compatibility
+		DefaultAuthMethod:   transport.AuthNone,
+	}
 }
 
 // NewReplicationService creates a new ReplicationService
@@ -39,14 +69,57 @@ func NewReplicationService(
 	applier *replication.WALApplier,
 	serializer *replication.EntrySerializer,
 	storageSnapshot replication.StorageSnapshot,
-) *ReplicationServiceServer {
-	return &ReplicationServiceServer{
+	options *ReplicationServiceOptions,
+) (*ReplicationServiceServer, error) {
+	if options == nil {
+		options = DefaultReplicationServiceOptions()
+	}
+	
+	// Create access controller
+	accessControl := transport.NewAccessController(
+		options.EnableAccessControl,
+		options.DefaultAuthMethod,
+	)
+	
+	// Create persistence manager
+	persistence, err := transport.NewReplicaPersistence(
+		options.DataDir, 
+		options.EnablePersistence,
+		true, // Auto-save
+	)
+	if err != nil && options.EnablePersistence {
+		return nil, fmt.Errorf("failed to initialize replica persistence: %w", err)
+	}
+	
+	server := &ReplicationServiceServer{
 		replicator:      replicator,
 		applier:         applier,
 		serializer:      serializer,
 		replicas:        make(map[string]*transport.ReplicaInfo),
 		storageSnapshot: storageSnapshot,
+		accessControl:   accessControl,
+		persistence:     persistence,
 	}
+	
+	// Load persisted replica data if persistence is enabled
+	if options.EnablePersistence && persistence != nil {
+		infoMap, credsMap, err := persistence.GetAllReplicas()
+		if err != nil {
+			return nil, fmt.Errorf("failed to load persisted replicas: %w", err)
+		}
+		
+		// Restore replicas and credentials
+		for id, info := range infoMap {
+			server.replicas[id] = info
+			
+			// Register credentials
+			if creds, exists := credsMap[id]; exists && options.EnableAccessControl {
+				accessControl.RegisterReplica(creds)
+			}
+		}
+	}
+	
+	return server, nil
 }
 
 // RegisterReplica handles registration of a new replica
@@ -74,25 +147,118 @@ func (s *ReplicationServiceServer) RegisterReplica(
 	default:
 		return nil, status.Error(codes.InvalidArgument, "invalid role")
 	}
+	
+	// Check if access control is enabled
+	if s.accessControl.IsEnabled() {
+		// For existing replicas, authenticate with token from metadata
+		md, ok := metadata.FromIncomingContext(ctx)
+		if !ok {
+			return nil, status.Error(codes.Unauthenticated, "missing authentication metadata")
+		}
+		
+		tokens := md.Get("x-replica-token")
+		token := ""
+		if len(tokens) > 0 {
+			token = tokens[0]
+		}
+		
+		// Try to authenticate if not the first registration
+		existingReplicaErr := s.accessControl.AuthenticateReplica(req.ReplicaId, token)
+		if existingReplicaErr != nil && existingReplicaErr != transport.ErrAccessDenied {
+			return nil, status.Error(codes.Unauthenticated, "authentication failed")
+		}
+	}
 
 	// Register the replica
 	s.replicasMutex.Lock()
 	defer s.replicasMutex.Unlock()
 	
+	var replicaInfo *transport.ReplicaInfo
+	
 	// If already registered, update address and role
 	if replica, exists := s.replicas[req.ReplicaId]; exists {
+		// If access control is enabled, make sure replica is authorized for the requested role
+		if s.accessControl.IsEnabled() {
+			// Read role requires ReadOnly access, Write role requires ReadWrite access
+			var requiredLevel transport.AccessLevel
+			if role == transport.RolePrimary {
+				requiredLevel = transport.AccessAdmin
+			} else if role == transport.RoleReplica {
+				requiredLevel = transport.AccessReadWrite
+			} else {
+				requiredLevel = transport.AccessReadOnly
+			}
+			
+			if err := s.accessControl.AuthorizeReplicaAction(req.ReplicaId, requiredLevel); err != nil {
+				return nil, status.Error(codes.PermissionDenied, "not authorized for requested role")
+			}
+		}
+		
+		// Update existing replica
 		replica.Address = req.Address
 		replica.Role = role
 		replica.LastSeen = time.Now()
 		replica.Status = transport.StatusConnecting
+		replicaInfo = replica
 	} else {
 		// Create new replica info
-		s.replicas[req.ReplicaId] = &transport.ReplicaInfo{
+		replicaInfo = &transport.ReplicaInfo{
 			ID:      req.ReplicaId,
 			Address: req.Address,
 			Role:    role,
 			Status:  transport.StatusConnecting,
 			LastSeen: time.Now(),
+		}
+		s.replicas[req.ReplicaId] = replicaInfo
+		
+		// For new replicas, register with access control
+		if s.accessControl.IsEnabled() {
+			// Generate or use token based on settings
+			token := ""
+			authMethod := s.accessControl.DefaultAuthMethod()
+			
+			if authMethod == transport.AuthToken {
+				// In a real system, we'd generate a secure random token
+				token = fmt.Sprintf("token-%s-%d", req.ReplicaId, time.Now().UnixNano())
+			}
+			
+			// Set appropriate access level based on role
+			var accessLevel transport.AccessLevel
+			if role == transport.RolePrimary {
+				accessLevel = transport.AccessAdmin
+			} else if role == transport.RoleReplica {
+				accessLevel = transport.AccessReadWrite
+			} else {
+				accessLevel = transport.AccessReadOnly
+			}
+			
+			// Register replica credentials
+			creds := &transport.ReplicaCredentials{
+				ReplicaID:   req.ReplicaId,
+				AuthMethod:  authMethod,
+				Token:       token,
+				AccessLevel: accessLevel,
+			}
+			
+			if err := s.accessControl.RegisterReplica(creds); err != nil {
+				return nil, status.Errorf(codes.Internal, "failed to register credentials: %v", err)
+			}
+			
+			// Persist replica data with credentials
+			if s.persistence != nil && s.persistence.IsEnabled() {
+				if err := s.persistence.SaveReplica(replicaInfo, creds); err != nil {
+					// Log error but continue
+					fmt.Printf("Error persisting replica: %v\n", err)
+				}
+			}
+		}
+	}
+	
+	// Persist replica data without credentials for existing replicas
+	if s.persistence != nil && s.persistence.IsEnabled() {
+		if err := s.persistence.SaveReplica(replicaInfo, nil); err != nil {
+			// Log error but continue
+			fmt.Printf("Error persisting replica: %v\n", err)
 		}
 	}
 
@@ -119,7 +285,30 @@ func (s *ReplicationServiceServer) ReplicaHeartbeat(
 		return nil, status.Error(codes.InvalidArgument, "replica_id is required")
 	}
 
-	// Check if replica is registered
+	// Check authentication if enabled
+	if s.accessControl.IsEnabled() {
+		md, ok := metadata.FromIncomingContext(ctx)
+		if !ok {
+			return nil, status.Error(codes.Unauthenticated, "missing authentication metadata")
+		}
+		
+		tokens := md.Get("x-replica-token")
+		token := ""
+		if len(tokens) > 0 {
+			token = tokens[0]
+		}
+		
+		if err := s.accessControl.AuthenticateReplica(req.ReplicaId, token); err != nil {
+			return nil, status.Error(codes.Unauthenticated, "authentication failed")
+		}
+		
+		// Sending heartbeats requires at least read access
+		if err := s.accessControl.AuthorizeReplicaAction(req.ReplicaId, transport.AccessReadOnly); err != nil {
+			return nil, status.Error(codes.PermissionDenied, "not authorized to send heartbeats")
+		}
+	}
+
+	// Lock for updating replica info
 	s.replicasMutex.Lock()
 	defer s.replicasMutex.Unlock()
 	
@@ -163,6 +352,14 @@ func (s *ReplicationServiceServer) ReplicaHeartbeat(
 	}
 
 	replica.ReplicationLag = time.Duration(replicationLagMs) * time.Millisecond
+	
+	// Persist updated replica status if persistence is enabled
+	if s.persistence != nil && s.persistence.IsEnabled() {
+		if err := s.persistence.SaveReplica(replica, nil); err != nil {
+			// Log error but continue
+			fmt.Printf("Error persisting replica status: %v\n", err)
+		}
+	}
 
 	return &kevo.ReplicaHeartbeatResponse{
 		Success:          true,
@@ -660,4 +857,35 @@ type SnapshotIterator interface {
 	
 	// Close closes the iterator
 	Close() error
+}
+
+// IsReplicaStale checks if a replica is considered stale based on the last heartbeat
+func (s *ReplicationServiceServer) IsReplicaStale(replicaID string, threshold time.Duration) bool {
+	s.replicasMutex.RLock()
+	defer s.replicasMutex.RUnlock()
+	
+	replica, exists := s.replicas[replicaID]
+	if !exists {
+		return true // Consider non-existent replicas as stale
+	}
+	
+	// Check if the last seen time is older than the threshold
+	return time.Since(replica.LastSeen) > threshold
+}
+
+// DetectStaleReplicas finds all replicas that haven't sent a heartbeat within the threshold
+func (s *ReplicationServiceServer) DetectStaleReplicas(threshold time.Duration) []string {
+	s.replicasMutex.RLock()
+	defer s.replicasMutex.RUnlock()
+	
+	staleReplicas := make([]string, 0)
+	now := time.Now()
+	
+	for id, replica := range s.replicas {
+		if now.Sub(replica.LastSeen) > threshold {
+			staleReplicas = append(staleReplicas, id)
+		}
+	}
+	
+	return staleReplicas
 }
