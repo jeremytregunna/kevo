@@ -243,7 +243,6 @@ See [storage-bench README](./cmd/storage-bench/README.md) for detailed options.
 ## Non-Goals
 
 - **Feature Parity with Other Engines**: Not competing with RocksDB, LevelDB, etc.
-- **Multi-Node Distribution**: Focusing on single-node operation
 - **Complex Query Planning**: Higher-level query features are left to layers built on top
 
 ## Building and Testing
