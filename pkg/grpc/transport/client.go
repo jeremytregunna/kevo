@@ -197,8 +197,195 @@ func (c *GRPCClient) Stream(ctx context.Context) (transport.Stream, error) {
 		return nil, transport.ErrNotConnected
 	}
 
-	// For now, we'll implement streaming only for scan operations
-	return nil, fmt.Errorf("streaming not fully implemented yet")
+	// Create a new context for the stream with cancellation
+	streamCtx, cancel := context.WithCancel(ctx)
+
+	// For now we'll implement a simpler version that just collects all results and returns them
+	// This will allow us to test scanning without implementing full streaming
+	return &GRPCStreamBatch{
+		ctx:    streamCtx,
+		cancel: cancel,
+		client: c,
+	}, nil
+}
+
+// GRPCStreamBatch is a simpler implementation of Stream that batches results
+type GRPCStreamBatch struct {
+	ctx       context.Context
+	cancel    context.CancelFunc
+	client    *GRPCClient
+	request   transport.Request
+	responses []transport.Response
+	sent      bool
+	readPos   int
+	err       error
+}
+
+func (s *GRPCStreamBatch) Send(request transport.Request) error {
+	if s.sent {
+		return fmt.Errorf("request already sent")
+	}
+
+	s.request = request
+	s.sent = true
+
+	// Process the request based on type
+	switch request.Type() {
+	case transport.TypeScan:
+		return s.handleScan(request.Payload())
+	case transport.TypeTxScan:
+		return s.handleTxScan(request.Payload())
+	default:
+		s.err = fmt.Errorf("unsupported stream request type: %s", request.Type())
+		return s.err
+	}
+}
+
+func (s *GRPCStreamBatch) handleScan(payload []byte) error {
+	var req struct {
+		Prefix   []byte `json:"prefix"`
+		Suffix   []byte `json:"suffix"`
+		StartKey []byte `json:"start_key"`
+		EndKey   []byte `json:"end_key"`
+		Limit    int32  `json:"limit"`
+	}
+
+	if err := json.Unmarshal(payload, &req); err != nil {
+		s.err = fmt.Errorf("invalid scan request payload: %w", err)
+		return s.err
+	}
+
+	grpcReq := &pb.ScanRequest{
+		Prefix:   req.Prefix,
+		Suffix:   req.Suffix,
+		StartKey: req.StartKey,
+		EndKey:   req.EndKey,
+		Limit:    req.Limit,
+	}
+
+	stream, err := s.client.client.Scan(s.ctx, grpcReq)
+	if err != nil {
+		s.err = fmt.Errorf("failed to start scan stream: %w", err)
+		return s.err
+	}
+
+	// Collect all responses synchronously
+	s.responses = []transport.Response{}
+	for {
+		resp, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			s.err = fmt.Errorf("error receiving scan response: %w", err)
+			return s.err
+		}
+
+		// Convert the response
+		scanResp := struct {
+			Key   []byte `json:"key"`
+			Value []byte `json:"value"`
+		}{
+			Key:   resp.Key,
+			Value: resp.Value,
+		}
+
+		respData, err := json.Marshal(scanResp)
+		if err != nil {
+			s.err = fmt.Errorf("failed to marshal scan response: %w", err)
+			return s.err
+		}
+
+		s.responses = append(s.responses, transport.NewResponse(transport.TypeScan, respData, nil))
+	}
+
+	return nil
+}
+
+func (s *GRPCStreamBatch) handleTxScan(payload []byte) error {
+	var req struct {
+		TransactionID string `json:"transaction_id"`
+		Prefix        []byte `json:"prefix"`
+		Suffix        []byte `json:"suffix"`
+		StartKey      []byte `json:"start_key"`
+		EndKey        []byte `json:"end_key"`
+		Limit         int32  `json:"limit"`
+	}
+
+	if err := json.Unmarshal(payload, &req); err != nil {
+		s.err = fmt.Errorf("invalid tx scan request payload: %w", err)
+		return s.err
+	}
+
+	grpcReq := &pb.TxScanRequest{
+		TransactionId: req.TransactionID,
+		Prefix:        req.Prefix,
+		Suffix:        req.Suffix,
+		StartKey:      req.StartKey,
+		EndKey:        req.EndKey,
+		Limit:         req.Limit,
+	}
+
+	stream, err := s.client.client.TxScan(s.ctx, grpcReq)
+	if err != nil {
+		s.err = fmt.Errorf("failed to start tx scan stream: %w", err)
+		return s.err
+	}
+
+	// Collect all responses synchronously
+	s.responses = []transport.Response{}
+	for {
+		resp, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			s.err = fmt.Errorf("error receiving tx scan response: %w", err)
+			return s.err
+		}
+
+		// Convert the response
+		scanResp := struct {
+			Key   []byte `json:"key"`
+			Value []byte `json:"value"`
+		}{
+			Key:   resp.Key,
+			Value: resp.Value,
+		}
+
+		respData, err := json.Marshal(scanResp)
+		if err != nil {
+			s.err = fmt.Errorf("failed to marshal tx scan response: %w", err)
+			return s.err
+		}
+
+		s.responses = append(s.responses, transport.NewResponse(transport.TypeTxScan, respData, nil))
+	}
+
+	return nil
+}
+
+func (s *GRPCStreamBatch) Recv() (transport.Response, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+
+	if !s.sent {
+		return nil, fmt.Errorf("no request sent")
+	}
+
+	if s.readPos >= len(s.responses) {
+		return nil, io.EOF
+	}
+
+	resp := s.responses[s.readPos]
+	s.readPos++
+	return resp, nil
+}
+
+func (s *GRPCStreamBatch) Close() error {
+	s.cancel()
+	return nil
 }
 
 // Request handler methods

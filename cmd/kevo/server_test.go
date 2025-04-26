@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/KevoDB/kevo/pkg/engine"
+	"github.com/KevoDB/kevo/pkg/engine/transaction"
 )
 
 func TestTransactionRegistry(t *testing.T) {
@@ -30,7 +31,7 @@ func TestTransactionRegistry(t *testing.T) {
 	defer eng.Close()
 
 	// Create transaction registry
-	registry := NewTransactionRegistry()
+	registry := transaction.NewRegistry()
 
 	// Test begin transaction
 	txID, err := registry.Begin(ctx, eng, false)

@@ -29,13 +29,38 @@ func (tc *TransactionCreatorImpl) CreateTransaction(e interface{}, readOnly bool
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Return the transaction as an interfaces.Transaction
 	return tx, nil
+}
+
+// TransactionCreatorWrapper wraps our TransactionCreatorImpl to implement the LegacyTransactionCreator interface
+type TransactionCreatorWrapper struct {
+	impl *TransactionCreatorImpl
+}
+
+// CreateTransaction creates a transaction for the legacy system
+func (w *TransactionCreatorWrapper) CreateTransaction(e interface{}, readOnly bool) (engine.LegacyTransaction, error) {
+	tx, err := w.impl.CreateTransaction(e, readOnly)
+	if err != nil {
+		return nil, err
+	}
+
+	// Cast to the legacy interface
+	// Our Transaction implementation already has all the required methods
+	legacyTx, ok := tx.(engine.LegacyTransaction)
+	if !ok {
+		return nil, ErrInvalidEngine
+	}
+
+	return legacyTx, nil
 }
 
 // For backward compatibility, register with the old mechanism too
 // This can be removed once all code is migrated
 func init() {
-	// In the new approach, we should use dependency injection rather than global registration
+	// Register the wrapped transaction creator with the engine compatibility layer
+	engine.RegisterTransactionCreator(&TransactionCreatorWrapper{
+		impl: &TransactionCreatorImpl{},
+	})
 }

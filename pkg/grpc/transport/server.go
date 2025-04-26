@@ -4,14 +4,18 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"sync"
 	"time"
 
 	"github.com/KevoDB/kevo/pkg/transport"
 	pb "github.com/KevoDB/kevo/proto/kevo"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
+	"google.golang.org/grpc/peer"
+	"google.golang.org/grpc/status"
 )
 
 // GRPCServer implements the transport.Server interface for gRPC
@@ -23,6 +27,7 @@ type GRPCServer struct {
 	started        bool
 	mu             sync.Mutex
 	metrics        *transport.ExtendedMetricsCollector
+	connTracker    *connectionTracker
 }
 
 // NewGRPCServer creates a new gRPC server
@@ -53,18 +58,24 @@ func NewGRPCServer(address string, options transport.TransportOptions) (transpor
 		PermitWithoutStream: true,
 	}
 
+	// Add connection tracking interceptor
+	connTracker := newConnectionTracker()
+
 	serverOpts = append(serverOpts,
 		grpc.KeepaliveParams(kaProps),
 		grpc.KeepaliveEnforcementPolicy(kaPolicy),
+		grpc.UnaryInterceptor(connTracker.unaryInterceptor),
+		grpc.StreamInterceptor(connTracker.streamInterceptor),
 	)
 
 	// Create the server
 	server := grpc.NewServer(serverOpts...)
 
 	return &GRPCServer{
-		address: address,
-		server:  server,
-		metrics: transport.NewMetrics("grpc"),
+		address:     address,
+		server:      server,
+		metrics:     transport.NewMetrics("grpc"),
+		connTracker: connTracker,
 	}, nil
 }
 
@@ -143,12 +154,158 @@ func (s *GRPCServer) SetRequestHandler(handler transport.RequestHandler) {
 	defer s.mu.Unlock()
 
 	s.requestHandler = handler
+
+	// Connect the connection tracker to the request handler
+	// so it can clean up transactions on disconnection
+	if s.connTracker != nil {
+		s.connTracker.setRegistry(handler)
+
+		// Set up an interceptor for incoming requests that get the peer info
+		fmt.Println("Setting up connection tracking for automatic transaction cleanup")
+	}
 }
 
 // kevoServiceServer implements the KevoService gRPC service
 type kevoServiceServer struct {
 	pb.UnimplementedKevoServiceServer
 	handler transport.RequestHandler
+}
+
+// ConnectionCleanup interface for transaction cleanup on disconnection
+type ConnectionCleanup interface {
+	CleanupConnection(connectionID string)
+}
+
+// ConnectionTracker tracks gRPC connections and notifies of disconnections
+type connectionTracker struct {
+	connections     sync.Map
+	registry        transport.RequestHandler
+	cleanupRegistry ConnectionCleanup
+}
+
+func newConnectionTracker() *connectionTracker {
+	return &connectionTracker{}
+}
+
+// setRegistry sets the request handler/registry for cleanup notifications
+func (ct *connectionTracker) setRegistry(registry transport.RequestHandler) {
+	ct.registry = registry
+
+	// If the registry implements ConnectionCleanup, store it
+	if cleaner, ok := registry.(ConnectionCleanup); ok {
+		ct.cleanupRegistry = cleaner
+	}
+}
+
+// generateConnectionID creates a unique connection ID from peer info
+func (ct *connectionTracker) generateConnectionID(ctx context.Context) string {
+	// Try to get peer info from context
+	p, ok := peer.FromContext(ctx)
+	if !ok {
+		return fmt.Sprintf("unknown-%d", time.Now().UnixNano())
+	}
+	return p.Addr.String()
+}
+
+// trackConnection adds a connection to tracking
+func (ct *connectionTracker) trackConnection(ctx context.Context) context.Context {
+	connID := ct.generateConnectionID(ctx)
+	ct.connections.Store(connID, true)
+
+	// Add connection ID to context for transaction tracking
+	return context.WithValue(ctx, "peer", connID)
+}
+
+// untrackConnection removes a connection from tracking and cleans up
+func (ct *connectionTracker) untrackConnection(ctx context.Context) {
+	connID, ok := ctx.Value("peer").(string)
+	if !ok {
+		return
+	}
+
+	ct.connections.Delete(connID)
+
+	// Log the disconnection
+	fmt.Printf("Client disconnected: %s\n", connID)
+
+	// Notify registry to clean up transactions for this connection
+	if ct.cleanupRegistry != nil {
+		fmt.Printf("Cleaning up transactions for connection: %s\n", connID)
+		ct.cleanupRegistry.CleanupConnection(connID)
+	}
+}
+
+// unaryInterceptor is the gRPC interceptor for unary calls
+func (ct *connectionTracker) unaryInterceptor(
+	ctx context.Context,
+	req interface{},
+	info *grpc.UnaryServerInfo,
+	handler grpc.UnaryHandler,
+) (interface{}, error) {
+	// Track connection
+	newCtx := ct.trackConnection(ctx)
+
+	// Handle the request
+	resp, err := handler(newCtx, req)
+
+	// Check for errors indicating disconnection
+	if err != nil && (err == context.Canceled ||
+		status.Code(err) == codes.Canceled ||
+		status.Code(err) == codes.Unavailable) {
+		ct.untrackConnection(newCtx)
+	}
+
+	// If this is a disconnection-related method, trigger cleanup
+	if info.FullMethod == "/kevo.KevoService/Close" {
+		ct.untrackConnection(newCtx)
+	}
+
+	return resp, err
+}
+
+// streamInterceptor is the gRPC interceptor for streaming calls
+func (ct *connectionTracker) streamInterceptor(
+	srv interface{},
+	ss grpc.ServerStream,
+	info *grpc.StreamServerInfo,
+	handler grpc.StreamHandler,
+) error {
+	// Track connection
+	newCtx := ct.trackConnection(ss.Context())
+
+	// Wrap the stream with our tracked context
+	wrappedStream := &wrappedServerStream{
+		ServerStream: ss,
+		ctx:          newCtx,
+	}
+
+	// Handle the stream
+	err := handler(srv, wrappedStream)
+
+	// Check for errors or EOF indicating disconnection
+	if err != nil && (err == context.Canceled ||
+		status.Code(err) == codes.Canceled ||
+		status.Code(err) == codes.Unavailable ||
+		err == io.EOF) {
+		ct.untrackConnection(newCtx)
+	} else if err == nil && info.IsClientStream {
+		// For client streams, an EOF without error is normal
+		// Let's consider this a client disconnection
+		ct.untrackConnection(newCtx)
+	}
+
+	return err
+}
+
+// wrappedServerStream wraps a grpc.ServerStream with a new context
+type wrappedServerStream struct {
+	grpc.ServerStream
+	ctx context.Context
+}
+
+// Context returns the wrapped context
+func (w *wrappedServerStream) Context() context.Context {
+	return w.ctx
 }
 
 // TODO: Implement service methods

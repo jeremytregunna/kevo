@@ -184,7 +184,7 @@ type BlockBloomFilterBuilder struct {
 func NewBlockBloomFilterBuilder(blockOffset uint64, expectedEntries uint64) *BlockBloomFilterBuilder {
 	// Use 1% false positive rate for a good balance of size and accuracy
 	filter := bloomfilter.NewBloomFilter(0.01, expectedEntries)
-	
+
 	return &BlockBloomFilterBuilder{
 		blockOffset: blockOffset,
 		filter:      filter,
@@ -206,30 +206,30 @@ func (b *BlockBloomFilterBuilder) Serialize() ([]byte, error) {
 	tempPath := tempFile.Name()
 	tempFile.Close()
 	defer os.Remove(tempPath)
-	
+
 	// Save the filter to the temp file
 	if err := b.filter.SaveToFile(tempPath); err != nil {
 		return nil, fmt.Errorf("failed to save bloom filter: %w", err)
 	}
-	
+
 	// Read the file contents
 	data, err := os.ReadFile(tempPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read bloom filter data: %w", err)
 	}
-	
+
 	return data, nil
 }
 
 // Writer writes an SSTable file
 type Writer struct {
-	fileManager       *FileManager
-	blockManager      *BlockManager
-	indexBuilder      *IndexBuilder
-	dataOffset        uint64
-	firstKey          []byte
-	lastKey           []byte
-	entriesAdded      uint32
+	fileManager  *FileManager
+	blockManager *BlockManager
+	indexBuilder *IndexBuilder
+	dataOffset   uint64
+	firstKey     []byte
+	lastKey      []byte
+	entriesAdded uint32
 	// Bloom filter support
 	bloomFilterEnabled bool
 	bloomFilters       []*BlockBloomFilterBuilder
@@ -273,12 +273,12 @@ func NewWriterWithOptions(path string, options WriterOptions) (*Writer, error) {
 		bloomFilterEnabled: options.EnableBloomFilter,
 		bloomFilters:       make([]*BlockBloomFilterBuilder, 0),
 	}
-	
+
 	// Initialize the first bloom filter if enabled
 	if w.bloomFilterEnabled {
 		w.currentBloomFilter = NewBlockBloomFilterBuilder(0, options.ExpectedEntriesPerBlock)
 	}
-	
+
 	return w, nil
 }
 
@@ -365,7 +365,7 @@ func (w *Writer) flushBlock() error {
 	if w.bloomFilterEnabled && w.currentBloomFilter != nil {
 		// Store the bloom filter for this block
 		w.bloomFilters = append(w.bloomFilters, w.currentBloomFilter)
-		
+
 		// Create a new bloom filter for the next block
 		w.currentBloomFilter = NewBlockBloomFilterBuilder(w.dataOffset, DefaultWriterOptions().ExpectedEntriesPerBlock)
 	}
@@ -395,10 +395,10 @@ func (w *Writer) Finish() error {
 	// Write bloom filters if enabled
 	var bloomFilterOffset uint64 = 0
 	var bloomFilterSize uint32 = 0
-	
+
 	if w.bloomFilterEnabled && len(w.bloomFilters) > 0 {
 		bloomFilterOffset = w.dataOffset
-		
+
 		// Write each bloom filter to the file
 		for _, bf := range w.bloomFilters {
 			// Serialize the bloom filter
@@ -406,13 +406,13 @@ func (w *Writer) Finish() error {
 			if err != nil {
 				return fmt.Errorf("failed to serialize bloom filter: %w", err)
 			}
-			
+
 			// First write the block offset and size of this filter
 			// Format: 8 bytes for offset, 4 bytes for filter size
 			offsetBytes := make([]byte, 12)
 			binary.LittleEndian.PutUint64(offsetBytes[:8], bf.blockOffset)
 			binary.LittleEndian.PutUint32(offsetBytes[8:12], uint32(len(bfData)))
-			
+
 			// Write the offset/size header
 			n, err := w.fileManager.Write(offsetBytes)
 			if err != nil {
@@ -421,7 +421,7 @@ func (w *Writer) Finish() error {
 			if n != len(offsetBytes) {
 				return fmt.Errorf("wrote incomplete bloom filter header: %d of %d bytes", n, len(offsetBytes))
 			}
-			
+
 			// Write the actual bloom filter data
 			n, err = w.fileManager.Write(bfData)
 			if err != nil {
@@ -430,7 +430,7 @@ func (w *Writer) Finish() error {
 			if n != len(bfData) {
 				return fmt.Errorf("wrote incomplete bloom filter data: %d of %d bytes", n, len(bfData))
 			}
-			
+
 			// Update the data offset
 			w.dataOffset += uint64(len(offsetBytes) + len(bfData))
 			bloomFilterSize += uint32(len(offsetBytes) + len(bfData))

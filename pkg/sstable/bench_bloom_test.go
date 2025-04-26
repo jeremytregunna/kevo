@@ -37,13 +37,13 @@ func BenchmarkBloomFilterGet(b *testing.B) {
 			// Insert some known keys
 			// Use fewer keys for faster benchmarking
 			const numKeys = 1000
-			
+
 			// Create sorted keys (SSTable requires sorted keys)
 			keys := make([]string, numKeys)
 			for i := 0; i < numKeys; i++ {
 				keys[i] = fmt.Sprintf("key%08d", i)
 			}
-			
+
 			// Add them to the SSTable
 			for _, key := range keys {
 				value := []byte(fmt.Sprintf("val-%s", key))
@@ -63,21 +63,21 @@ func BenchmarkBloomFilterGet(b *testing.B) {
 				b.Fatalf("Failed to open reader: %v", err)
 			}
 			defer reader.Close()
-			
+
 			// Test a few specific lookups to ensure the table was written correctly
 			for i := 0; i < 5; i++ {
 				testKey := []byte(fmt.Sprintf("key%08d", i))
 				expectedValue := []byte(fmt.Sprintf("val-key%08d", i))
-				
+
 				val, err := reader.Get(testKey)
 				if err != nil {
 					b.Fatalf("Verification failed: couldn't find key %s: %v", testKey, err)
 				}
-				
+
 				if string(val) != string(expectedValue) {
 					b.Fatalf("Value mismatch for key %s: got %q, expected %q", testKey, val, expectedValue)
 				}
-				
+
 				b.Logf("Successfully verified key: %s", testKey)
 			}
 
@@ -91,7 +91,7 @@ func BenchmarkBloomFilterGet(b *testing.B) {
 					// Existing key
 					keyIdx := i % numKeys
 					key = []byte(fmt.Sprintf("key%08d", keyIdx))
-					
+
 					// Should find this key
 					_, err := reader.Get(key)
 					if err != nil {
@@ -100,7 +100,7 @@ func BenchmarkBloomFilterGet(b *testing.B) {
 				} else {
 					// Non-existing key - this is where bloom filters really help
 					key = []byte(fmt.Sprintf("nonexistent%08d", i))
-					
+
 					// Should not find this key
 					_, err := reader.Get(key)
 					if err != ErrNotFound {

@@ -113,7 +113,7 @@ func (m *MemTable) Contains(key []byte) bool {
 		// For mutable memtables, we still need read lock protection
 		m.mu.RLock()
 		defer m.mu.RUnlock()
-		
+
 		return m.skipList.Find(key) != nil
 	}
 }
@@ -148,7 +148,7 @@ func (m *MemTable) NewIterator() *Iterator {
 		// For mutable memtables, we need read lock to ensure stability during iteration
 		m.mu.RLock()
 		defer m.mu.RUnlock()
-		
+
 		return m.skipList.NewIterator()
 	}
 }

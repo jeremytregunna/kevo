@@ -1400,8 +1400,21 @@ type GetStatsResponse struct {
 	SstableCount       int32                  `protobuf:"varint,4,opt,name=sstable_count,json=sstableCount,proto3" json:"sstable_count,omitempty"`
 	WriteAmplification float64                `protobuf:"fixed64,5,opt,name=write_amplification,json=writeAmplification,proto3" json:"write_amplification,omitempty"`
 	ReadAmplification  float64                `protobuf:"fixed64,6,opt,name=read_amplification,json=readAmplification,proto3" json:"read_amplification,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// Operation counts
+	OperationCounts map[string]uint64 `protobuf:"bytes,7,rep,name=operation_counts,json=operationCounts,proto3" json:"operation_counts,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
+	// Latency statistics
+	LatencyStats map[string]*LatencyStats `protobuf:"bytes,8,rep,name=latency_stats,json=latencyStats,proto3" json:"latency_stats,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// Error statistics
+	ErrorCounts map[string]uint64 `protobuf:"bytes,9,rep,name=error_counts,json=errorCounts,proto3" json:"error_counts,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
+	// Performance metrics
+	TotalBytesRead    int64 `protobuf:"varint,10,opt,name=total_bytes_read,json=totalBytesRead,proto3" json:"total_bytes_read,omitempty"`
+	TotalBytesWritten int64 `protobuf:"varint,11,opt,name=total_bytes_written,json=totalBytesWritten,proto3" json:"total_bytes_written,omitempty"`
+	FlushCount        int64 `protobuf:"varint,12,opt,name=flush_count,json=flushCount,proto3" json:"flush_count,omitempty"`
+	CompactionCount   int64 `protobuf:"varint,13,opt,name=compaction_count,json=compactionCount,proto3" json:"compaction_count,omitempty"`
+	// Recovery statistics
+	RecoveryStats *RecoveryStats `protobuf:"bytes,14,opt,name=recovery_stats,json=recoveryStats,proto3" json:"recovery_stats,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GetStatsResponse) Reset() {
@@ -1476,6 +1489,198 @@ func (x *GetStatsResponse) GetReadAmplification() float64 {
 	return 0
 }
 
+func (x *GetStatsResponse) GetOperationCounts() map[string]uint64 {
+	if x != nil {
+		return x.OperationCounts
+	}
+	return nil
+}
+
+func (x *GetStatsResponse) GetLatencyStats() map[string]*LatencyStats {
+	if x != nil {
+		return x.LatencyStats
+	}
+	return nil
+}
+
+func (x *GetStatsResponse) GetErrorCounts() map[string]uint64 {
+	if x != nil {
+		return x.ErrorCounts
+	}
+	return nil
+}
+
+func (x *GetStatsResponse) GetTotalBytesRead() int64 {
+	if x != nil {
+		return x.TotalBytesRead
+	}
+	return 0
+}
+
+func (x *GetStatsResponse) GetTotalBytesWritten() int64 {
+	if x != nil {
+		return x.TotalBytesWritten
+	}
+	return 0
+}
+
+func (x *GetStatsResponse) GetFlushCount() int64 {
+	if x != nil {
+		return x.FlushCount
+	}
+	return 0
+}
+
+func (x *GetStatsResponse) GetCompactionCount() int64 {
+	if x != nil {
+		return x.CompactionCount
+	}
+	return 0
+}
+
+func (x *GetStatsResponse) GetRecoveryStats() *RecoveryStats {
+	if x != nil {
+		return x.RecoveryStats
+	}
+	return nil
+}
+
+type LatencyStats struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Count         uint64                 `protobuf:"varint,1,opt,name=count,proto3" json:"count,omitempty"`
+	AvgNs         uint64                 `protobuf:"varint,2,opt,name=avg_ns,json=avgNs,proto3" json:"avg_ns,omitempty"`
+	MinNs         uint64                 `protobuf:"varint,3,opt,name=min_ns,json=minNs,proto3" json:"min_ns,omitempty"`
+	MaxNs         uint64                 `protobuf:"varint,4,opt,name=max_ns,json=maxNs,proto3" json:"max_ns,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LatencyStats) Reset() {
+	*x = LatencyStats{}
+	mi := &file_proto_kevo_service_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LatencyStats) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LatencyStats) ProtoMessage() {}
+
+func (x *LatencyStats) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_kevo_service_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LatencyStats.ProtoReflect.Descriptor instead.
+func (*LatencyStats) Descriptor() ([]byte, []int) {
+	return file_proto_kevo_service_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *LatencyStats) GetCount() uint64 {
+	if x != nil {
+		return x.Count
+	}
+	return 0
+}
+
+func (x *LatencyStats) GetAvgNs() uint64 {
+	if x != nil {
+		return x.AvgNs
+	}
+	return 0
+}
+
+func (x *LatencyStats) GetMinNs() uint64 {
+	if x != nil {
+		return x.MinNs
+	}
+	return 0
+}
+
+func (x *LatencyStats) GetMaxNs() uint64 {
+	if x != nil {
+		return x.MaxNs
+	}
+	return 0
+}
+
+type RecoveryStats struct {
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	WalFilesRecovered     uint64                 `protobuf:"varint,1,opt,name=wal_files_recovered,json=walFilesRecovered,proto3" json:"wal_files_recovered,omitempty"`
+	WalEntriesRecovered   uint64                 `protobuf:"varint,2,opt,name=wal_entries_recovered,json=walEntriesRecovered,proto3" json:"wal_entries_recovered,omitempty"`
+	WalCorruptedEntries   uint64                 `protobuf:"varint,3,opt,name=wal_corrupted_entries,json=walCorruptedEntries,proto3" json:"wal_corrupted_entries,omitempty"`
+	WalRecoveryDurationMs int64                  `protobuf:"varint,4,opt,name=wal_recovery_duration_ms,json=walRecoveryDurationMs,proto3" json:"wal_recovery_duration_ms,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
+}
+
+func (x *RecoveryStats) Reset() {
+	*x = RecoveryStats{}
+	mi := &file_proto_kevo_service_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RecoveryStats) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RecoveryStats) ProtoMessage() {}
+
+func (x *RecoveryStats) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_kevo_service_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RecoveryStats.ProtoReflect.Descriptor instead.
+func (*RecoveryStats) Descriptor() ([]byte, []int) {
+	return file_proto_kevo_service_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *RecoveryStats) GetWalFilesRecovered() uint64 {
+	if x != nil {
+		return x.WalFilesRecovered
+	}
+	return 0
+}
+
+func (x *RecoveryStats) GetWalEntriesRecovered() uint64 {
+	if x != nil {
+		return x.WalEntriesRecovered
+	}
+	return 0
+}
+
+func (x *RecoveryStats) GetWalCorruptedEntries() uint64 {
+	if x != nil {
+		return x.WalCorruptedEntries
+	}
+	return 0
+}
+
+func (x *RecoveryStats) GetWalRecoveryDurationMs() int64 {
+	if x != nil {
+		return x.WalRecoveryDurationMs
+	}
+	return 0
+}
+
 type CompactRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Force         bool                   `protobuf:"varint,1,opt,name=force,proto3" json:"force,omitempty"`
@@ -1485,7 +1690,7 @@ type CompactRequest struct {
 
 func (x *CompactRequest) Reset() {
 	*x = CompactRequest{}
-	mi := &file_proto_kevo_service_proto_msgTypes[27]
+	mi := &file_proto_kevo_service_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1497,7 +1702,7 @@ func (x *CompactRequest) String() string {
 func (*CompactRequest) ProtoMessage() {}
 
 func (x *CompactRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_kevo_service_proto_msgTypes[27]
+	mi := &file_proto_kevo_service_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1510,7 +1715,7 @@ func (x *CompactRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CompactRequest.ProtoReflect.Descriptor instead.
 func (*CompactRequest) Descriptor() ([]byte, []int) {
-	return file_proto_kevo_service_proto_rawDescGZIP(), []int{27}
+	return file_proto_kevo_service_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *CompactRequest) GetForce() bool {
@@ -1529,7 +1734,7 @@ type CompactResponse struct {
 
 func (x *CompactResponse) Reset() {
 	*x = CompactResponse{}
-	mi := &file_proto_kevo_service_proto_msgTypes[28]
+	mi := &file_proto_kevo_service_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1541,7 +1746,7 @@ func (x *CompactResponse) String() string {
 func (*CompactResponse) ProtoMessage() {}
 
 func (x *CompactResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_kevo_service_proto_msgTypes[28]
+	mi := &file_proto_kevo_service_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1554,7 +1759,7 @@ func (x *CompactResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CompactResponse.ProtoReflect.Descriptor instead.
 func (*CompactResponse) Descriptor() ([]byte, []int) {
-	return file_proto_kevo_service_proto_rawDescGZIP(), []int{28}
+	return file_proto_kevo_service_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *CompactResponse) GetSuccess() bool {
@@ -1650,14 +1855,43 @@ const file_proto_kevo_service_proto_rawDesc = "" +
 	"\x0eTxScanResponse\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\fR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\fR\x05value\"\x11\n" +
-	"\x0fGetStatsRequest\"\xfe\x01\n" +
+	"\x0fGetStatsRequest\"\xac\a\n" +
 	"\x10GetStatsResponse\x12\x1b\n" +
 	"\tkey_count\x18\x01 \x01(\x03R\bkeyCount\x12!\n" +
 	"\fstorage_size\x18\x02 \x01(\x03R\vstorageSize\x12%\n" +
 	"\x0ememtable_count\x18\x03 \x01(\x05R\rmemtableCount\x12#\n" +
 	"\rsstable_count\x18\x04 \x01(\x05R\fsstableCount\x12/\n" +
 	"\x13write_amplification\x18\x05 \x01(\x01R\x12writeAmplification\x12-\n" +
-	"\x12read_amplification\x18\x06 \x01(\x01R\x11readAmplification\"&\n" +
+	"\x12read_amplification\x18\x06 \x01(\x01R\x11readAmplification\x12V\n" +
+	"\x10operation_counts\x18\a \x03(\v2+.kevo.GetStatsResponse.OperationCountsEntryR\x0foperationCounts\x12M\n" +
+	"\rlatency_stats\x18\b \x03(\v2(.kevo.GetStatsResponse.LatencyStatsEntryR\flatencyStats\x12J\n" +
+	"\ferror_counts\x18\t \x03(\v2'.kevo.GetStatsResponse.ErrorCountsEntryR\verrorCounts\x12(\n" +
+	"\x10total_bytes_read\x18\n" +
+	" \x01(\x03R\x0etotalBytesRead\x12.\n" +
+	"\x13total_bytes_written\x18\v \x01(\x03R\x11totalBytesWritten\x12\x1f\n" +
+	"\vflush_count\x18\f \x01(\x03R\n" +
+	"flushCount\x12)\n" +
+	"\x10compaction_count\x18\r \x01(\x03R\x0fcompactionCount\x12:\n" +
+	"\x0erecovery_stats\x18\x0e \x01(\v2\x13.kevo.RecoveryStatsR\rrecoveryStats\x1aB\n" +
+	"\x14OperationCountsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\x04R\x05value:\x028\x01\x1aS\n" +
+	"\x11LatencyStatsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12(\n" +
+	"\x05value\x18\x02 \x01(\v2\x12.kevo.LatencyStatsR\x05value:\x028\x01\x1a>\n" +
+	"\x10ErrorCountsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\x04R\x05value:\x028\x01\"i\n" +
+	"\fLatencyStats\x12\x14\n" +
+	"\x05count\x18\x01 \x01(\x04R\x05count\x12\x15\n" +
+	"\x06avg_ns\x18\x02 \x01(\x04R\x05avgNs\x12\x15\n" +
+	"\x06min_ns\x18\x03 \x01(\x04R\x05minNs\x12\x15\n" +
+	"\x06max_ns\x18\x04 \x01(\x04R\x05maxNs\"\xe0\x01\n" +
+	"\rRecoveryStats\x12.\n" +
+	"\x13wal_files_recovered\x18\x01 \x01(\x04R\x11walFilesRecovered\x122\n" +
+	"\x15wal_entries_recovered\x18\x02 \x01(\x04R\x13walEntriesRecovered\x122\n" +
+	"\x15wal_corrupted_entries\x18\x03 \x01(\x04R\x13walCorruptedEntries\x127\n" +
+	"\x18wal_recovery_duration_ms\x18\x04 \x01(\x03R\x15walRecoveryDurationMs\"&\n" +
 	"\x0eCompactRequest\x12\x14\n" +
 	"\x05force\x18\x01 \x01(\bR\x05force\"+\n" +
 	"\x0fCompactResponse\x12\x18\n" +
@@ -1692,7 +1926,7 @@ func file_proto_kevo_service_proto_rawDescGZIP() []byte {
 }
 
 var file_proto_kevo_service_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_proto_kevo_service_proto_msgTypes = make([]protoimpl.MessageInfo, 29)
+var file_proto_kevo_service_proto_msgTypes = make([]protoimpl.MessageInfo, 34)
 var file_proto_kevo_service_proto_goTypes = []any{
 	(Operation_Type)(0),                 // 0: kevo.Operation.Type
 	(*GetRequest)(nil),                  // 1: kevo.GetRequest
@@ -1722,45 +1956,55 @@ var file_proto_kevo_service_proto_goTypes = []any{
 	(*TxScanResponse)(nil),              // 25: kevo.TxScanResponse
 	(*GetStatsRequest)(nil),             // 26: kevo.GetStatsRequest
 	(*GetStatsResponse)(nil),            // 27: kevo.GetStatsResponse
-	(*CompactRequest)(nil),              // 28: kevo.CompactRequest
-	(*CompactResponse)(nil),             // 29: kevo.CompactResponse
+	(*LatencyStats)(nil),                // 28: kevo.LatencyStats
+	(*RecoveryStats)(nil),               // 29: kevo.RecoveryStats
+	(*CompactRequest)(nil),              // 30: kevo.CompactRequest
+	(*CompactResponse)(nil),             // 31: kevo.CompactResponse
+	nil,                                 // 32: kevo.GetStatsResponse.OperationCountsEntry
+	nil,                                 // 33: kevo.GetStatsResponse.LatencyStatsEntry
+	nil,                                 // 34: kevo.GetStatsResponse.ErrorCountsEntry
 }
 var file_proto_kevo_service_proto_depIdxs = []int32{
 	8,  // 0: kevo.BatchWriteRequest.operations:type_name -> kevo.Operation
 	0,  // 1: kevo.Operation.type:type_name -> kevo.Operation.Type
-	1,  // 2: kevo.KevoService.Get:input_type -> kevo.GetRequest
-	3,  // 3: kevo.KevoService.Put:input_type -> kevo.PutRequest
-	5,  // 4: kevo.KevoService.Delete:input_type -> kevo.DeleteRequest
-	7,  // 5: kevo.KevoService.BatchWrite:input_type -> kevo.BatchWriteRequest
-	10, // 6: kevo.KevoService.Scan:input_type -> kevo.ScanRequest
-	12, // 7: kevo.KevoService.BeginTransaction:input_type -> kevo.BeginTransactionRequest
-	14, // 8: kevo.KevoService.CommitTransaction:input_type -> kevo.CommitTransactionRequest
-	16, // 9: kevo.KevoService.RollbackTransaction:input_type -> kevo.RollbackTransactionRequest
-	18, // 10: kevo.KevoService.TxGet:input_type -> kevo.TxGetRequest
-	20, // 11: kevo.KevoService.TxPut:input_type -> kevo.TxPutRequest
-	22, // 12: kevo.KevoService.TxDelete:input_type -> kevo.TxDeleteRequest
-	24, // 13: kevo.KevoService.TxScan:input_type -> kevo.TxScanRequest
-	26, // 14: kevo.KevoService.GetStats:input_type -> kevo.GetStatsRequest
-	28, // 15: kevo.KevoService.Compact:input_type -> kevo.CompactRequest
-	2,  // 16: kevo.KevoService.Get:output_type -> kevo.GetResponse
-	4,  // 17: kevo.KevoService.Put:output_type -> kevo.PutResponse
-	6,  // 18: kevo.KevoService.Delete:output_type -> kevo.DeleteResponse
-	9,  // 19: kevo.KevoService.BatchWrite:output_type -> kevo.BatchWriteResponse
-	11, // 20: kevo.KevoService.Scan:output_type -> kevo.ScanResponse
-	13, // 21: kevo.KevoService.BeginTransaction:output_type -> kevo.BeginTransactionResponse
-	15, // 22: kevo.KevoService.CommitTransaction:output_type -> kevo.CommitTransactionResponse
-	17, // 23: kevo.KevoService.RollbackTransaction:output_type -> kevo.RollbackTransactionResponse
-	19, // 24: kevo.KevoService.TxGet:output_type -> kevo.TxGetResponse
-	21, // 25: kevo.KevoService.TxPut:output_type -> kevo.TxPutResponse
-	23, // 26: kevo.KevoService.TxDelete:output_type -> kevo.TxDeleteResponse
-	25, // 27: kevo.KevoService.TxScan:output_type -> kevo.TxScanResponse
-	27, // 28: kevo.KevoService.GetStats:output_type -> kevo.GetStatsResponse
-	29, // 29: kevo.KevoService.Compact:output_type -> kevo.CompactResponse
-	16, // [16:30] is the sub-list for method output_type
-	2,  // [2:16] is the sub-list for method input_type
-	2,  // [2:2] is the sub-list for extension type_name
-	2,  // [2:2] is the sub-list for extension extendee
-	0,  // [0:2] is the sub-list for field type_name
+	32, // 2: kevo.GetStatsResponse.operation_counts:type_name -> kevo.GetStatsResponse.OperationCountsEntry
+	33, // 3: kevo.GetStatsResponse.latency_stats:type_name -> kevo.GetStatsResponse.LatencyStatsEntry
+	34, // 4: kevo.GetStatsResponse.error_counts:type_name -> kevo.GetStatsResponse.ErrorCountsEntry
+	29, // 5: kevo.GetStatsResponse.recovery_stats:type_name -> kevo.RecoveryStats
+	28, // 6: kevo.GetStatsResponse.LatencyStatsEntry.value:type_name -> kevo.LatencyStats
+	1,  // 7: kevo.KevoService.Get:input_type -> kevo.GetRequest
+	3,  // 8: kevo.KevoService.Put:input_type -> kevo.PutRequest
+	5,  // 9: kevo.KevoService.Delete:input_type -> kevo.DeleteRequest
+	7,  // 10: kevo.KevoService.BatchWrite:input_type -> kevo.BatchWriteRequest
+	10, // 11: kevo.KevoService.Scan:input_type -> kevo.ScanRequest
+	12, // 12: kevo.KevoService.BeginTransaction:input_type -> kevo.BeginTransactionRequest
+	14, // 13: kevo.KevoService.CommitTransaction:input_type -> kevo.CommitTransactionRequest
+	16, // 14: kevo.KevoService.RollbackTransaction:input_type -> kevo.RollbackTransactionRequest
+	18, // 15: kevo.KevoService.TxGet:input_type -> kevo.TxGetRequest
+	20, // 16: kevo.KevoService.TxPut:input_type -> kevo.TxPutRequest
+	22, // 17: kevo.KevoService.TxDelete:input_type -> kevo.TxDeleteRequest
+	24, // 18: kevo.KevoService.TxScan:input_type -> kevo.TxScanRequest
+	26, // 19: kevo.KevoService.GetStats:input_type -> kevo.GetStatsRequest
+	30, // 20: kevo.KevoService.Compact:input_type -> kevo.CompactRequest
+	2,  // 21: kevo.KevoService.Get:output_type -> kevo.GetResponse
+	4,  // 22: kevo.KevoService.Put:output_type -> kevo.PutResponse
+	6,  // 23: kevo.KevoService.Delete:output_type -> kevo.DeleteResponse
+	9,  // 24: kevo.KevoService.BatchWrite:output_type -> kevo.BatchWriteResponse
+	11, // 25: kevo.KevoService.Scan:output_type -> kevo.ScanResponse
+	13, // 26: kevo.KevoService.BeginTransaction:output_type -> kevo.BeginTransactionResponse
+	15, // 27: kevo.KevoService.CommitTransaction:output_type -> kevo.CommitTransactionResponse
+	17, // 28: kevo.KevoService.RollbackTransaction:output_type -> kevo.RollbackTransactionResponse
+	19, // 29: kevo.KevoService.TxGet:output_type -> kevo.TxGetResponse
+	21, // 30: kevo.KevoService.TxPut:output_type -> kevo.TxPutResponse
+	23, // 31: kevo.KevoService.TxDelete:output_type -> kevo.TxDeleteResponse
+	25, // 32: kevo.KevoService.TxScan:output_type -> kevo.TxScanResponse
+	27, // 33: kevo.KevoService.GetStats:output_type -> kevo.GetStatsResponse
+	31, // 34: kevo.KevoService.Compact:output_type -> kevo.CompactResponse
+	21, // [21:35] is the sub-list for method output_type
+	7,  // [7:21] is the sub-list for method input_type
+	7,  // [7:7] is the sub-list for extension type_name
+	7,  // [7:7] is the sub-list for extension extendee
+	0,  // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_proto_kevo_service_proto_init() }
@@ -1774,7 +2018,7 @@ func file_proto_kevo_service_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_kevo_service_proto_rawDesc), len(file_proto_kevo_service_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   29,
+			NumMessages:   34,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

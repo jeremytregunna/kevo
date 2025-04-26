@@ -51,10 +51,10 @@ func TestStandardLogger(t *testing.T) {
 	})
 	loggerWithFields.Info("Message with fields")
 	output := buf.String()
-	if !strings.Contains(output, "[INFO]") || 
-	   !strings.Contains(output, "Message with fields") ||
-	   !strings.Contains(output, "component=test") ||
-	   !strings.Contains(output, "count=123") {
+	if !strings.Contains(output, "[INFO]") ||
+		!strings.Contains(output, "Message with fields") ||
+		!strings.Contains(output, "component=test") ||
+		!strings.Contains(output, "count=123") {
 		t.Errorf("Logging with fields failed, got: %s", output)
 	}
 	buf.Reset()
@@ -63,9 +63,9 @@ func TestStandardLogger(t *testing.T) {
 	loggerWithField := logger.WithField("module", "logger")
 	loggerWithField.Info("Message with a field")
 	output = buf.String()
-	if !strings.Contains(output, "[INFO]") || 
-	   !strings.Contains(output, "Message with a field") ||
-	   !strings.Contains(output, "module=logger") {
+	if !strings.Contains(output, "[INFO]") ||
+		!strings.Contains(output, "Message with a field") ||
+		!strings.Contains(output, "module=logger") {
 		t.Errorf("Logging with a field failed, got: %s", output)
 	}
 	buf.Reset()
@@ -77,8 +77,8 @@ func TestStandardLogger(t *testing.T) {
 	logger.Warn("This warning message should not appear")
 	logger.Error("This error message should appear")
 	output = buf.String()
-	if strings.Contains(output, "should not appear") || 
-	   !strings.Contains(output, "This error message should appear") {
+	if strings.Contains(output, "should not appear") ||
+		!strings.Contains(output, "This error message should appear") {
 		t.Errorf("Level filtering failed, got: %s", output)
 	}
 	buf.Reset()
@@ -123,9 +123,9 @@ func TestDefaultLogger(t *testing.T) {
 	// Test global with fields
 	WithField("global", true).Info("Global with field")
 	output := buf.String()
-	if !strings.Contains(output, "[INFO]") || 
-	   !strings.Contains(output, "Global with field") ||
-	   !strings.Contains(output, "global=true") {
+	if !strings.Contains(output, "[INFO]") ||
+		!strings.Contains(output, "Global with field") ||
+		!strings.Contains(output, "global=true") {
 		t.Errorf("Global logging with field failed, got: %s", output)
 	}
 	buf.Reset()

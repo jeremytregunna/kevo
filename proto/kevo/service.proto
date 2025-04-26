@@ -173,6 +173,34 @@ message GetStatsResponse {
   int32 sstable_count = 4;
   double write_amplification = 5;
   double read_amplification = 6;
+  
+  // Operation counts
+  map<string, uint64> operation_counts = 7;
+  // Latency statistics
+  map<string, LatencyStats> latency_stats = 8;
+  // Error statistics
+  map<string, uint64> error_counts = 9;
+  // Performance metrics
+  int64 total_bytes_read = 10;
+  int64 total_bytes_written = 11;
+  int64 flush_count = 12;
+  int64 compaction_count = 13;
+  // Recovery statistics
+  RecoveryStats recovery_stats = 14;
+}
+
+message LatencyStats {
+  uint64 count = 1;
+  uint64 avg_ns = 2;
+  uint64 min_ns = 3;
+  uint64 max_ns = 4;
+}
+
+message RecoveryStats {
+  uint64 wal_files_recovered = 1;
+  uint64 wal_entries_recovered = 2;
+  uint64 wal_corrupted_entries = 3;
+  int64 wal_recovery_duration_ms = 4;
 }
 
 message CompactRequest {

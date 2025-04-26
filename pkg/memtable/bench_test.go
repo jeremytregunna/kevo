@@ -144,7 +144,7 @@ func BenchmarkImmutableMemTableGet(b *testing.B) {
 func BenchmarkConcurrentMemTableGet(b *testing.B) {
 	// This benchmark tests concurrent read performance on a mutable memtable
 	mt := NewMemTable()
-	
+
 	// Insert entries first
 	const numEntries = 100000
 	keys := make([][]byte, numEntries)
@@ -154,7 +154,7 @@ func BenchmarkConcurrentMemTableGet(b *testing.B) {
 		keys[i] = key
 		mt.Put(key, value, uint64(i))
 	}
-	
+
 	// Create random keys for lookup
 	r := rand.New(rand.NewSource(42)) // Use fixed seed for reproducibility
 	lookupKeys := make([][]byte, b.N)
@@ -162,7 +162,7 @@ func BenchmarkConcurrentMemTableGet(b *testing.B) {
 		idx := r.Intn(numEntries)
 		lookupKeys[i] = keys[idx]
 	}
-	
+
 	// Set up for parallel benchmark
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
@@ -181,7 +181,7 @@ func BenchmarkConcurrentMemTableGet(b *testing.B) {
 func BenchmarkConcurrentImmutableMemTableGet(b *testing.B) {
 	// This benchmark tests concurrent read performance on an immutable memtable
 	mt := NewMemTable()
-	
+
 	// Insert entries first
 	const numEntries = 100000
 	keys := make([][]byte, numEntries)
@@ -191,10 +191,10 @@ func BenchmarkConcurrentImmutableMemTableGet(b *testing.B) {
 		keys[i] = key
 		mt.Put(key, value, uint64(i))
 	}
-	
+
 	// Mark memtable as immutable
 	mt.SetImmutable()
-	
+
 	// Create random keys for lookup
 	r := rand.New(rand.NewSource(42)) // Use fixed seed for reproducibility
 	lookupKeys := make([][]byte, b.N)
@@ -202,7 +202,7 @@ func BenchmarkConcurrentImmutableMemTableGet(b *testing.B) {
 		idx := r.Intn(numEntries)
 		lookupKeys[i] = keys[idx]
 	}
-	
+
 	// Set up for parallel benchmark
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
@@ -223,10 +223,10 @@ func BenchmarkMixedWorkload(b *testing.B) {
 	if testing.Short() {
 		b.Skip("Skipping mixed workload benchmark in short mode")
 	}
-	
+
 	// This benchmark tests a mixed workload with concurrent reads and writes
 	mt := NewMemTable()
-	
+
 	// Pre-populate with some data
 	const initialEntries = 50000
 	keys := make([][]byte, initialEntries)
@@ -236,18 +236,18 @@ func BenchmarkMixedWorkload(b *testing.B) {
 		keys[i] = key
 		mt.Put(key, value, uint64(i))
 	}
-	
+
 	// Prepare random operations
 	readRatio := 0.8 // 80% reads, 20% writes
-	
+
 	b.ResetTimer()
-	
+
 	// Run the benchmark in parallel mode
 	b.RunParallel(func(pb *testing.PB) {
 		// Each goroutine gets its own random number generator
 		r := rand.New(rand.NewSource(rand.Int63()))
 		localCount := 0
-		
+
 		// Continue until the benchmark is done
 		for pb.Next() {
 			// Determine operation: read or write

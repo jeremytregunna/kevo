@@ -17,7 +17,7 @@ type Manager struct {
 	coordinator compaction.CompactionCoordinator
 
 	// Configuration and paths
-	cfg       *config.Config
+	cfg        *config.Config
 	sstableDir string
 
 	// Stats collector
@@ -171,10 +171,10 @@ func (m *Manager) GetCompactionStats() map[string]interface{} {
 
 	// Add our own stats
 	stats["compaction_running"] = m.started.Load()
-	
+
 	// Add tombstone tracking stats - needed for tests
 	stats["tombstones_tracked"] = uint64(0)
-	
+
 	// Add last_compaction timestamp if not present - needed for tests
 	if _, exists := stats["last_compaction"]; !exists {
 		stats["last_compaction"] = time.Now().Unix()

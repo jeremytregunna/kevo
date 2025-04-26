@@ -245,7 +245,7 @@ func TestTransactionManager_Isolation(t *testing.T) {
 
 	// In a real scenario with proper locking, we'd test isolation across transactions
 	// But for unit testing, we'll simplify to avoid deadlocks
-	
+
 	// Test part 1: uncommitted changes aren't visible to new transactions
 	{
 		// Begin a transaction and modify data
@@ -284,7 +284,7 @@ func TestTransactionManager_Isolation(t *testing.T) {
 			t.Fatalf("Storage not updated after commit. Got: %s, err: %v", storageValue, err)
 		}
 	}
-	
+
 	// Test part 2: reading committed data
 	{
 		// A new transaction should see the updated value
@@ -300,7 +300,7 @@ func TestTransactionManager_Isolation(t *testing.T) {
 		if string(value) != "tx1-value" {
 			t.Errorf("Transaction doesn't see committed changes. Expected: tx1-value, Got: %s", string(value))
 		}
-		
+
 		// Commit the read-only transaction
 		err = tx2.Commit()
 		if err != nil {

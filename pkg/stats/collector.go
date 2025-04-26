@@ -28,8 +28,8 @@ const (
 // using atomic operations for thread safety
 type AtomicCollector struct {
 	// Operation counters using atomic values
-	counts       map[OperationType]*atomic.Uint64
-	countsMu     sync.RWMutex // Only used when creating new counter entries
+	counts   map[OperationType]*atomic.Uint64
+	countsMu sync.RWMutex // Only used when creating new counter entries
 
 	// Timing measurements for last operation timestamps
 	lastOpTime   map[OperationType]time.Time
@@ -41,35 +41,35 @@ type AtomicCollector struct {
 	totalBytesWritten atomic.Uint64
 
 	// Error tracking
-	errors     map[string]*atomic.Uint64
-	errorsMu   sync.RWMutex // Only used when creating new error entries
+	errors   map[string]*atomic.Uint64
+	errorsMu sync.RWMutex // Only used when creating new error entries
 
 	// Performance metrics
-	flushCount        atomic.Uint64
-	compactionCount   atomic.Uint64
+	flushCount      atomic.Uint64
+	compactionCount atomic.Uint64
 
 	// Recovery statistics
 	recoveryStats RecoveryStats
-	
-	// Latency tracking 
-	latencies    map[OperationType]*LatencyTracker
-	latenciesMu  sync.RWMutex // Only used when creating new latency trackers
+
+	// Latency tracking
+	latencies   map[OperationType]*LatencyTracker
+	latenciesMu sync.RWMutex // Only used when creating new latency trackers
 }
 
 // RecoveryStats tracks statistics related to WAL recovery
 type RecoveryStats struct {
-	WALFilesRecovered    atomic.Uint64
-	WALEntriesRecovered  atomic.Uint64
-	WALCorruptedEntries  atomic.Uint64
-	WALRecoveryDuration  atomic.Int64 // nanoseconds
+	WALFilesRecovered   atomic.Uint64
+	WALEntriesRecovered atomic.Uint64
+	WALCorruptedEntries atomic.Uint64
+	WALRecoveryDuration atomic.Int64 // nanoseconds
 }
 
 // LatencyTracker maintains running statistics about operation latencies
 type LatencyTracker struct {
-	count   atomic.Uint64
-	sum     atomic.Uint64 // sum in nanoseconds
-	max     atomic.Uint64 // max in nanoseconds
-	min     atomic.Uint64 // min in nanoseconds (initialized to max uint64)
+	count atomic.Uint64
+	sum   atomic.Uint64 // sum in nanoseconds
+	max   atomic.Uint64 // max in nanoseconds
+	min   atomic.Uint64 // min in nanoseconds (initialized to max uint64)
 }
 
 // NewCollector creates a new statistics collector
@@ -201,7 +201,7 @@ func (c *AtomicCollector) StartRecovery() time.Time {
 	c.recoveryStats.WALEntriesRecovered.Store(0)
 	c.recoveryStats.WALCorruptedEntries.Store(0)
 	c.recoveryStats.WALRecoveryDuration.Store(0)
-	
+
 	return time.Now()
 }
 
@@ -249,11 +249,11 @@ func (c *AtomicCollector) GetStats() map[string]interface{} {
 
 	// Add recovery statistics
 	recoveryStats := map[string]interface{}{
-		"wal_files_recovered":    c.recoveryStats.WALFilesRecovered.Load(),
-		"wal_entries_recovered":  c.recoveryStats.WALEntriesRecovered.Load(),
-		"wal_corrupted_entries":  c.recoveryStats.WALCorruptedEntries.Load(),
+		"wal_files_recovered":   c.recoveryStats.WALFilesRecovered.Load(),
+		"wal_entries_recovered": c.recoveryStats.WALEntriesRecovered.Load(),
+		"wal_corrupted_entries": c.recoveryStats.WALCorruptedEntries.Load(),
 	}
-	
+
 	recoveryDuration := c.recoveryStats.WALRecoveryDuration.Load()
 	if recoveryDuration > 0 {
 		recoveryStats["wal_recovery_duration_ms"] = recoveryDuration / int64(time.Millisecond)
@@ -269,7 +269,7 @@ func (c *AtomicCollector) GetStats() map[string]interface{} {
 		}
 
 		latencyStats := map[string]interface{}{
-			"count": count,
+			"count":  count,
 			"avg_ns": tracker.sum.Load() / count,
 		}
 

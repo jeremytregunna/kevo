@@ -73,7 +73,7 @@ func NewManager(cfg *config.Config, statsCollector stats.Collector) (*Manager, e
 	}
 
 	// Set up paths
-	dataDir := filepath.Join(cfg.SSTDir, "..")  // Go up one level from SSTDir
+	dataDir := filepath.Join(cfg.SSTDir, "..") // Go up one level from SSTDir
 	sstableDir := cfg.SSTDir
 	walDir := cfg.WALDir
 
@@ -307,7 +307,7 @@ func (m *Manager) GetIterator() (iterator.Iterator, error) {
 
 	// Get all memtables from the pool
 	memTables := m.memTablePool.GetMemTables()
-	
+
 	// Create iterator using the factory
 	factory := engineIterator.NewFactory()
 	return factory.CreateIterator(memTables, m.sstables), nil
@@ -324,7 +324,7 @@ func (m *Manager) GetRangeIterator(startKey, endKey []byte) (iterator.Iterator, 
 
 	// Get all memtables from the pool
 	memTables := m.memTablePool.GetMemTables()
-	
+
 	// Create range-limited iterator using the factory
 	factory := engineIterator.NewFactory()
 	return factory.CreateRangeIterator(memTables, m.sstables, startKey, endKey), nil
@@ -495,7 +495,7 @@ func (m *Manager) ReloadSSTables() error {
 func (m *Manager) RotateWAL() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	return m.rotateWAL()
 }
 
@@ -522,12 +522,12 @@ func (m *Manager) GetStorageStats() map[string]interface{} {
 	defer m.mu.RUnlock()
 
 	stats := make(map[string]interface{})
-	
+
 	stats["memtable_size"] = m.memTablePool.TotalSize()
 	stats["immutable_memtable_count"] = len(m.immutableMTs)
 	stats["sstable_count"] = len(m.sstables)
 	stats["last_sequence"] = m.lastSeqNum
-	
+
 	return stats
 }
 

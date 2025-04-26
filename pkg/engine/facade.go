@@ -25,17 +25,17 @@ var _ interfaces.Engine = (*EngineFacade)(nil)
 // EngineFacade implements the Engine interface and delegates to appropriate components
 type EngineFacade struct {
 	// Configuration
-	cfg       *config.Config
-	dataDir   string
-	
+	cfg     *config.Config
+	dataDir string
+
 	// Core components
 	storage    interfaces.StorageManager
 	txManager  interfaces.TransactionManager
 	compaction interfaces.CompactionManager
 	stats      stats.Collector
-	
+
 	// State
-	closed     atomic.Bool
+	closed atomic.Bool
 }
 
 // We keep the Engine name used in legacy code, but redirect it to our new implementation
@@ -89,22 +89,22 @@ func NewEngineFacade(dataDir string) (*EngineFacade, error) {
 
 	// Create the facade
 	facade := &EngineFacade{
-		cfg:        cfg,
-		dataDir:    dataDir,
-		
+		cfg:     cfg,
+		dataDir: dataDir,
+
 		// Initialize components
 		storage:    storageManager,
 		txManager:  txManager,
 		compaction: compactionManager,
 		stats:      statsCollector,
 	}
-	
+
 	// Start the compaction manager
 	if err := compactionManager.Start(); err != nil {
 		// If compaction fails to start, continue but log the error
 		statsCollector.TrackError("compaction_start_error")
 	}
-	
+
 	// Return the fully implemented facade with no error
 	return facade, nil
 }
@@ -114,26 +114,26 @@ func (e *EngineFacade) Put(key, value []byte) error {
 	if e.closed.Load() {
 		return ErrEngineClosed
 	}
-	
+
 	// Track the operation start
 	e.stats.TrackOperation(stats.OpPut)
-	
+
 	// Track operation latency
 	start := time.Now()
 
 	// Delegate to storage component
 	err := e.storage.Put(key, value)
-	
+
 	latencyNs := uint64(time.Since(start).Nanoseconds())
 	e.stats.TrackOperationWithLatency(stats.OpPut, latencyNs)
-	
+
 	// Track bytes written
 	if err == nil {
 		e.stats.TrackBytes(true, uint64(len(key)+len(value)))
 	} else {
 		e.stats.TrackError("put_error")
 	}
-	
+
 	return err
 }
 
@@ -142,19 +142,19 @@ func (e *EngineFacade) Get(key []byte) ([]byte, error) {
 	if e.closed.Load() {
 		return nil, ErrEngineClosed
 	}
-	
+
 	// Track the operation start
 	e.stats.TrackOperation(stats.OpGet)
-	
+
 	// Track operation latency
 	start := time.Now()
 
 	// Delegate to storage component
 	value, err := e.storage.Get(key)
-	
+
 	latencyNs := uint64(time.Since(start).Nanoseconds())
 	e.stats.TrackOperationWithLatency(stats.OpGet, latencyNs)
-	
+
 	// Track bytes read
 	if err == nil {
 		e.stats.TrackBytes(false, uint64(len(key)+len(value)))
@@ -163,7 +163,7 @@ func (e *EngineFacade) Get(key []byte) ([]byte, error) {
 	} else {
 		e.stats.TrackError("get_error")
 	}
-	
+
 	return value, err
 }
 
@@ -172,23 +172,23 @@ func (e *EngineFacade) Delete(key []byte) error {
 	if e.closed.Load() {
 		return ErrEngineClosed
 	}
-	
+
 	// Track the operation start
 	e.stats.TrackOperation(stats.OpDelete)
-	
+
 	// Track operation latency
 	start := time.Now()
 
 	// Delegate to storage component
 	err := e.storage.Delete(key)
-	
+
 	latencyNs := uint64(time.Since(start).Nanoseconds())
 	e.stats.TrackOperationWithLatency(stats.OpDelete, latencyNs)
-	
+
 	// Track bytes written (just key for deletes)
 	if err == nil {
 		e.stats.TrackBytes(true, uint64(len(key)))
-		
+
 		// Track tombstone in compaction manager
 		if e.compaction != nil {
 			e.compaction.TrackTombstone(key)
@@ -196,7 +196,7 @@ func (e *EngineFacade) Delete(key []byte) error {
 	} else {
 		e.stats.TrackError("delete_error")
 	}
-	
+
 	return err
 }
 
@@ -205,20 +205,20 @@ func (e *EngineFacade) IsDeleted(key []byte) (bool, error) {
 	if e.closed.Load() {
 		return false, ErrEngineClosed
 	}
-	
+
 	// Track operation
 	e.stats.TrackOperation(stats.OpGet) // Using OpGet since it's a read operation
-	
+
 	// Track operation latency
 	start := time.Now()
 	isDeleted, err := e.storage.IsDeleted(key)
 	latencyNs := uint64(time.Since(start).Nanoseconds())
 	e.stats.TrackOperationWithLatency(stats.OpGet, latencyNs)
-	
+
 	if err != nil && !errors.Is(err, ErrKeyNotFound) {
 		e.stats.TrackError("is_deleted_error")
 	}
-	
+
 	return isDeleted, err
 }
 
@@ -227,16 +227,16 @@ func (e *EngineFacade) GetIterator() (iterator.Iterator, error) {
 	if e.closed.Load() {
 		return nil, ErrEngineClosed
 	}
-	
+
 	// Track the operation start
 	e.stats.TrackOperation(stats.OpScan)
-	
+
 	// Track operation latency
 	start := time.Now()
 	iter, err := e.storage.GetIterator()
 	latencyNs := uint64(time.Since(start).Nanoseconds())
 	e.stats.TrackOperationWithLatency(stats.OpScan, latencyNs)
-	
+
 	return iter, err
 }
 
@@ -245,16 +245,16 @@ func (e *EngineFacade) GetRangeIterator(startKey, endKey []byte) (iterator.Itera
 	if e.closed.Load() {
 		return nil, ErrEngineClosed
 	}
-	
+
 	// Track the operation start with the range-specific operation type
 	e.stats.TrackOperation(stats.OpScanRange)
-	
+
 	// Track operation latency
 	start := time.Now()
 	iter, err := e.storage.GetRangeIterator(startKey, endKey)
 	latencyNs := uint64(time.Since(start).Nanoseconds())
 	e.stats.TrackOperationWithLatency(stats.OpScanRange, latencyNs)
-	
+
 	return iter, err
 }
 
@@ -263,10 +263,10 @@ func (e *EngineFacade) BeginTransaction(readOnly bool) (interfaces.Transaction, 
 	if e.closed.Load() {
 		return nil, ErrEngineClosed
 	}
-	
+
 	// Track the operation start
 	e.stats.TrackOperation(stats.OpTxBegin)
-	
+
 	// Check if we have a registered transaction creator for legacy compatibility
 	creator := GetRegisteredTransactionCreator()
 	if creator != nil {
@@ -283,13 +283,13 @@ func (e *EngineFacade) BeginTransaction(readOnly bool) (interfaces.Transaction, 
 		}
 		// If legacy creator fails, fall back to the new implementation
 	}
-	
+
 	// Track operation latency
 	start := time.Now()
 	tx, err := e.txManager.BeginTransaction(readOnly)
 	latencyNs := uint64(time.Since(start).Nanoseconds())
 	e.stats.TrackOperationWithLatency(stats.OpTxBegin, latencyNs)
-	
+
 	return tx, err
 }
 
@@ -298,10 +298,10 @@ func (e *EngineFacade) ApplyBatch(entries []*wal.Entry) error {
 	if e.closed.Load() {
 		return ErrEngineClosed
 	}
-	
+
 	// Track the operation - using a custom operation type might be good in the future
 	e.stats.TrackOperation(stats.OpPut) // Using OpPut since batch operations are primarily writes
-	
+
 	// Count bytes for statistics
 	var totalBytes uint64
 	for _, entry := range entries {
@@ -310,17 +310,17 @@ func (e *EngineFacade) ApplyBatch(entries []*wal.Entry) error {
 			totalBytes += uint64(len(entry.Value))
 		}
 	}
-	
+
 	// Track operation latency
 	start := time.Now()
 	err := e.storage.ApplyBatch(entries)
 	latencyNs := uint64(time.Since(start).Nanoseconds())
 	e.stats.TrackOperationWithLatency(stats.OpPut, latencyNs)
-	
+
 	// Track bytes and errors
 	if err == nil {
 		e.stats.TrackBytes(true, totalBytes)
-		
+
 		// Track tombstones in compaction manager for delete operations
 		if e.compaction != nil {
 			for _, entry := range entries {
@@ -332,7 +332,7 @@ func (e *EngineFacade) ApplyBatch(entries []*wal.Entry) error {
 	} else {
 		e.stats.TrackError("batch_error")
 	}
-	
+
 	return err
 }
 
@@ -341,16 +341,16 @@ func (e *EngineFacade) FlushImMemTables() error {
 	if e.closed.Load() {
 		return ErrEngineClosed
 	}
-	
+
 	// Track the operation start
 	e.stats.TrackOperation(stats.OpFlush)
-	
+
 	// Track operation latency
 	start := time.Now()
 	err := e.storage.FlushMemTables()
 	latencyNs := uint64(time.Since(start).Nanoseconds())
 	e.stats.TrackOperationWithLatency(stats.OpFlush, latencyNs)
-	
+
 	return err
 }
 
@@ -359,23 +359,23 @@ func (e *EngineFacade) TriggerCompaction() error {
 	if e.closed.Load() {
 		return ErrEngineClosed
 	}
-	
+
 	// Track the operation start
 	e.stats.TrackOperation(stats.OpCompact)
-	
+
 	// Track operation latency
 	start := time.Now()
 	err := e.compaction.TriggerCompaction()
 	latencyNs := uint64(time.Since(start).Nanoseconds())
 	e.stats.TrackOperationWithLatency(stats.OpCompact, latencyNs)
-	
+
 	if err != nil {
 		e.stats.TrackError("compaction_trigger_error")
 	} else {
 		// Track a successful compaction
 		e.stats.TrackCompaction()
 	}
-	
+
 	return err
 }
 
@@ -384,27 +384,27 @@ func (e *EngineFacade) CompactRange(startKey, endKey []byte) error {
 	if e.closed.Load() {
 		return ErrEngineClosed
 	}
-	
+
 	// Track the operation start
 	e.stats.TrackOperation(stats.OpCompact)
-	
+
 	// Track bytes processed
 	keyBytes := uint64(len(startKey) + len(endKey))
 	e.stats.TrackBytes(false, keyBytes)
-	
+
 	// Track operation latency
 	start := time.Now()
 	err := e.compaction.CompactRange(startKey, endKey)
 	latencyNs := uint64(time.Since(start).Nanoseconds())
 	e.stats.TrackOperationWithLatency(stats.OpCompact, latencyNs)
-	
+
 	if err != nil {
 		e.stats.TrackError("compaction_range_error")
 	} else {
 		// Track a successful compaction
 		e.stats.TrackCompaction()
 	}
-	
+
 	return err
 }
 
@@ -412,23 +412,23 @@ func (e *EngineFacade) CompactRange(startKey, endKey []byte) error {
 func (e *EngineFacade) GetStats() map[string]interface{} {
 	// Combine stats from all components
 	stats := e.stats.GetStats()
-	
+
 	// Add component-specific stats
 	if e.storage != nil {
 		for k, v := range e.storage.GetStorageStats() {
 			stats["storage_"+k] = v
 		}
 	}
-	
+
 	if e.txManager != nil {
 		for k, v := range e.txManager.GetTransactionStats() {
 			stats["tx_"+k] = v
 		}
 	}
-	
+
 	// Add state information
 	stats["closed"] = e.closed.Load()
-	
+
 	return stats
 }
 
@@ -437,24 +437,24 @@ func (e *EngineFacade) GetCompactionStats() (map[string]interface{}, error) {
 	if e.closed.Load() {
 		return nil, ErrEngineClosed
 	}
-	
+
 	if e.compaction != nil {
 		// Get compaction stats from the manager
 		compactionStats := e.compaction.GetCompactionStats()
-		
+
 		// Add additional information
 		baseStats := map[string]interface{}{
 			"enabled": true,
 		}
-		
+
 		// Merge the stats
 		for k, v := range compactionStats {
 			baseStats[k] = v
 		}
-		
+
 		return baseStats, nil
 	}
-	
+
 	return map[string]interface{}{
 		"enabled": false,
 	}, nil
@@ -466,24 +466,24 @@ func (e *EngineFacade) Close() error {
 	if e.closed.Swap(true) {
 		return nil // Already closed
 	}
-	
+
 	// Track operation latency
 	start := time.Now()
-	
+
 	var err error
-	
+
 	// Close components in reverse order of dependency
-	
+
 	// 1. First close compaction manager (to stop background tasks)
 	if e.compaction != nil {
 		e.stats.TrackOperation(stats.OpCompact)
-		
+
 		if compErr := e.compaction.Stop(); compErr != nil {
 			err = compErr
 			e.stats.TrackError("close_compaction_error")
 		}
 	}
-	
+
 	// 2. Close storage (which will close sstables and WAL)
 	if e.storage != nil {
 		if storageErr := e.storage.Close(); storageErr != nil {
@@ -493,10 +493,10 @@ func (e *EngineFacade) Close() error {
 			e.stats.TrackError("close_storage_error")
 		}
 	}
-	
+
 	// Even though we're closing, track the latency for monitoring purposes
 	latencyNs := uint64(time.Since(start).Nanoseconds())
 	e.stats.TrackOperationWithLatency(stats.OpFlush, latencyNs) // Using OpFlush as a proxy for engine operations
-	
+
 	return err
 }

@@ -38,11 +38,11 @@ func (m *Manager) BeginTransaction(readOnly bool) (interfaces.Transaction, error
 	// Track transaction start
 	m.stats.TrackOperation(stats.OpTxBegin)
 	m.txStarted.Add(1)
-	
+
 	// Create either a read-only or read-write transaction
 	// This will acquire appropriate locks
 	tx := NewTransaction(m, m.storage, readOnly)
-	
+
 	return tx, nil
 }
 
@@ -54,7 +54,7 @@ func (m *Manager) GetRWLock() *sync.RWMutex {
 // IncrementTxCompleted increments the completed transaction counter
 func (m *Manager) IncrementTxCompleted() {
 	m.txCompleted.Add(1)
-	
+
 	// Track the commit operation
 	m.stats.TrackOperation(stats.OpTxCommit)
 }
@@ -62,7 +62,7 @@ func (m *Manager) IncrementTxCompleted() {
 // IncrementTxAborted increments the aborted transaction counter
 func (m *Manager) IncrementTxAborted() {
 	m.txAborted.Add(1)
-	
+
 	// Track the rollback operation
 	m.stats.TrackOperation(stats.OpTxRollback)
 }
@@ -70,14 +70,14 @@ func (m *Manager) IncrementTxAborted() {
 // GetTransactionStats returns transaction statistics
 func (m *Manager) GetTransactionStats() map[string]interface{} {
 	stats := make(map[string]interface{})
-	
+
 	stats["tx_started"] = m.txStarted.Load()
 	stats["tx_completed"] = m.txCompleted.Load()
 	stats["tx_aborted"] = m.txAborted.Load()
-	
+
 	// Calculate active transactions
 	active := m.txStarted.Load() - m.txCompleted.Load() - m.txAborted.Load()
 	stats["tx_active"] = active
-	
+
 	return stats
 }

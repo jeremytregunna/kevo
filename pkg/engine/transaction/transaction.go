@@ -94,7 +94,24 @@ func (tx *Transaction) Get(key []byte) ([]byte, error) {
 	}
 
 	// Not in the buffer, get from the underlying storage
-	return tx.storage.Get(key)
+	val, err := tx.storage.Get(key)
+
+	// Debug print on error to help diagnose key encoding issues
+	if err != nil {
+		// Log in both ASCII and hex for debugging
+		if len(key) < 100 {
+			strKey := string(key)
+			hexKey := ""
+			for _, b := range key {
+				hexKey += string("0123456789abcdef"[b>>4])
+				hexKey += string("0123456789abcdef"[b&0xF])
+			}
+			// Log both representations
+			println("Transaction key not found:", strKey, "(hex:", hexKey, ")")
+		}
+	}
+
+	return val, err
 }
 
 // Put adds or updates a key-value pair
@@ -107,6 +124,17 @@ func (tx *Transaction) Put(key, value []byte) error {
 	// Check if transaction is read-only
 	if tx.readOnly {
 		return ErrReadOnlyTransaction
+	}
+
+	// Debug print key being stored
+	if len(key) < 100 {
+		strKey := string(key)
+		hexKey := ""
+		for _, b := range key {
+			hexKey += string("0123456789abcdef"[b>>4])
+			hexKey += string("0123456789abcdef"[b&0xF])
+		}
+		println("Transaction storing key:", strKey, "(hex:", hexKey, ")")
 	}
 
 	// Buffer the change - it will be applied on commit
@@ -153,7 +181,7 @@ func (tx *Transaction) NewIterator() iterator.Iterator {
 
 	// Merge buffer and storage iterators
 	bufferIter := tx.buffer.NewIterator()
-	
+
 	// Using composite.NewHierarchicalIterator from common/iterator/composite
 	// with the transaction buffer having higher priority
 	return composite.NewHierarchicalIterator([]iterator.Iterator{bufferIter, storageIter})
@@ -183,7 +211,7 @@ func (tx *Transaction) NewRangeIterator(startKey, endKey []byte) iterator.Iterat
 	// Create a bounded buffer iterator
 	bufferIter := tx.buffer.NewIterator()
 	boundedBufferIter := bounded.NewBoundedIterator(bufferIter, startKey, endKey)
-	
+
 	// Merge the bounded buffer iterator with the storage range iterator
 	return composite.NewHierarchicalIterator([]iterator.Iterator{boundedBufferIter, storageIter})
 }
@@ -200,10 +228,10 @@ func (tx *Transaction) Commit() error {
 	// For read-only transactions, just release the read lock
 	if tx.readOnly {
 		tx.releaseReadLock()
-		
+
 		// Track transaction completion
 		tx.manager.IncrementTxCompleted()
-		
+
 		return nil
 	}
 
@@ -239,7 +267,7 @@ func (tx *Transaction) Commit() error {
 
 	// Release the write lock
 	tx.releaseWriteLock()
-	
+
 	// Track transaction completion
 	tx.manager.IncrementTxCompleted()
 

@@ -24,7 +24,7 @@ func setupBenchmarkSSTable(b *testing.B, numEntries int) (string, error) {
 
 	// Create a temporary SSTable file
 	path := filepath.Join(dir, "benchmark.sst")
-	
+
 	// Create a writer
 	writer, err := NewWriter(path)
 	if err != nil {
@@ -69,7 +69,7 @@ func TestSSTableBasicOps(t *testing.T) {
 
 	// Create a temporary SSTable file
 	path := filepath.Join(dir, "basic.sst")
-	
+
 	// Create a writer
 	writer, err := NewWriter(path)
 	if err != nil {
@@ -106,7 +106,7 @@ func TestSSTableBasicOps(t *testing.T) {
 	if string(result) != string(value) {
 		t.Fatalf("Expected value %q, got %q", value, result)
 	}
-	
+
 	t.Logf("Basic SSTable operations work correctly!")
 }
 
@@ -129,11 +129,11 @@ func BenchmarkSSTableGet(b *testing.B) {
 
 			// Create a temporary SSTable file
 			path := filepath.Join(dir, fmt.Sprintf("benchmark_%s.sst", name))
-			
+
 			// Create writer with appropriate options
 			options := DefaultWriterOptions()
 			options.EnableBloomFilter = enableBloomFilter
-			
+
 			writer, err := NewWriterWithOptions(path, options)
 			if err != nil {
 				b.Fatalf("Failed to create SSTable writer: %v", err)
@@ -180,7 +180,7 @@ func BenchmarkSSTableGet(b *testing.B) {
 					// Existing key
 					idx := r.Intn(numEntries)
 					key = []byte(fmt.Sprintf("key%08d", idx))
-					
+
 					// Perform the Get operation
 					_, err := reader.Get(key)
 					if err != nil {
@@ -189,7 +189,7 @@ func BenchmarkSSTableGet(b *testing.B) {
 				} else {
 					// Non-existing key
 					key = []byte(fmt.Sprintf("nonexistent%08d", i))
-					
+
 					// Perform the Get operation (expect not found)
 					_, err := reader.Get(key)
 					if err != ErrNotFound {
@@ -257,12 +257,12 @@ func BenchmarkSSTableIterator(b *testing.B) {
 		for testIter.SeekToFirst(); testIter.Valid(); testIter.Next() {
 			actualCount++
 		}
-		
+
 		for i := 0; i < b.N; i++ {
 			b.StopTimer()
 			iter := reader.NewIterator()
 			b.StartTimer()
-			
+
 			count := 0
 			for iter.SeekToFirst(); iter.Valid(); iter.Next() {
 				// Just access the key and value to ensure they're loaded
@@ -270,7 +270,7 @@ func BenchmarkSSTableIterator(b *testing.B) {
 				_ = iter.Value()
 				count++
 			}
-			
+
 			if count != actualCount {
 				b.Fatalf("Expected %d entries, got %d", actualCount, count)
 			}
@@ -281,13 +281,13 @@ func BenchmarkSSTableIterator(b *testing.B) {
 		// Use a fixed iterator for all seeks
 		iter := reader.NewIterator()
 		r := rand.New(rand.NewSource(42))
-		
+
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			// Generate a key to seek
 			idx := r.Intn(numEntries)
 			key := []byte(fmt.Sprintf("key-%05d", idx))
-			
+
 			// Perform the seek
 			found := iter.Seek(key)
 			if !found || !iter.Valid() {
@@ -347,12 +347,12 @@ func BenchmarkConcurrentSSTableGet(b *testing.B) {
 		// Each goroutine gets its own random number generator
 		r := rand.New(rand.NewSource(rand.Int63()))
 		var key []byte
-		
+
 		for pb.Next() {
 			// Use a random key from our range
 			idx := r.Intn(numEntries)
 			key = []byte(fmt.Sprintf("key-%05d", idx))
-			
+
 			// Perform the Get operation
 			_, err := reader.Get(key)
 			if err != nil {
@@ -392,12 +392,12 @@ func BenchmarkConcurrentSSTableIterators(b *testing.B) {
 		// Each goroutine gets its own iterator and random number generator
 		iter := reader.NewIterator()
 		localRand := rand.New(rand.NewSource(rand.Int63()))
-		
+
 		for pb.Next() {
-			// Choose a random operation type: 
+			// Choose a random operation type:
 			// 0 = Seek, 1 = SeekToFirst, 2 = Next
 			op := localRand.Intn(3)
-			
+
 			switch op {
 			case 0:
 				// Random seek
@@ -408,20 +408,20 @@ func BenchmarkConcurrentSSTableIterators(b *testing.B) {
 					// (e.g., if we seek past the end)
 					continue
 				}
-				
+
 				// Access the key/value to ensure they're loaded
 				if iter.Valid() {
 					_ = iter.Key()
 					_ = iter.Value()
 				}
-				
+
 			case 1:
 				// Seek to first and read a few entries
 				iter.SeekToFirst()
 				if iter.Valid() {
 					_ = iter.Key()
 					_ = iter.Value()
-					
+
 					// Read a few more entries
 					count := 0
 					max := localRand.Intn(10) + 1 // 1-10 entries
@@ -431,7 +431,7 @@ func BenchmarkConcurrentSSTableIterators(b *testing.B) {
 						count++
 					}
 				}
-				
+
 			case 2:
 				// If we have a valid position, move to next
 				if iter.Valid() {
@@ -458,7 +458,7 @@ func BenchmarkMultipleSSTableReaders(b *testing.B) {
 	// Create multiple SSTable files
 	const numSSTables = 5
 	const entriesPerTable = 5000
-	
+
 	paths := make([]string, numSSTables)
 	for i := 0; i < numSSTables; i++ {
 		path, err := setupBenchmarkSSTable(b, entriesPerTable)
@@ -471,14 +471,14 @@ func BenchmarkMultipleSSTableReaders(b *testing.B) {
 		}
 		paths[i] = path
 	}
-	
+
 	// Make sure we clean up all files
 	defer func() {
 		for _, path := range paths {
 			cleanup(path)
 		}
 	}()
-	
+
 	// Open readers for all the SSTable files
 	readers := make([]*Reader, numSSTables)
 	for i, path := range paths {
@@ -489,40 +489,40 @@ func BenchmarkMultipleSSTableReaders(b *testing.B) {
 		readers[i] = reader
 		defer reader.Close()
 	}
-	
+
 	// Prepare random keys for lookup
 	keys := make([][]byte, b.N)
 	tableIdx := make([]int, b.N)
 	r := rand.New(rand.NewSource(42))
-	
+
 	for i := 0; i < b.N; i++ {
 		// Pick a random SSTable and a random key in that table
 		tableIdx[i] = r.Intn(numSSTables)
 		keyIdx := r.Intn(entriesPerTable)
 		keys[i] = keyForIndex(keyIdx)
 	}
-	
+
 	b.ResetTimer()
 	b.Run("SerialGet", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			_, err := readers[tableIdx[i]].Get(keys[i])
 			if err != nil {
-				b.Fatalf("Failed to get key %s from SSTable %d: %v", 
+				b.Fatalf("Failed to get key %s from SSTable %d: %v",
 					keys[i], tableIdx[i], err)
 			}
 		}
 	})
-	
+
 	b.Run("ConcurrentGet", func(b *testing.B) {
 		var wg sync.WaitGroup
 		// Use 10 goroutines
 		numWorkers := 10
 		batchSize := b.N / numWorkers
-		
+
 		if batchSize == 0 {
 			batchSize = 1
 		}
-		
+
 		for w := 0; w < numWorkers; w++ {
 			wg.Add(1)
 			go func(workerID int) {
@@ -532,17 +532,17 @@ func BenchmarkMultipleSSTableReaders(b *testing.B) {
 				if end > b.N {
 					end = b.N
 				}
-				
+
 				for i := start; i < end; i++ {
 					_, err := readers[tableIdx[i]].Get(keys[i])
 					if err != nil {
-						b.Fatalf("Worker %d: Failed to get key %s from SSTable %d: %v", 
+						b.Errorf("Worker %d: Failed to get key %s from SSTable %d: %v",
 							workerID, keys[i], tableIdx[i], err)
 					}
 				}
 			}(w)
 		}
-		
+
 		wg.Wait()
 	})
 }

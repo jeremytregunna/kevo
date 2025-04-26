@@ -2,20 +2,21 @@ package transaction
 
 import (
 	"bytes"
+	"encoding/base64"
 	"sort"
 	"sync"
 )
 
 // Operation represents a single operation in the transaction buffer
 type Operation struct {
-	Key     []byte
-	Value   []byte
+	Key      []byte
+	Value    []byte
 	IsDelete bool
 }
 
 // Buffer stores pending changes for a transaction
 type Buffer struct {
-	operations map[string]*Operation // Key string -> Operation
+	operations map[string]*Operation // Key string -> Operation (using base64 encoding for binary safety)
 	mu         sync.RWMutex
 }
 
@@ -37,8 +38,8 @@ func (b *Buffer) Put(key, value []byte) {
 	copy(keyCopy, key)
 	copy(valueCopy, value)
 
-	// Create or update the operation
-	b.operations[string(key)] = &Operation{
+	// Create or update the operation - use base64 encoding for map key to avoid binary encoding issues
+	b.operations[base64.StdEncoding.EncodeToString(key)] = &Operation{
 		Key:      keyCopy,
 		Value:    valueCopy,
 		IsDelete: false,
@@ -54,8 +55,8 @@ func (b *Buffer) Delete(key []byte) {
 	keyCopy := make([]byte, len(key))
 	copy(keyCopy, key)
 
-	// Create or update the operation
-	b.operations[string(key)] = &Operation{
+	// Create or update the operation - use base64 encoding for map key to avoid binary encoding issues
+	b.operations[base64.StdEncoding.EncodeToString(key)] = &Operation{
 		Key:      keyCopy,
 		Value:    nil,
 		IsDelete: true,
@@ -68,7 +69,24 @@ func (b *Buffer) Get(key []byte) ([]byte, bool) {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
-	op, ok := b.operations[string(key)]
+	encodedKey := base64.StdEncoding.EncodeToString(key)
+	op, ok := b.operations[encodedKey]
+
+	// Debug info for key lookup
+	if !ok && len(key) < 100 {
+		strKey := string(key)
+		println("Buffer key miss:", strKey, ", base64:", encodedKey)
+
+		// Print all keys in map for debugging
+		if len(b.operations) < 10 {
+			println("Available keys in buffer:")
+			for k := range b.operations {
+				keyData, _ := base64.StdEncoding.DecodeString(k)
+				println("  -", string(keyData), "(base64:", k, ")")
+			}
+		}
+	}
+
 	if !ok {
 		return nil, false
 	}
