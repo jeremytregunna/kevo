@@ -5,12 +5,12 @@ package wal
 type LamportClock interface {
 	// Tick increments the clock and returns the new timestamp value
 	Tick() uint64
-	
+
 	// Update updates the clock based on a received timestamp,
 	// ensuring the local clock is at least as large as the received timestamp,
 	// then increments and returns the new value
 	Update(received uint64) uint64
-	
+
 	// Current returns the current timestamp without incrementing the clock
 	Current() uint64
 }

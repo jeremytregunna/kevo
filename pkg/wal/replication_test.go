@@ -53,7 +53,7 @@ type MockReplicationHook struct {
 func (m *MockReplicationHook) OnEntryWritten(entry *Entry) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	// Make a deep copy of the entry to ensure tests are not affected by later modifications
 	entryCopy := &Entry{
 		SequenceNumber: entry.SequenceNumber,
@@ -63,7 +63,7 @@ func (m *MockReplicationHook) OnEntryWritten(entry *Entry) {
 	if entry.Value != nil {
 		entryCopy.Value = append([]byte{}, entry.Value...)
 	}
-	
+
 	m.entries = append(m.entries, entryCopy)
 	m.entriesReceived++
 }
@@ -71,7 +71,7 @@ func (m *MockReplicationHook) OnEntryWritten(entry *Entry) {
 func (m *MockReplicationHook) OnBatchWritten(entries []*Entry) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	// Make a deep copy of all entries
 	entriesCopy := make([]*Entry, len(entries))
 	for i, entry := range entries {
@@ -84,7 +84,7 @@ func (m *MockReplicationHook) OnBatchWritten(entries []*Entry) {
 			entriesCopy[i].Value = append([]byte{}, entry.Value...)
 		}
 	}
-	
+
 	m.batchEntries = append(m.batchEntries, entriesCopy)
 	m.batchesReceived++
 }
@@ -117,10 +117,10 @@ func TestWALReplicationHook(t *testing.T) {
 
 	// Create a mock replication hook
 	hook := &MockReplicationHook{}
-	
+
 	// Create a Lamport clock
 	clock := NewMockLamportClock()
-	
+
 	// Create a WAL with the replication hook
 	cfg := config.NewDefaultConfig(dir)
 	wal, err := NewWALWithReplication(cfg, dir, clock, hook)
@@ -132,18 +132,18 @@ func TestWALReplicationHook(t *testing.T) {
 	// Test single entry writes
 	key1 := []byte("key1")
 	value1 := []byte("value1")
-	
+
 	seq1, err := wal.Append(OpTypePut, key1, value1)
 	if err != nil {
 		t.Fatalf("Failed to append to WAL: %v", err)
 	}
-	
+
 	// Test that the hook received the entry
 	entries := hook.GetEntries()
 	if len(entries) != 1 {
 		t.Fatalf("Expected 1 entry, got %d", len(entries))
 	}
-	
+
 	entry := entries[0]
 	if entry.SequenceNumber != seq1 {
 		t.Errorf("Expected sequence number %d, got %d", seq1, entry.SequenceNumber)
@@ -163,28 +163,28 @@ func TestWALReplicationHook(t *testing.T) {
 	value2 := []byte("value2")
 	key3 := []byte("key3")
 	value3 := []byte("value3")
-	
+
 	batchEntries := []*Entry{
 		{Type: OpTypePut, Key: key2, Value: value2},
 		{Type: OpTypePut, Key: key3, Value: value3},
 	}
-	
+
 	batchSeq, err := wal.AppendBatch(batchEntries)
 	if err != nil {
 		t.Fatalf("Failed to append batch to WAL: %v", err)
 	}
-	
+
 	// Test that the hook received the batch
 	batches := hook.GetBatchEntries()
 	if len(batches) != 1 {
 		t.Fatalf("Expected 1 batch, got %d", len(batches))
 	}
-	
+
 	batch := batches[0]
 	if len(batch) != 2 {
 		t.Fatalf("Expected 2 entries in batch, got %d", len(batch))
 	}
-	
+
 	// Check first entry in batch
 	if batch[0].SequenceNumber != batchSeq {
 		t.Errorf("Expected sequence number %d, got %d", batchSeq, batch[0].SequenceNumber)
@@ -198,7 +198,7 @@ func TestWALReplicationHook(t *testing.T) {
 	if string(batch[0].Value) != string(value2) {
 		t.Errorf("Expected value %q, got %q", value2, batch[0].Value)
 	}
-	
+
 	// Check second entry in batch
 	if batch[1].SequenceNumber != batchSeq+1 {
 		t.Errorf("Expected sequence number %d, got %d", batchSeq+1, batch[1].SequenceNumber)
@@ -212,7 +212,7 @@ func TestWALReplicationHook(t *testing.T) {
 	if string(batch[1].Value) != string(value3) {
 		t.Errorf("Expected value %q, got %q", value3, batch[1].Value)
 	}
-	
+
 	// Check call counts
 	entriesReceived, batchesReceived := hook.GetStats()
 	if entriesReceived != 1 {
@@ -233,7 +233,7 @@ func TestWALWithLamportClock(t *testing.T) {
 
 	// Create a Lamport clock
 	clock := NewMockLamportClock()
-	
+
 	// Create a WAL with the Lamport clock but no hook
 	cfg := config.NewDefaultConfig(dir)
 	wal, err := NewWALWithReplication(cfg, dir, clock, nil)
@@ -246,7 +246,7 @@ func TestWALWithLamportClock(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		clock.Tick()
 	}
-	
+
 	// Current clock value should be 5
 	if clock.Current() != 5 {
 		t.Fatalf("Expected clock value 5, got %d", clock.Current())
@@ -255,38 +255,38 @@ func TestWALWithLamportClock(t *testing.T) {
 	// Test that the WAL uses the Lamport clock for sequence numbers
 	key1 := []byte("key1")
 	value1 := []byte("value1")
-	
+
 	seq1, err := wal.Append(OpTypePut, key1, value1)
 	if err != nil {
 		t.Fatalf("Failed to append to WAL: %v", err)
 	}
-	
+
 	// Sequence number should be 6 (previous 5 + 1 for this operation)
 	if seq1 != 6 {
 		t.Errorf("Expected sequence number 6, got %d", seq1)
 	}
-	
+
 	// Clock should have incremented
 	if clock.Current() != 6 {
 		t.Errorf("Expected clock value 6, got %d", clock.Current())
 	}
-	
+
 	// Test with a batch
 	entries := []*Entry{
 		{Type: OpTypePut, Key: []byte("key2"), Value: []byte("value2")},
 		{Type: OpTypePut, Key: []byte("key3"), Value: []byte("value3")},
 	}
-	
+
 	batchSeq, err := wal.AppendBatch(entries)
 	if err != nil {
 		t.Fatalf("Failed to append batch to WAL: %v", err)
 	}
-	
+
 	// Batch sequence should be 7
 	if batchSeq != 7 {
 		t.Errorf("Expected batch sequence number 7, got %d", batchSeq)
 	}
-	
+
 	// Clock should have incremented again
 	if clock.Current() != 7 {
 		t.Errorf("Expected clock value 7, got %d", clock.Current())
@@ -312,43 +312,43 @@ func TestWALHookAfterCreation(t *testing.T) {
 	// Write an entry before adding a hook
 	key1 := []byte("key1")
 	value1 := []byte("value1")
-	
+
 	_, err = wal.Append(OpTypePut, key1, value1)
 	if err != nil {
 		t.Fatalf("Failed to append to WAL: %v", err)
 	}
-	
+
 	// Create and add a hook after the fact
 	hook := &MockReplicationHook{}
 	wal.SetReplicationHook(hook)
-	
+
 	// Create and add a Lamport clock after the fact
 	clock := NewMockLamportClock()
 	wal.SetLamportClock(clock)
-	
+
 	// Write another entry, this should trigger the hook
 	key2 := []byte("key2")
 	value2 := []byte("value2")
-	
+
 	seq2, err := wal.Append(OpTypePut, key2, value2)
 	if err != nil {
 		t.Fatalf("Failed to append to WAL: %v", err)
 	}
-	
+
 	// Verify hook received the entry
 	entries := hook.GetEntries()
 	if len(entries) != 1 {
 		t.Fatalf("Expected 1 entry in hook, got %d", len(entries))
 	}
-	
+
 	if entries[0].SequenceNumber != seq2 {
 		t.Errorf("Expected sequence number %d, got %d", seq2, entries[0].SequenceNumber)
 	}
-	
+
 	if string(entries[0].Key) != string(key2) {
 		t.Errorf("Expected key %q, got %q", key2, entries[0].Key)
 	}
-	
+
 	// Verify the clock was used
 	if seq2 != 1 { // First tick of the clock
 		t.Errorf("Expected sequence from clock to be 1, got %d", seq2)

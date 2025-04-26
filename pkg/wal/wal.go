@@ -81,9 +81,9 @@ type WAL struct {
 	status        int32 // Using atomic int32 for status flags
 	closed        int32 // Atomic flag indicating if WAL is closed
 	mu            sync.Mutex
-	
+
 	// Replication support
-	clock          LamportClock    // Lamport clock for logical timestamps
+	clock           LamportClock    // Lamport clock for logical timestamps
 	replicationHook ReplicationHook // Hook for replication events
 }
 
@@ -257,11 +257,11 @@ func (w *WAL) Append(entryType uint8, key, value []byte) (uint64, error) {
 	if err := w.maybeSync(); err != nil {
 		return 0, err
 	}
-	
+
 	// Notify replication hook if available
 	if w.replicationHook != nil {
 		entry := &Entry{
-			SequenceNumber: seqNum,  // This now represents the Lamport timestamp
+			SequenceNumber: seqNum, // This now represents the Lamport timestamp
 			Type:           entryType,
 			Key:            key,
 			Value:          value,
@@ -543,7 +543,7 @@ func (w *WAL) AppendBatch(entries []*Entry) (uint64, error) {
 	for i, entry := range entries {
 		// Assign sequential sequence numbers to each entry
 		seqNum := startSeqNum + uint64(i)
-		
+
 		// Save sequence number in the entry for replication
 		entry.SequenceNumber = seqNum
 		entriesForReplication[i] = entry
@@ -569,7 +569,7 @@ func (w *WAL) AppendBatch(entries []*Entry) (uint64, error) {
 	if err := w.maybeSync(); err != nil {
 		return 0, err
 	}
-	
+
 	// Notify replication hook if available
 	if w.replicationHook != nil {
 		w.replicationHook.OnBatchWritten(entriesForReplication)
@@ -629,7 +629,7 @@ func (w *WAL) UpdateNextSequence(nextSeq uint64) {
 func (w *WAL) SetReplicationHook(hook ReplicationHook) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	
+
 	w.replicationHook = hook
 }
 
@@ -637,7 +637,7 @@ func (w *WAL) SetReplicationHook(hook ReplicationHook) {
 func (w *WAL) SetLamportClock(clock LamportClock) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	
+
 	w.clock = clock
 }
 
