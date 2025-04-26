@@ -150,29 +150,38 @@ func (m *Manager) Put(key, value []byte) error {
 		return ErrStorageClosed
 	}
 
-	// Append to WAL
-	seqNum, err := m.wal.Append(wal.OpTypePut, key, value)
-	if err != nil {
-		m.stats.TrackError("wal_append_error")
-		return fmt.Errorf("failed to append to WAL: %w", err)
-	}
-
-	// Add to MemTable
-	m.memTablePool.Put(key, value, seqNum)
-	m.lastSeqNum = seqNum
-
-	// Update memtable size estimate
-	m.stats.TrackMemTableSize(uint64(m.memTablePool.TotalSize()))
-
-	// Check if MemTable needs to be flushed
-	if m.memTablePool.IsFlushNeeded() {
-		if err := m.scheduleFlush(); err != nil {
-			m.stats.TrackError("flush_schedule_error")
-			return fmt.Errorf("failed to schedule flush: %w", err)
+	// Define the operation with retry support
+	operation := func() error {
+		// Append to WAL with retry support
+		seqNum, err := m.wal.Append(wal.OpTypePut, key, value)
+		if err != nil {
+			if err != wal.ErrWALRotating {
+				m.stats.TrackError("wal_append_error")
+				return fmt.Errorf("failed to append to WAL: %w", err)
+			}
+			return err // Return ErrWALRotating for retry handling
 		}
+
+		// Add to MemTable
+		m.memTablePool.Put(key, value, seqNum)
+		m.lastSeqNum = seqNum
+
+		// Update memtable size estimate
+		m.stats.TrackMemTableSize(uint64(m.memTablePool.TotalSize()))
+
+		// Check if MemTable needs to be flushed
+		if m.memTablePool.IsFlushNeeded() {
+			if flushErr := m.scheduleFlush(); flushErr != nil {
+				m.stats.TrackError("flush_schedule_error")
+				return fmt.Errorf("failed to schedule flush: %w", flushErr)
+			}
+		}
+
+		return nil
 	}
 
-	return nil
+	// Execute with retry mechanism
+	return m.RetryOnWALRotating(operation)
 }
 
 // Get retrieves the value for the given key
@@ -234,29 +243,38 @@ func (m *Manager) Delete(key []byte) error {
 		return ErrStorageClosed
 	}
 
-	// Append to WAL
-	seqNum, err := m.wal.Append(wal.OpTypeDelete, key, nil)
-	if err != nil {
-		m.stats.TrackError("wal_append_error")
-		return fmt.Errorf("failed to append to WAL: %w", err)
-	}
-
-	// Add deletion marker to MemTable
-	m.memTablePool.Delete(key, seqNum)
-	m.lastSeqNum = seqNum
-
-	// Update memtable size estimate
-	m.stats.TrackMemTableSize(uint64(m.memTablePool.TotalSize()))
-
-	// Check if MemTable needs to be flushed
-	if m.memTablePool.IsFlushNeeded() {
-		if err := m.scheduleFlush(); err != nil {
-			m.stats.TrackError("flush_schedule_error")
-			return fmt.Errorf("failed to schedule flush: %w", err)
+	// Define the operation with retry support
+	operation := func() error {
+		// Append to WAL with retry support
+		seqNum, err := m.wal.Append(wal.OpTypeDelete, key, nil)
+		if err != nil {
+			if err != wal.ErrWALRotating {
+				m.stats.TrackError("wal_append_error")
+				return fmt.Errorf("failed to append to WAL: %w", err)
+			}
+			return err // Return ErrWALRotating for retry handling
 		}
+
+		// Add deletion marker to MemTable
+		m.memTablePool.Delete(key, seqNum)
+		m.lastSeqNum = seqNum
+
+		// Update memtable size estimate
+		m.stats.TrackMemTableSize(uint64(m.memTablePool.TotalSize()))
+
+		// Check if MemTable needs to be flushed
+		if m.memTablePool.IsFlushNeeded() {
+			if flushErr := m.scheduleFlush(); flushErr != nil {
+				m.stats.TrackError("flush_schedule_error")
+				return fmt.Errorf("failed to schedule flush: %w", flushErr)
+			}
+		}
+
+		return nil
 	}
 
-	return nil
+	// Execute with retry mechanism
+	return m.RetryOnWALRotating(operation)
 }
 
 // IsDeleted returns true if the key exists and is marked as deleted
@@ -339,39 +357,48 @@ func (m *Manager) ApplyBatch(entries []*wal.Entry) error {
 		return ErrStorageClosed
 	}
 
-	// Append batch to WAL
-	startSeqNum, err := m.wal.AppendBatch(entries)
-	if err != nil {
-		m.stats.TrackError("wal_append_batch_error")
-		return fmt.Errorf("failed to append batch to WAL: %w", err)
-	}
-
-	// Apply each entry to the MemTable
-	for i, entry := range entries {
-		seqNum := startSeqNum + uint64(i)
-
-		switch entry.Type {
-		case wal.OpTypePut:
-			m.memTablePool.Put(entry.Key, entry.Value, seqNum)
-		case wal.OpTypeDelete:
-			m.memTablePool.Delete(entry.Key, seqNum)
+	// Define the operation with retry support
+	operation := func() error {
+		// Append batch to WAL with retry support
+		startSeqNum, err := m.wal.AppendBatch(entries)
+		if err != nil {
+			if err != wal.ErrWALRotating {
+				m.stats.TrackError("wal_append_batch_error")
+				return fmt.Errorf("failed to append batch to WAL: %w", err)
+			}
+			return err // Return ErrWALRotating for retry handling
 		}
 
-		m.lastSeqNum = seqNum
-	}
+		// Apply each entry to the MemTable
+		for i, entry := range entries {
+			seqNum := startSeqNum + uint64(i)
 
-	// Update memtable size
-	m.stats.TrackMemTableSize(uint64(m.memTablePool.TotalSize()))
+			switch entry.Type {
+			case wal.OpTypePut:
+				m.memTablePool.Put(entry.Key, entry.Value, seqNum)
+			case wal.OpTypeDelete:
+				m.memTablePool.Delete(entry.Key, seqNum)
+			}
 
-	// Check if MemTable needs to be flushed
-	if m.memTablePool.IsFlushNeeded() {
-		if err := m.scheduleFlush(); err != nil {
-			m.stats.TrackError("flush_schedule_error")
-			return fmt.Errorf("failed to schedule flush: %w", err)
+			m.lastSeqNum = seqNum
 		}
+
+		// Update memtable size
+		m.stats.TrackMemTableSize(uint64(m.memTablePool.TotalSize()))
+
+		// Check if MemTable needs to be flushed
+		if m.memTablePool.IsFlushNeeded() {
+			if flushErr := m.scheduleFlush(); flushErr != nil {
+				m.stats.TrackError("flush_schedule_error")
+				return fmt.Errorf("failed to schedule flush: %w", flushErr)
+			}
+		}
+
+		return nil
 	}
 
-	return nil
+	// Execute with retry mechanism
+	return m.RetryOnWALRotating(operation)
 }
 
 // FlushMemTables flushes all immutable MemTables to disk
@@ -501,18 +528,26 @@ func (m *Manager) RotateWAL() error {
 
 // rotateWAL is the internal implementation of RotateWAL
 func (m *Manager) rotateWAL() error {
-	// Close the current WAL
-	if err := m.wal.Close(); err != nil {
-		return fmt.Errorf("failed to close WAL: %w", err)
-	}
-
-	// Create a new WAL
-	wal, err := wal.NewWAL(m.cfg, m.walDir)
+	// Create a new WAL first before closing the old one
+	newWAL, err := wal.NewWAL(m.cfg, m.walDir)
 	if err != nil {
 		return fmt.Errorf("failed to create new WAL: %w", err)
 	}
 
-	m.wal = wal
+	// Store the old WAL for proper closure
+	oldWAL := m.wal
+	
+	// Atomically update the WAL reference
+	m.wal = newWAL
+	
+	// Now close the old WAL after the new one is in place
+	if err := oldWAL.Close(); err != nil {
+		// Just log the error but don't fail the rotation
+		// since we've already switched to the new WAL
+		m.stats.TrackError("wal_close_error")
+		fmt.Printf("Warning: error closing old WAL: %v\n", err)
+	}
+	
 	return nil
 }
 

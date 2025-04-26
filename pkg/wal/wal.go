@@ -45,6 +45,7 @@ var (
 	ErrInvalidRecordType = errors.New("invalid record type")
 	ErrInvalidOpType     = errors.New("invalid operation type")
 	ErrWALClosed         = errors.New("WAL is closed")
+	ErrWALRotating       = errors.New("WAL is rotating")
 	ErrWALFull           = errors.New("WAL file is full")
 )
 
@@ -59,6 +60,13 @@ type Entry struct {
 // Global variable to control whether to print recovery logs
 var DisableRecoveryLogs bool = false
 
+// WAL status constants
+const (
+	WALStatusActive   = 0
+	WALStatusRotating = 1
+	WALStatusClosed   = 2
+)
+
 // WAL represents a write-ahead log
 type WAL struct {
 	cfg           *config.Config
@@ -69,7 +77,7 @@ type WAL struct {
 	bytesWritten  int64
 	lastSync      time.Time
 	batchByteSize int64
-	closed        bool
+	status        int32 // Using atomic int32 for status flags
 	mu            sync.Mutex
 }
 
@@ -99,6 +107,7 @@ func NewWAL(cfg *config.Config, dir string) (*WAL, error) {
 		writer:       bufio.NewWriterSize(file, 64*1024), // 64KB buffer
 		nextSequence: 1,
 		lastSync:     time.Now(),
+		status:       WALStatusActive,
 	}
 
 	return wal, nil
@@ -169,6 +178,7 @@ func ReuseWAL(cfg *config.Config, dir string, nextSeq uint64) (*WAL, error) {
 		nextSequence: nextSeq,
 		bytesWritten: stat.Size(),
 		lastSync:     time.Now(),
+		status:       WALStatusActive,
 	}
 
 	return wal, nil
@@ -179,8 +189,11 @@ func (w *WAL) Append(entryType uint8, key, value []byte) (uint64, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	if w.closed {
+	status := atomic.LoadInt32(&w.status)
+	if status == WALStatusClosed {
 		return 0, ErrWALClosed
+	} else if status == WALStatusRotating {
+		return 0, ErrWALRotating
 	}
 
 	if entryType != OpTypePut && entryType != OpTypeDelete && entryType != OpTypeMerge {
@@ -409,8 +422,11 @@ func (w *WAL) maybeSync() error {
 
 // syncLocked performs the sync operation assuming the mutex is already held
 func (w *WAL) syncLocked() error {
-	if w.closed {
+	status := atomic.LoadInt32(&w.status)
+	if status == WALStatusClosed {
 		return ErrWALClosed
+	} else if status == WALStatusRotating {
+		return ErrWALRotating
 	}
 
 	if err := w.writer.Flush(); err != nil {
@@ -440,8 +456,11 @@ func (w *WAL) AppendBatch(entries []*Entry) (uint64, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	if w.closed {
+	status := atomic.LoadInt32(&w.status)
+	if status == WALStatusClosed {
 		return 0, ErrWALClosed
+	} else if status == WALStatusRotating {
+		return 0, ErrWALRotating
 	}
 
 	if len(entries) == 0 {
@@ -506,12 +525,16 @@ func (w *WAL) Close() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	if w.closed {
+	status := atomic.LoadInt32(&w.status)
+	if status == WALStatusClosed {
 		return nil
 	}
 
+	// Mark as rotating first to block new operations
+	atomic.StoreInt32(&w.status, WALStatusRotating)
+
 	// Use syncLocked to flush and sync
-	if err := w.syncLocked(); err != nil {
+	if err := w.syncLocked(); err != nil && err != ErrWALRotating {
 		return err
 	}
 
@@ -519,8 +542,18 @@ func (w *WAL) Close() error {
 		return fmt.Errorf("failed to close WAL file: %w", err)
 	}
 
-	w.closed = true
+	atomic.StoreInt32(&w.status, WALStatusClosed)
 	return nil
+}
+
+// SetRotating marks the WAL as rotating
+func (w *WAL) SetRotating() {
+	atomic.StoreInt32(&w.status, WALStatusRotating)
+}
+
+// SetActive marks the WAL as active
+func (w *WAL) SetActive() {
+	atomic.StoreInt32(&w.status, WALStatusActive)
 }
 
 // UpdateNextSequence sets the next sequence number for the WAL

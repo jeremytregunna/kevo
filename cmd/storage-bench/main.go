@@ -184,6 +184,7 @@ func runWriteBenchmark(e *engine.EngineFacade) string {
 	var opsCount int
 	var consecutiveErrors int
 	maxConsecutiveErrors := 10
+	var walRotationCount int
 
 	for time.Now().Before(deadline) {
 		// Process in batches
@@ -197,6 +198,19 @@ func runWriteBenchmark(e *engine.EngineFacade) string {
 						goto benchmarkEnd
 					}
 					time.Sleep(10 * time.Millisecond) // Wait a bit for possible background operations
+					continue
+				}
+
+				// Handle WAL rotation errors more gracefully
+				if strings.Contains(err.Error(), "WAL is rotating") || 
+				   strings.Contains(err.Error(), "WAL is closed") {
+					// These are expected during WAL rotation, just retry after a short delay
+					walRotationCount++
+					if walRotationCount % 100 == 0 {
+						fmt.Printf("Retrying due to WAL rotation (%d retries so far)...\n", walRotationCount)
+					}
+					time.Sleep(20 * time.Millisecond)
+					i-- // Retry this key
 					continue
 				}
 
@@ -233,6 +247,7 @@ benchmarkEnd:
 	result := fmt.Sprintf("\nWrite Benchmark Results:")
 	result += fmt.Sprintf("\n  Status: %s", status)
 	result += fmt.Sprintf("\n  Operations: %d", opsCount)
+	result += fmt.Sprintf("\n  WAL rotation retries: %d", walRotationCount)
 	result += fmt.Sprintf("\n  Data Written: %.2f MB", float64(opsCount)*float64(*valueSize)/(1024*1024))
 	result += fmt.Sprintf("\n  Time: %.2f seconds", elapsed.Seconds())
 	result += fmt.Sprintf("\n  Throughput: %.2f ops/sec (%.2f MB/sec)", opsPerSecond, mbPerSecond)
