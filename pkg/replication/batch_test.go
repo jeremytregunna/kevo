@@ -155,11 +155,6 @@ func TestWALBatcherWithTransactionBoundaries(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to add entry %d: %v", i, err)
 		}
-
-		// When we reach sequence 1 (the transaction boundary), the batch should be ready
-		if i == 1 && ready {
-			t.Logf("Batch correctly marked as ready at transaction boundary")
-		}
 	}
 
 	// Get the batch
