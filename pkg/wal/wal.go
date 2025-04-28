@@ -83,7 +83,7 @@ type WAL struct {
 	status        int32 // Using atomic int32 for status flags
 	closed        int32 // Atomic flag indicating if WAL is closed
 	mu            sync.Mutex
-	
+
 	// Observer-related fields
 	observers   map[string]WALEntryObserver
 	observersMu sync.RWMutex
@@ -234,7 +234,7 @@ func (w *WAL) Append(entryType uint8, key, value []byte) (uint64, error) {
 			return 0, err
 		}
 	}
-	
+
 	// Create an entry object for notification
 	entry := &Entry{
 		SequenceNumber: seqNum,
@@ -242,7 +242,7 @@ func (w *WAL) Append(entryType uint8, key, value []byte) (uint64, error) {
 		Key:            key,
 		Value:          value,
 	}
-	
+
 	// Notify observers of the new entry
 	w.notifyEntryObservers(entry)
 
@@ -460,7 +460,7 @@ func (w *WAL) syncLocked() error {
 
 	w.lastSync = time.Now()
 	w.batchByteSize = 0
-	
+
 	// Notify observers about the sync
 	w.notifySyncObservers(w.nextSequence - 1)
 
@@ -535,7 +535,7 @@ func (w *WAL) AppendBatch(entries []*Entry) (uint64, error) {
 
 	// Update next sequence number
 	w.nextSequence = startSeqNum + uint64(len(entries))
-	
+
 	// Notify observers about the batch
 	w.notifyBatchObservers(startSeqNum, entries)
 
@@ -562,11 +562,11 @@ func (w *WAL) Close() error {
 	if err := w.writer.Flush(); err != nil {
 		return fmt.Errorf("failed to flush WAL buffer during close: %w", err)
 	}
-	
+
 	if err := w.file.Sync(); err != nil {
 		return fmt.Errorf("failed to sync WAL file during close: %w", err)
 	}
-	
+
 	// Now mark as rotating to block new operations
 	atomic.StoreInt32(&w.status, WALStatusRotating)
 
@@ -626,6 +626,14 @@ func (w *WAL) UnregisterObserver(id string) {
 	delete(w.observers, id)
 }
 
+// GetNextSequence returns the next sequence number that will be assigned
+func (w *WAL) GetNextSequence() uint64 {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	return w.nextSequence
+}
+
 // notifyEntryObservers sends notifications for a single entry
 func (w *WAL) notifyEntryObservers(entry *Entry) {
 	w.observersMu.RLock()
@@ -660,64 +668,64 @@ func (w *WAL) notifySyncObservers(upToSeq uint64) {
 func (w *WAL) GetEntriesFrom(sequenceNumber uint64) ([]*Entry, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	
+
 	status := atomic.LoadInt32(&w.status)
 	if status == WALStatusClosed {
 		return nil, ErrWALClosed
 	}
-	
+
 	// If we're requesting future entries, return empty slice
 	if sequenceNumber >= w.nextSequence {
 		return []*Entry{}, nil
 	}
-	
+
 	// Ensure current WAL file is synced so Reader can access consistent data
 	if err := w.writer.Flush(); err != nil {
 		return nil, fmt.Errorf("failed to flush WAL buffer: %w", err)
 	}
-	
+
 	// Find all WAL files
 	files, err := FindWALFiles(w.dir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find WAL files: %w", err)
 	}
-	
+
 	currentFilePath := w.file.Name()
 	currentFileName := filepath.Base(currentFilePath)
-	
+
 	// Process files in chronological order (oldest first)
 	// This preserves the WAL ordering which is critical
 	var result []*Entry
-	
+
 	// First process all older files
 	for _, file := range files {
 		fileName := filepath.Base(file)
-		
+
 		// Skip current file (we'll process it last to get the latest data)
 		if fileName == currentFileName {
 			continue
 		}
-		
+
 		// Try to find entries in this file
 		fileEntries, err := w.getEntriesFromFile(file, sequenceNumber)
 		if err != nil {
 			// Log error but continue with other files
 			continue
 		}
-		
+
 		// Append entries maintaining chronological order
 		result = append(result, fileEntries...)
 	}
-	
+
 	// Finally, process the current file
 	currentEntries, err := w.getEntriesFromFile(currentFilePath, sequenceNumber)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get entries from current WAL file: %w", err)
 	}
-	
+
 	// Append the current entries at the end (they are the most recent)
 	result = append(result, currentEntries...)
-	
+
 	return result, nil
 }
 
@@ -728,9 +736,9 @@ func (w *WAL) getEntriesFromFile(filename string, minSequence uint64) ([]*Entry,
 		return nil, fmt.Errorf("failed to create reader for %s: %w", filename, err)
 	}
 	defer reader.Close()
-	
+
 	var entries []*Entry
-	
+
 	for {
 		entry, err := reader.ReadEntry()
 		if err != nil {
@@ -743,12 +751,12 @@ func (w *WAL) getEntriesFromFile(filename string, minSequence uint64) ([]*Entry,
 			}
 			return entries, err
 		}
-		
+
 		// Store only entries with sequence numbers >= the minimum requested
 		if entry.SequenceNumber >= minSequence {
 			entries = append(entries, entry)
 		}
 	}
-	
+
 	return entries, nil
 }

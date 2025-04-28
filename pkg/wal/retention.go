@@ -15,10 +15,10 @@ import (
 type WALRetentionConfig struct {
 	// Maximum number of WAL files to retain
 	MaxFileCount int
-	
+
 	// Maximum age of WAL files to retain
 	MaxAge time.Duration
-	
+
 	// Minimum sequence number to keep
 	// Files containing entries with sequence numbers >= MinSequenceKeep will be retained
 	MinSequenceKeep uint64
@@ -47,12 +47,12 @@ func (w *WAL) ManageRetention(config WALRetentionConfig) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("failed to find WAL files: %w", err)
 	}
-	
+
 	// If no files or just one file (the current one), nothing to do
 	if len(files) <= 1 {
 		return 0, nil
 	}
-	
+
 	// Get the current WAL file path (we should never delete this one)
 	currentFile := ""
 	w.mu.Lock()
@@ -60,28 +60,28 @@ func (w *WAL) ManageRetention(config WALRetentionConfig) (int, error) {
 		currentFile = w.file.Name()
 	}
 	w.mu.Unlock()
-	
+
 	// Collect file information for decision making
 	var fileInfos []WALFileInfo
 	now := time.Now()
-	
+
 	for _, filePath := range files {
 		// Skip the current file
 		if filePath == currentFile {
 			continue
 		}
-		
+
 		// Get file info
 		stat, err := os.Stat(filePath)
 		if err != nil {
 			// Skip files we can't stat
 			continue
 		}
-		
+
 		// Extract timestamp from filename (assuming standard format)
 		baseName := filepath.Base(filePath)
 		fileTime := extractTimestampFromFilename(baseName)
-		
+
 		// Get sequence number bounds
 		minSeq, maxSeq, err := getSequenceBounds(filePath)
 		if err != nil {
@@ -89,7 +89,7 @@ func (w *WAL) ManageRetention(config WALRetentionConfig) (int, error) {
 			minSeq = 0
 			maxSeq = ^uint64(0) // Max uint64 value, to ensure we don't delete it based on sequence
 		}
-		
+
 		fileInfos = append(fileInfos, WALFileInfo{
 			Path:      filePath,
 			Size:      stat.Size(),
@@ -98,20 +98,20 @@ func (w *WAL) ManageRetention(config WALRetentionConfig) (int, error) {
 			MaxSeq:    maxSeq,
 		})
 	}
-	
+
 	// Sort by creation time (oldest first)
 	sort.Slice(fileInfos, func(i, j int) bool {
 		return fileInfos[i].CreatedAt.Before(fileInfos[j].CreatedAt)
 	})
-	
+
 	// Apply retention policies
 	toDelete := make(map[string]bool)
-	
+
 	// Apply file count retention if configured
 	if config.MaxFileCount > 0 {
 		// File count includes the current file, so we need to keep config.MaxFileCount - 1 old files
 		filesLeftToKeep := config.MaxFileCount - 1
-		
+
 		// If count is 1 or less, we should delete all old files (keep only current)
 		if filesLeftToKeep <= 0 {
 			for _, fi := range fileInfos {
@@ -120,13 +120,13 @@ func (w *WAL) ManageRetention(config WALRetentionConfig) (int, error) {
 		} else if len(fileInfos) > filesLeftToKeep {
 			// Otherwise, keep only the newest files, totalToKeep including current
 			filesToDelete := len(fileInfos) - filesLeftToKeep
-			
+
 			for i := 0; i < filesToDelete; i++ {
 				toDelete[fileInfos[i].Path] = true
 			}
 		}
 	}
-	
+
 	// Apply age-based retention if configured
 	if config.MaxAge > 0 {
 		for _, fi := range fileInfos {
@@ -136,7 +136,7 @@ func (w *WAL) ManageRetention(config WALRetentionConfig) (int, error) {
 			}
 		}
 	}
-	
+
 	// Apply sequence-based retention if configured
 	if config.MinSequenceKeep > 0 {
 		for _, fi := range fileInfos {
@@ -147,7 +147,7 @@ func (w *WAL) ManageRetention(config WALRetentionConfig) (int, error) {
 			}
 		}
 	}
-	
+
 	// Delete the files marked for deletion
 	deleted := 0
 	for _, fi := range fileInfos {
@@ -159,7 +159,7 @@ func (w *WAL) ManageRetention(config WALRetentionConfig) (int, error) {
 			deleted++
 		}
 	}
-	
+
 	return deleted, nil
 }
 
@@ -171,7 +171,7 @@ func extractTimestampFromFilename(filename string) time.Time {
 	if err == nil {
 		return info.ModTime()
 	}
-	
+
 	// Fallback to parsing from filename if stat fails
 	base := strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename))
 	timestamp, err := strconv.ParseInt(base, 10, 64)
@@ -179,7 +179,7 @@ func extractTimestampFromFilename(filename string) time.Time {
 		// If parsing fails, return zero time
 		return time.Time{}
 	}
-	
+
 	// Convert nanoseconds to time
 	return time.Unix(0, timestamp)
 }
@@ -191,17 +191,17 @@ func getSequenceBounds(filePath string) (uint64, uint64, error) {
 		return 0, 0, err
 	}
 	defer reader.Close()
-	
+
 	var minSeq uint64 = ^uint64(0) // Max uint64 value
 	var maxSeq uint64 = 0
-	
+
 	// Read all entries
 	for {
 		entry, err := reader.ReadEntry()
 		if err != nil {
 			break // End of file or error
 		}
-		
+
 		// Update min/max sequence
 		if entry.SequenceNumber < minSeq {
 			minSeq = entry.SequenceNumber
@@ -210,11 +210,11 @@ func getSequenceBounds(filePath string) (uint64, uint64, error) {
 			maxSeq = entry.SequenceNumber
 		}
 	}
-	
+
 	// If we didn't find any entries, return an error
 	if minSeq == ^uint64(0) {
 		return 0, 0, fmt.Errorf("no valid entries found in WAL file")
 	}
-	
+
 	return minSeq, maxSeq, nil
 }
