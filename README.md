@@ -20,6 +20,7 @@ Kevo is a clean, composable storage engine that follows LSM tree principles, foc
 - **Interface-driven design** with clear component boundaries
 - **Comprehensive statistics collection** for monitoring and debugging
 - **ACID-compliant transactions** with SQLite-inspired reader-writer concurrency
+- **Primary-replica replication** with automatic client request routing
 
 ## Use Cases
 
@@ -154,7 +155,14 @@ Type `.help` in the CLI for more commands.
 ### Run Server
 
 ```bash
+# Run as standalone node (default)
 go run ./cmd/kevo/main.go -server [database_path]
+
+# Run as primary node
+go run ./cmd/kevo/main.go -server [database_path] -replication.enabled=true -replication.mode=primary -replication.listen=:50053
+
+# Run as replica node
+go run ./cmd/kevo/main.go -server [database_path] -replication.enabled=true -replication.mode=replica -replication.primary=localhost:50053
 ```
 
 ## Configuration
@@ -192,6 +200,7 @@ Kevo implements a facade-based design over the LSM tree architecture, consisting
 - **StorageManager**: Handles data storage operations across multiple layers
 - **TransactionManager**: Manages transaction lifecycle and isolation
 - **CompactionManager**: Coordinates background optimization processes
+- **ReplicationManager**: Handles primary-replica replication and node role management
 - **Statistics Collector**: Provides comprehensive metrics for monitoring
 
 ### Storage Layer
@@ -200,6 +209,12 @@ Kevo implements a facade-based design over the LSM tree architecture, consisting
 - **MemTable**: In-memory data structure (skiplist) for fast writes
 - **SSTables**: Immutable, sorted files for persistent storage
 - **Compaction**: Background process to merge and optimize SSTables
+
+### Replication Layer
+
+- **Primary Node**: Single writer that streams WAL entries to replicas
+- **Replica Node**: Read-only node that receives and applies WAL entries from the primary
+- **Client Routing**: Smart client SDK that automatically routes reads to replicas and writes to the primary
 
 ### Interface-Driven Design
 
