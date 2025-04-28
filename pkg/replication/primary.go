@@ -24,6 +24,7 @@ type Primary struct {
 	retentionConfig   WALRetentionConfig         // Configuration for WAL retention
 	enableCompression bool                       // Whether compression is enabled
 	defaultCodec      proto.CompressionCodec     // Default compression codec
+	heartbeat         *heartbeatManager          // Manages heartbeats and session monitoring
 	mu                sync.RWMutex               // Protects sessions map
 
 	proto.UnimplementedWALReplicationServiceServer
@@ -42,6 +43,7 @@ type PrimaryConfig struct {
 	CompressionCodec    proto.CompressionCodec // Compression codec to use
 	RetentionConfig     WALRetentionConfig     // WAL retention configuration
 	RespectTxBoundaries bool                   // Whether to respect transaction boundaries in batching
+	HeartbeatConfig     *HeartbeatConfig       // Configuration for heartbeat/keepalive
 }
 
 // DefaultPrimaryConfig returns a default configuration for primary nodes
@@ -55,6 +57,7 @@ func DefaultPrimaryConfig() *PrimaryConfig {
 			MinSequenceKeep: 0,  // No sequence-based retention by default
 		},
 		RespectTxBoundaries: true,
+		HeartbeatConfig:     DefaultHeartbeatConfig(),
 	}
 }
 
@@ -105,8 +108,14 @@ func NewPrimary(w *wal.WAL, config *PrimaryConfig) (*Primary, error) {
 		defaultCodec:      config.CompressionCodec,
 	}
 
+	// Create heartbeat manager
+	primary.heartbeat = newHeartbeatManager(primary, config.HeartbeatConfig)
+
 	// Register as a WAL observer
 	w.RegisterObserver("primary_replication", primary)
+
+	// Start heartbeat monitoring
+	primary.heartbeat.start()
 
 	return primary, nil
 }
@@ -596,6 +605,11 @@ func (p *Primary) maybeManageWALRetention() {
 
 // Close shuts down the primary, unregistering from WAL and cleaning up resources
 func (p *Primary) Close() error {
+	// Stop heartbeat monitoring
+	if p.heartbeat != nil {
+		p.heartbeat.stop()
+	}
+
 	// Unregister from WAL
 	p.wal.UnregisterObserver("primary_replication")
 
