@@ -1,0 +1,124 @@
+syntax = "proto3";
+
+package kevo.replication;
+
+option go_package = "github.com/KevoDB/kevo/pkg/replication/proto;replication_proto";
+
+// WALReplicationService defines the gRPC service for Kevo's primary-replica replication protocol.
+// It enables replicas to stream WAL entries from a primary node in real-time, maintaining
+// a consistent, crash-resilient, and ordered copy of the data.
+service WALReplicationService {
+  // StreamWAL allows replicas to request WAL entries starting from a specific sequence number.
+  // The primary responds with a stream of WAL entries in strict logical order.
+  rpc StreamWAL(WALStreamRequest) returns (stream WALStreamResponse);
+  
+  // Acknowledge allows replicas to inform the primary about entries that have been
+  // successfully applied and persisted, enabling the primary to manage WAL retention.
+  rpc Acknowledge(Ack) returns (AckResponse);
+
+  // NegativeAcknowledge allows replicas to request retransmission
+  // of entries when a gap is detected in the sequence numbers.
+  rpc NegativeAcknowledge(Nack) returns (NackResponse);
+}
+
+// WALStreamRequest is sent by replicas to initiate or resume WAL streaming.
+message WALStreamRequest {
+  // The sequence number to start streaming from (exclusive)
+  uint64 start_sequence = 1;
+  
+  // Protocol version for negotiation and backward compatibility
+  uint32 protocol_version = 2;
+  
+  // Whether the replica supports compressed payloads
+  bool compression_supported = 3;
+  
+  // Preferred compression codec
+  CompressionCodec preferred_codec = 4;
+}
+
+// WALStreamResponse contains a batch of WAL entries sent from the primary to a replica.
+message WALStreamResponse {
+  // The batch of WAL entries being streamed
+  repeated WALEntry entries = 1;
+  
+  // Whether the payload is compressed
+  bool compressed = 2;
+  
+  // The compression codec used if compressed is true
+  CompressionCodec codec = 3;
+}
+
+// WALEntry represents a single entry from the WAL.
+message WALEntry {
+  // The unique, monotonically increasing sequence number (Lamport clock)
+  uint64 sequence_number = 1;
+  
+  // The serialized entry data
+  bytes payload = 2;
+  
+  // The fragment type for handling large entries that span multiple messages
+  FragmentType fragment_type = 3;
+  
+  // CRC32 checksum of the payload for data integrity verification
+  uint32 checksum = 4;
+}
+
+// FragmentType indicates how a WAL entry is fragmented across multiple messages.
+enum FragmentType {
+  // A complete, unfragmented entry
+  FULL = 0;
+  
+  // The first fragment of a multi-fragment entry
+  FIRST = 1;
+  
+  // A middle fragment of a multi-fragment entry
+  MIDDLE = 2;
+  
+  // The last fragment of a multi-fragment entry
+  LAST = 3;
+}
+
+// CompressionCodec defines the supported compression algorithms.
+enum CompressionCodec {
+  // No compression
+  NONE = 0;
+  
+  // ZSTD compression algorithm
+  ZSTD = 1;
+  
+  // Snappy compression algorithm
+  SNAPPY = 2;
+}
+
+// Ack is sent by replicas to acknowledge successful application and persistence
+// of WAL entries up to a specific sequence number.
+message Ack {
+  // The highest sequence number that has been successfully
+  // applied and persisted by the replica
+  uint64 acknowledged_up_to = 1;
+}
+
+// AckResponse is sent by the primary in response to an Ack message.
+message AckResponse {
+  // Whether the acknowledgment was processed successfully
+  bool success = 1;
+  
+  // An optional message providing additional details
+  string message = 2;
+}
+
+// Nack (Negative Acknowledgement) is sent by replicas when they detect
+// a gap in sequence numbers, requesting retransmission from a specific sequence.
+message Nack {
+  // The sequence number from which to resend WAL entries
+  uint64 missing_from_sequence = 1;
+}
+
+// NackResponse is sent by the primary in response to a Nack message.
+message NackResponse {
+  // Whether the negative acknowledgment was processed successfully
+  bool success = 1;
+  
+  // An optional message providing additional details
+  string message = 2;
+}

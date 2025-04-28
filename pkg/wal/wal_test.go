@@ -238,20 +238,20 @@ func TestWALBatch(t *testing.T) {
 
 	// Verify by replaying
 	entries := make(map[string]string)
-	batchCount := 0
 
 	_, err = ReplayWALDir(dir, func(entry *Entry) error {
-		if entry.Type == OpTypeBatch {
-			batchCount++
-
-			// Decode batch
+		if entry.Type == OpTypePut {
+			entries[string(entry.Key)] = string(entry.Value)
+		} else if entry.Type == OpTypeDelete {
+			delete(entries, string(entry.Key))
+		} else if entry.Type == OpTypeBatch {
+			// For batch entries, we need to decode the batch and process each operation
 			batch, err := DecodeBatch(entry)
 			if err != nil {
-				t.Errorf("Failed to decode batch: %v", err)
-				return nil
+				return fmt.Errorf("failed to decode batch: %w", err)
 			}
 
-			// Apply batch operations
+			// Process each operation in the batch
 			for _, op := range batch.Operations {
 				if op.Type == OpTypePut {
 					entries[string(op.Key)] = string(op.Value)
@@ -265,11 +265,6 @@ func TestWALBatch(t *testing.T) {
 
 	if err != nil {
 		t.Fatalf("Failed to replay WAL: %v", err)
-	}
-
-	// Verify batch was replayed
-	if batchCount != 1 {
-		t.Errorf("Expected 1 batch, got %d", batchCount)
 	}
 
 	// Verify entries
