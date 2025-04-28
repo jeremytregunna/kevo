@@ -92,6 +92,12 @@ type Config struct {
 	TLSCertFile string
 	TLSKeyFile  string
 	TLSCAFile   string
+
+	// Replication settings
+	ReplicationEnabled bool
+	ReplicationMode    string // "primary", "replica", or "standalone"
+	ReplicationAddr    string // Address for replication service
+	PrimaryAddr        string // Address of primary (for replicas)
 }
 
 func main() {
@@ -162,6 +168,12 @@ func parseFlags() Config {
 	tlsKeyFile := flag.String("key", "", "TLS private key file path")
 	tlsCAFile := flag.String("ca", "", "TLS CA certificate file for client verification")
 
+	// Replication options
+	replicationEnabled := flag.Bool("replication", false, "Enable replication")
+	replicationMode := flag.String("replication-mode", "standalone", "Replication mode: primary, replica, or standalone")
+	replicationAddr := flag.String("replication-address", "localhost:50052", "Address for replication service")
+	primaryAddr := flag.String("primary", "localhost:50052", "Address of primary node (for replicas)")
+
 	// Parse flags
 	flag.Parse()
 
@@ -180,6 +192,12 @@ func parseFlags() Config {
 		TLSCertFile: *tlsCertFile,
 		TLSKeyFile:  *tlsKeyFile,
 		TLSCAFile:   *tlsCAFile,
+
+		// Replication settings
+		ReplicationEnabled: *replicationEnabled,
+		ReplicationMode:    *replicationMode,
+		ReplicationAddr:    *replicationAddr,
+		PrimaryAddr:        *primaryAddr,
 	}
 }
 

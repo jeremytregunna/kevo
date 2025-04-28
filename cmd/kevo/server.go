@@ -10,6 +10,7 @@ import (
 	"github.com/KevoDB/kevo/pkg/engine/interfaces"
 	"github.com/KevoDB/kevo/pkg/engine/transaction"
 	grpcservice "github.com/KevoDB/kevo/pkg/grpc/service"
+	"github.com/KevoDB/kevo/pkg/replication"
 	pb "github.com/KevoDB/kevo/proto/kevo"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -18,12 +19,13 @@ import (
 
 // Server represents the Kevo server
 type Server struct {
-	eng         interfaces.Engine
-	txRegistry  interfaces.TxRegistry
-	listener    net.Listener
-	grpcServer  *grpc.Server
-	kevoService *grpcservice.KevoServiceServer
-	config      Config
+	eng                interfaces.Engine
+	txRegistry         interfaces.TxRegistry
+	listener           net.Listener
+	grpcServer         *grpc.Server
+	kevoService        *grpcservice.KevoServiceServer
+	config             Config
+	replicationManager *replication.Manager
 }
 
 // NewServer creates a new server instance
@@ -50,8 +52,9 @@ func (s *Server) Start() error {
 	var serverOpts []grpc.ServerOption
 
 	// Add TLS if configured
+	var tlsConfig *tls.Config
 	if s.config.TLSEnabled {
-		tlsConfig := &tls.Config{
+		tlsConfig = &tls.Config{
 			MinVersion: tls.VersionTLS12,
 		}
 
@@ -94,6 +97,37 @@ func (s *Server) Start() error {
 	s.kevoService = grpcservice.NewKevoServiceServer(s.eng, s.txRegistry)
 	pb.RegisterKevoServiceServer(s.grpcServer, s.kevoService)
 
+	// Initialize replication if enabled
+	if s.config.ReplicationEnabled {
+		// Create replication manager config
+		replicationConfig := &replication.ManagerConfig{
+			Enabled:       true,
+			Mode:          s.config.ReplicationMode,
+			PrimaryAddr:   s.config.PrimaryAddr,
+			ListenAddr:    s.config.ReplicationAddr,
+			TLSConfig:     tlsConfig,
+			ForceReadOnly: true,
+		}
+
+		// Create the replication manager
+		s.replicationManager, err = replication.NewManager(s.eng, replicationConfig)
+		if err != nil {
+			return fmt.Errorf("failed to create replication manager: %w", err)
+		}
+
+		// Start the replication service
+		if err := s.replicationManager.Start(); err != nil {
+			return fmt.Errorf("failed to start replication: %w", err)
+		}
+
+		fmt.Printf("Replication started in %s mode\n", s.config.ReplicationMode)
+
+		// If in replica mode, the engine should now be read-only
+		if s.config.ReplicationMode == "replica" {
+			fmt.Println("Running as replica: database is in read-only mode")
+		}
+	}
+
 	fmt.Println("gRPC server initialized")
 	return nil
 }
@@ -110,7 +144,17 @@ func (s *Server) Serve() error {
 
 // Shutdown gracefully shuts down the server
 func (s *Server) Shutdown(ctx context.Context) error {
-	// First, gracefully stop the gRPC server if it exists
+	// First, stop the replication manager if it exists
+	if s.replicationManager != nil {
+		fmt.Println("Stopping replication manager...")
+		if err := s.replicationManager.Stop(); err != nil {
+			fmt.Printf("Warning: Failed to stop replication manager: %v\n", err)
+		} else {
+			fmt.Println("Replication manager stopped")
+		}
+	}
+
+	// Next, gracefully stop the gRPC server if it exists
 	if s.grpcServer != nil {
 		fmt.Println("Gracefully stopping gRPC server...")
 
