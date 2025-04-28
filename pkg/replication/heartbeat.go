@@ -2,10 +2,10 @@ package replication
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 
+	"github.com/KevoDB/kevo/pkg/common/log"
 	proto "github.com/KevoDB/kevo/pkg/replication/proto"
 )
 
@@ -121,7 +121,7 @@ func (h *heartbeatManager) checkSessions() {
 		session.mu.Lock()
 		lastActivity := session.LastActivity
 		if now.Sub(lastActivity) > h.config.Timeout {
-			fmt.Printf("Session %s timed out after %.1fs of inactivity\n",
+			log.Warn("Session %s timed out after %.1fs of inactivity",
 				id, now.Sub(lastActivity).Seconds())
 			session.Connected = false
 			session.Active = false
@@ -141,13 +141,13 @@ func (h *heartbeatManager) checkSessions() {
 
 			// Send heartbeat (don't block on lock for too long)
 			if err := session.Stream.Send(heartbeat); err != nil {
-				fmt.Printf("Failed to send heartbeat to session %s: %v\n", id, err)
+				log.Error("Failed to send heartbeat to session %s: %v", id, err)
 				session.Connected = false
 				session.Active = false
 				deadSessions = append(deadSessions, id)
 			} else {
 				session.LastActivity = now
-				fmt.Printf("Sent heartbeat to session %s\n", id)
+				log.Debug("Sent heartbeat to session %s", id)
 			}
 		}
 		session.mu.Unlock()
@@ -178,7 +178,7 @@ func (h *heartbeatManager) pingSession(sessionID string) bool {
 	defer session.mu.Unlock()
 
 	if err := session.Stream.Send(heartbeat); err != nil {
-		fmt.Printf("Failed to ping session %s: %v\n", sessionID, err)
+		log.Error("Failed to ping session %s: %v", sessionID, err)
 		session.Connected = false
 		session.Active = false
 		return false

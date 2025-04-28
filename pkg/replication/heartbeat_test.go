@@ -332,6 +332,16 @@ func TestSessionContext(t *testing.T) {
 		// This is expected
 	}
 
+	// Create a channel to signal when context is done
+	doneCh := make(chan struct{})
+	go func() {
+		<-ctx.Done()
+		close(doneCh)
+	}()
+
+	// Wait a bit to make sure goroutine is running
+	time.Sleep(50 * time.Millisecond)
+
 	// Mark session as disconnected
 	session.mu.Lock()
 	session.Connected = false
@@ -339,7 +349,7 @@ func TestSessionContext(t *testing.T) {
 
 	// Wait for context to be canceled
 	select {
-	case <-ctx.Done():
+	case <-doneCh:
 		// This is expected
 	case <-time.After(300 * time.Millisecond):
 		t.Fatalf("Context was not canceled after session disconnected")
