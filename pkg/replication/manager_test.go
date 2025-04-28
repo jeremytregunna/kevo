@@ -23,6 +23,10 @@ func (m *MockEngine) SetReadOnly(readOnly bool) {
 	m.readOnly = readOnly
 }
 
+func (m *MockEngine) IsReadOnly() bool {
+	return m.readOnly
+}
+
 func (m *MockEngine) FlushImMemTables() error {
 	return nil
 }

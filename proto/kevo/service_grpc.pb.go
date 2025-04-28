@@ -33,6 +33,7 @@ const (
 	KevoService_TxScan_FullMethodName              = "/kevo.KevoService/TxScan"
 	KevoService_GetStats_FullMethodName            = "/kevo.KevoService/GetStats"
 	KevoService_Compact_FullMethodName             = "/kevo.KevoService/Compact"
+	KevoService_GetNodeInfo_FullMethodName         = "/kevo.KevoService/GetNodeInfo"
 )
 
 // KevoServiceClient is the client API for KevoService service.
@@ -59,6 +60,8 @@ type KevoServiceClient interface {
 	// Administrative Operations
 	GetStats(ctx context.Context, in *GetStatsRequest, opts ...grpc.CallOption) (*GetStatsResponse, error)
 	Compact(ctx context.Context, in *CompactRequest, opts ...grpc.CallOption) (*CompactResponse, error)
+	// Replication and Topology Operations
+	GetNodeInfo(ctx context.Context, in *GetNodeInfoRequest, opts ...grpc.CallOption) (*GetNodeInfoResponse, error)
 }
 
 type kevoServiceClient struct {
@@ -227,6 +230,16 @@ func (c *kevoServiceClient) Compact(ctx context.Context, in *CompactRequest, opt
 	return out, nil
 }
 
+func (c *kevoServiceClient) GetNodeInfo(ctx context.Context, in *GetNodeInfoRequest, opts ...grpc.CallOption) (*GetNodeInfoResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetNodeInfoResponse)
+	err := c.cc.Invoke(ctx, KevoService_GetNodeInfo_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // KevoServiceServer is the server API for KevoService service.
 // All implementations must embed UnimplementedKevoServiceServer
 // for forward compatibility.
@@ -251,6 +264,8 @@ type KevoServiceServer interface {
 	// Administrative Operations
 	GetStats(context.Context, *GetStatsRequest) (*GetStatsResponse, error)
 	Compact(context.Context, *CompactRequest) (*CompactResponse, error)
+	// Replication and Topology Operations
+	GetNodeInfo(context.Context, *GetNodeInfoRequest) (*GetNodeInfoResponse, error)
 	mustEmbedUnimplementedKevoServiceServer()
 }
 
@@ -302,6 +317,9 @@ func (UnimplementedKevoServiceServer) GetStats(context.Context, *GetStatsRequest
 }
 func (UnimplementedKevoServiceServer) Compact(context.Context, *CompactRequest) (*CompactResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Compact not implemented")
+}
+func (UnimplementedKevoServiceServer) GetNodeInfo(context.Context, *GetNodeInfoRequest) (*GetNodeInfoResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetNodeInfo not implemented")
 }
 func (UnimplementedKevoServiceServer) mustEmbedUnimplementedKevoServiceServer() {}
 func (UnimplementedKevoServiceServer) testEmbeddedByValue()                     {}
@@ -562,6 +580,24 @@ func _KevoService_Compact_Handler(srv interface{}, ctx context.Context, dec func
 	return interceptor(ctx, in, info, handler)
 }
 
+func _KevoService_GetNodeInfo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetNodeInfoRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(KevoServiceServer).GetNodeInfo(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: KevoService_GetNodeInfo_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(KevoServiceServer).GetNodeInfo(ctx, req.(*GetNodeInfoRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // KevoService_ServiceDesc is the grpc.ServiceDesc for KevoService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -616,6 +652,10 @@ var KevoService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Compact",
 			Handler:    _KevoService_Compact_Handler,
+		},
+		{
+			MethodName: "GetNodeInfo",
+			Handler:    _KevoService_GetNodeInfo_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

@@ -536,10 +536,10 @@ func (m *Manager) rotateWAL() error {
 
 	// Store the old WAL for proper closure
 	oldWAL := m.wal
-	
+
 	// Atomically update the WAL reference
 	m.wal = newWAL
-	
+
 	// Now close the old WAL after the new one is in place
 	if err := oldWAL.Close(); err != nil {
 		// Just log the error but don't fail the rotation
@@ -547,7 +547,7 @@ func (m *Manager) rotateWAL() error {
 		m.stats.TrackError("wal_close_error")
 		fmt.Printf("Warning: error closing old WAL: %v\n", err)
 	}
-	
+
 	return nil
 }
 

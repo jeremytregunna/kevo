@@ -67,6 +67,56 @@ func (Operation_Type) EnumDescriptor() ([]byte, []int) {
 	return file_proto_kevo_service_proto_rawDescGZIP(), []int{7, 0}
 }
 
+// Node role information
+type GetNodeInfoResponse_NodeRole int32
+
+const (
+	GetNodeInfoResponse_STANDALONE GetNodeInfoResponse_NodeRole = 0
+	GetNodeInfoResponse_PRIMARY    GetNodeInfoResponse_NodeRole = 1
+	GetNodeInfoResponse_REPLICA    GetNodeInfoResponse_NodeRole = 2
+)
+
+// Enum value maps for GetNodeInfoResponse_NodeRole.
+var (
+	GetNodeInfoResponse_NodeRole_name = map[int32]string{
+		0: "STANDALONE",
+		1: "PRIMARY",
+		2: "REPLICA",
+	}
+	GetNodeInfoResponse_NodeRole_value = map[string]int32{
+		"STANDALONE": 0,
+		"PRIMARY":    1,
+		"REPLICA":    2,
+	}
+)
+
+func (x GetNodeInfoResponse_NodeRole) Enum() *GetNodeInfoResponse_NodeRole {
+	p := new(GetNodeInfoResponse_NodeRole)
+	*p = x
+	return p
+}
+
+func (x GetNodeInfoResponse_NodeRole) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (GetNodeInfoResponse_NodeRole) Descriptor() protoreflect.EnumDescriptor {
+	return file_proto_kevo_service_proto_enumTypes[1].Descriptor()
+}
+
+func (GetNodeInfoResponse_NodeRole) Type() protoreflect.EnumType {
+	return &file_proto_kevo_service_proto_enumTypes[1]
+}
+
+func (x GetNodeInfoResponse_NodeRole) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use GetNodeInfoResponse_NodeRole.Descriptor instead.
+func (GetNodeInfoResponse_NodeRole) EnumDescriptor() ([]byte, []int) {
+	return file_proto_kevo_service_proto_rawDescGZIP(), []int{32, 0}
+}
+
 // Basic message types
 type GetRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1769,6 +1819,197 @@ func (x *CompactResponse) GetSuccess() bool {
 	return false
 }
 
+// Node information and topology
+type GetNodeInfoRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetNodeInfoRequest) Reset() {
+	*x = GetNodeInfoRequest{}
+	mi := &file_proto_kevo_service_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetNodeInfoRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetNodeInfoRequest) ProtoMessage() {}
+
+func (x *GetNodeInfoRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_kevo_service_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetNodeInfoRequest.ProtoReflect.Descriptor instead.
+func (*GetNodeInfoRequest) Descriptor() ([]byte, []int) {
+	return file_proto_kevo_service_proto_rawDescGZIP(), []int{31}
+}
+
+type GetNodeInfoResponse struct {
+	state    protoimpl.MessageState       `protogen:"open.v1"`
+	NodeRole GetNodeInfoResponse_NodeRole `protobuf:"varint,1,opt,name=node_role,json=nodeRole,proto3,enum=kevo.GetNodeInfoResponse_NodeRole" json:"node_role,omitempty"`
+	// Connection information
+	PrimaryAddress string         `protobuf:"bytes,2,opt,name=primary_address,json=primaryAddress,proto3" json:"primary_address,omitempty"` // Empty if standalone
+	Replicas       []*ReplicaInfo `protobuf:"bytes,3,rep,name=replicas,proto3" json:"replicas,omitempty"`                                   // Empty if standalone
+	// Node status
+	LastSequence  uint64 `protobuf:"varint,4,opt,name=last_sequence,json=lastSequence,proto3" json:"last_sequence,omitempty"` // Last applied sequence number
+	ReadOnly      bool   `protobuf:"varint,5,opt,name=read_only,json=readOnly,proto3" json:"read_only,omitempty"`             // Whether the node is in read-only mode
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetNodeInfoResponse) Reset() {
+	*x = GetNodeInfoResponse{}
+	mi := &file_proto_kevo_service_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetNodeInfoResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetNodeInfoResponse) ProtoMessage() {}
+
+func (x *GetNodeInfoResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_kevo_service_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetNodeInfoResponse.ProtoReflect.Descriptor instead.
+func (*GetNodeInfoResponse) Descriptor() ([]byte, []int) {
+	return file_proto_kevo_service_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *GetNodeInfoResponse) GetNodeRole() GetNodeInfoResponse_NodeRole {
+	if x != nil {
+		return x.NodeRole
+	}
+	return GetNodeInfoResponse_STANDALONE
+}
+
+func (x *GetNodeInfoResponse) GetPrimaryAddress() string {
+	if x != nil {
+		return x.PrimaryAddress
+	}
+	return ""
+}
+
+func (x *GetNodeInfoResponse) GetReplicas() []*ReplicaInfo {
+	if x != nil {
+		return x.Replicas
+	}
+	return nil
+}
+
+func (x *GetNodeInfoResponse) GetLastSequence() uint64 {
+	if x != nil {
+		return x.LastSequence
+	}
+	return 0
+}
+
+func (x *GetNodeInfoResponse) GetReadOnly() bool {
+	if x != nil {
+		return x.ReadOnly
+	}
+	return false
+}
+
+type ReplicaInfo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Address       string                 `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`                                                                     // Host:port of the replica
+	LastSequence  uint64                 `protobuf:"varint,2,opt,name=last_sequence,json=lastSequence,proto3" json:"last_sequence,omitempty"`                                      // Last applied sequence number
+	Available     bool                   `protobuf:"varint,3,opt,name=available,proto3" json:"available,omitempty"`                                                                // Whether the replica is available
+	Region        string                 `protobuf:"bytes,4,opt,name=region,proto3" json:"region,omitempty"`                                                                       // Optional region information
+	Meta          map[string]string      `protobuf:"bytes,5,rep,name=meta,proto3" json:"meta,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // Additional metadata
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReplicaInfo) Reset() {
+	*x = ReplicaInfo{}
+	mi := &file_proto_kevo_service_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReplicaInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReplicaInfo) ProtoMessage() {}
+
+func (x *ReplicaInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_kevo_service_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReplicaInfo.ProtoReflect.Descriptor instead.
+func (*ReplicaInfo) Descriptor() ([]byte, []int) {
+	return file_proto_kevo_service_proto_rawDescGZIP(), []int{33}
+}
+
+func (x *ReplicaInfo) GetAddress() string {
+	if x != nil {
+		return x.Address
+	}
+	return ""
+}
+
+func (x *ReplicaInfo) GetLastSequence() uint64 {
+	if x != nil {
+		return x.LastSequence
+	}
+	return 0
+}
+
+func (x *ReplicaInfo) GetAvailable() bool {
+	if x != nil {
+		return x.Available
+	}
+	return false
+}
+
+func (x *ReplicaInfo) GetRegion() string {
+	if x != nil {
+		return x.Region
+	}
+	return ""
+}
+
+func (x *ReplicaInfo) GetMeta() map[string]string {
+	if x != nil {
+		return x.Meta
+	}
+	return nil
+}
+
 var File_proto_kevo_service_proto protoreflect.FileDescriptor
 
 const file_proto_kevo_service_proto_rawDesc = "" +
@@ -1895,7 +2136,28 @@ const file_proto_kevo_service_proto_rawDesc = "" +
 	"\x0eCompactRequest\x12\x14\n" +
 	"\x05force\x18\x01 \x01(\bR\x05force\"+\n" +
 	"\x0fCompactResponse\x12\x18\n" +
-	"\asuccess\x18\x01 \x01(\bR\asuccess2\xda\x06\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\"\x14\n" +
+	"\x12GetNodeInfoRequest\"\xa6\x02\n" +
+	"\x13GetNodeInfoResponse\x12?\n" +
+	"\tnode_role\x18\x01 \x01(\x0e2\".kevo.GetNodeInfoResponse.NodeRoleR\bnodeRole\x12'\n" +
+	"\x0fprimary_address\x18\x02 \x01(\tR\x0eprimaryAddress\x12-\n" +
+	"\breplicas\x18\x03 \x03(\v2\x11.kevo.ReplicaInfoR\breplicas\x12#\n" +
+	"\rlast_sequence\x18\x04 \x01(\x04R\flastSequence\x12\x1b\n" +
+	"\tread_only\x18\x05 \x01(\bR\breadOnly\"4\n" +
+	"\bNodeRole\x12\x0e\n" +
+	"\n" +
+	"STANDALONE\x10\x00\x12\v\n" +
+	"\aPRIMARY\x10\x01\x12\v\n" +
+	"\aREPLICA\x10\x02\"\xec\x01\n" +
+	"\vReplicaInfo\x12\x18\n" +
+	"\aaddress\x18\x01 \x01(\tR\aaddress\x12#\n" +
+	"\rlast_sequence\x18\x02 \x01(\x04R\flastSequence\x12\x1c\n" +
+	"\tavailable\x18\x03 \x01(\bR\tavailable\x12\x16\n" +
+	"\x06region\x18\x04 \x01(\tR\x06region\x12/\n" +
+	"\x04meta\x18\x05 \x03(\v2\x1b.kevo.ReplicaInfo.MetaEntryR\x04meta\x1a7\n" +
+	"\tMetaEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x012\x9e\a\n" +
 	"\vKevoService\x12*\n" +
 	"\x03Get\x12\x10.kevo.GetRequest\x1a\x11.kevo.GetResponse\x12*\n" +
 	"\x03Put\x12\x10.kevo.PutRequest\x1a\x11.kevo.PutResponse\x123\n" +
@@ -1911,7 +2173,8 @@ const file_proto_kevo_service_proto_rawDesc = "" +
 	"\bTxDelete\x12\x15.kevo.TxDeleteRequest\x1a\x16.kevo.TxDeleteResponse\x125\n" +
 	"\x06TxScan\x12\x13.kevo.TxScanRequest\x1a\x14.kevo.TxScanResponse0\x01\x129\n" +
 	"\bGetStats\x12\x15.kevo.GetStatsRequest\x1a\x16.kevo.GetStatsResponse\x126\n" +
-	"\aCompact\x12\x14.kevo.CompactRequest\x1a\x15.kevo.CompactResponseB5Z3github.com/jeremytregunna/kevo/pkg/grpc/proto;protob\x06proto3"
+	"\aCompact\x12\x14.kevo.CompactRequest\x1a\x15.kevo.CompactResponse\x12B\n" +
+	"\vGetNodeInfo\x12\x18.kevo.GetNodeInfoRequest\x1a\x19.kevo.GetNodeInfoResponseB5Z3github.com/jeremytregunna/kevo/pkg/grpc/proto;protob\x06proto3"
 
 var (
 	file_proto_kevo_service_proto_rawDescOnce sync.Once
@@ -1925,86 +2188,96 @@ func file_proto_kevo_service_proto_rawDescGZIP() []byte {
 	return file_proto_kevo_service_proto_rawDescData
 }
 
-var file_proto_kevo_service_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_proto_kevo_service_proto_msgTypes = make([]protoimpl.MessageInfo, 34)
+var file_proto_kevo_service_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_proto_kevo_service_proto_msgTypes = make([]protoimpl.MessageInfo, 38)
 var file_proto_kevo_service_proto_goTypes = []any{
 	(Operation_Type)(0),                 // 0: kevo.Operation.Type
-	(*GetRequest)(nil),                  // 1: kevo.GetRequest
-	(*GetResponse)(nil),                 // 2: kevo.GetResponse
-	(*PutRequest)(nil),                  // 3: kevo.PutRequest
-	(*PutResponse)(nil),                 // 4: kevo.PutResponse
-	(*DeleteRequest)(nil),               // 5: kevo.DeleteRequest
-	(*DeleteResponse)(nil),              // 6: kevo.DeleteResponse
-	(*BatchWriteRequest)(nil),           // 7: kevo.BatchWriteRequest
-	(*Operation)(nil),                   // 8: kevo.Operation
-	(*BatchWriteResponse)(nil),          // 9: kevo.BatchWriteResponse
-	(*ScanRequest)(nil),                 // 10: kevo.ScanRequest
-	(*ScanResponse)(nil),                // 11: kevo.ScanResponse
-	(*BeginTransactionRequest)(nil),     // 12: kevo.BeginTransactionRequest
-	(*BeginTransactionResponse)(nil),    // 13: kevo.BeginTransactionResponse
-	(*CommitTransactionRequest)(nil),    // 14: kevo.CommitTransactionRequest
-	(*CommitTransactionResponse)(nil),   // 15: kevo.CommitTransactionResponse
-	(*RollbackTransactionRequest)(nil),  // 16: kevo.RollbackTransactionRequest
-	(*RollbackTransactionResponse)(nil), // 17: kevo.RollbackTransactionResponse
-	(*TxGetRequest)(nil),                // 18: kevo.TxGetRequest
-	(*TxGetResponse)(nil),               // 19: kevo.TxGetResponse
-	(*TxPutRequest)(nil),                // 20: kevo.TxPutRequest
-	(*TxPutResponse)(nil),               // 21: kevo.TxPutResponse
-	(*TxDeleteRequest)(nil),             // 22: kevo.TxDeleteRequest
-	(*TxDeleteResponse)(nil),            // 23: kevo.TxDeleteResponse
-	(*TxScanRequest)(nil),               // 24: kevo.TxScanRequest
-	(*TxScanResponse)(nil),              // 25: kevo.TxScanResponse
-	(*GetStatsRequest)(nil),             // 26: kevo.GetStatsRequest
-	(*GetStatsResponse)(nil),            // 27: kevo.GetStatsResponse
-	(*LatencyStats)(nil),                // 28: kevo.LatencyStats
-	(*RecoveryStats)(nil),               // 29: kevo.RecoveryStats
-	(*CompactRequest)(nil),              // 30: kevo.CompactRequest
-	(*CompactResponse)(nil),             // 31: kevo.CompactResponse
-	nil,                                 // 32: kevo.GetStatsResponse.OperationCountsEntry
-	nil,                                 // 33: kevo.GetStatsResponse.LatencyStatsEntry
-	nil,                                 // 34: kevo.GetStatsResponse.ErrorCountsEntry
+	(GetNodeInfoResponse_NodeRole)(0),   // 1: kevo.GetNodeInfoResponse.NodeRole
+	(*GetRequest)(nil),                  // 2: kevo.GetRequest
+	(*GetResponse)(nil),                 // 3: kevo.GetResponse
+	(*PutRequest)(nil),                  // 4: kevo.PutRequest
+	(*PutResponse)(nil),                 // 5: kevo.PutResponse
+	(*DeleteRequest)(nil),               // 6: kevo.DeleteRequest
+	(*DeleteResponse)(nil),              // 7: kevo.DeleteResponse
+	(*BatchWriteRequest)(nil),           // 8: kevo.BatchWriteRequest
+	(*Operation)(nil),                   // 9: kevo.Operation
+	(*BatchWriteResponse)(nil),          // 10: kevo.BatchWriteResponse
+	(*ScanRequest)(nil),                 // 11: kevo.ScanRequest
+	(*ScanResponse)(nil),                // 12: kevo.ScanResponse
+	(*BeginTransactionRequest)(nil),     // 13: kevo.BeginTransactionRequest
+	(*BeginTransactionResponse)(nil),    // 14: kevo.BeginTransactionResponse
+	(*CommitTransactionRequest)(nil),    // 15: kevo.CommitTransactionRequest
+	(*CommitTransactionResponse)(nil),   // 16: kevo.CommitTransactionResponse
+	(*RollbackTransactionRequest)(nil),  // 17: kevo.RollbackTransactionRequest
+	(*RollbackTransactionResponse)(nil), // 18: kevo.RollbackTransactionResponse
+	(*TxGetRequest)(nil),                // 19: kevo.TxGetRequest
+	(*TxGetResponse)(nil),               // 20: kevo.TxGetResponse
+	(*TxPutRequest)(nil),                // 21: kevo.TxPutRequest
+	(*TxPutResponse)(nil),               // 22: kevo.TxPutResponse
+	(*TxDeleteRequest)(nil),             // 23: kevo.TxDeleteRequest
+	(*TxDeleteResponse)(nil),            // 24: kevo.TxDeleteResponse
+	(*TxScanRequest)(nil),               // 25: kevo.TxScanRequest
+	(*TxScanResponse)(nil),              // 26: kevo.TxScanResponse
+	(*GetStatsRequest)(nil),             // 27: kevo.GetStatsRequest
+	(*GetStatsResponse)(nil),            // 28: kevo.GetStatsResponse
+	(*LatencyStats)(nil),                // 29: kevo.LatencyStats
+	(*RecoveryStats)(nil),               // 30: kevo.RecoveryStats
+	(*CompactRequest)(nil),              // 31: kevo.CompactRequest
+	(*CompactResponse)(nil),             // 32: kevo.CompactResponse
+	(*GetNodeInfoRequest)(nil),          // 33: kevo.GetNodeInfoRequest
+	(*GetNodeInfoResponse)(nil),         // 34: kevo.GetNodeInfoResponse
+	(*ReplicaInfo)(nil),                 // 35: kevo.ReplicaInfo
+	nil,                                 // 36: kevo.GetStatsResponse.OperationCountsEntry
+	nil,                                 // 37: kevo.GetStatsResponse.LatencyStatsEntry
+	nil,                                 // 38: kevo.GetStatsResponse.ErrorCountsEntry
+	nil,                                 // 39: kevo.ReplicaInfo.MetaEntry
 }
 var file_proto_kevo_service_proto_depIdxs = []int32{
-	8,  // 0: kevo.BatchWriteRequest.operations:type_name -> kevo.Operation
+	9,  // 0: kevo.BatchWriteRequest.operations:type_name -> kevo.Operation
 	0,  // 1: kevo.Operation.type:type_name -> kevo.Operation.Type
-	32, // 2: kevo.GetStatsResponse.operation_counts:type_name -> kevo.GetStatsResponse.OperationCountsEntry
-	33, // 3: kevo.GetStatsResponse.latency_stats:type_name -> kevo.GetStatsResponse.LatencyStatsEntry
-	34, // 4: kevo.GetStatsResponse.error_counts:type_name -> kevo.GetStatsResponse.ErrorCountsEntry
-	29, // 5: kevo.GetStatsResponse.recovery_stats:type_name -> kevo.RecoveryStats
-	28, // 6: kevo.GetStatsResponse.LatencyStatsEntry.value:type_name -> kevo.LatencyStats
-	1,  // 7: kevo.KevoService.Get:input_type -> kevo.GetRequest
-	3,  // 8: kevo.KevoService.Put:input_type -> kevo.PutRequest
-	5,  // 9: kevo.KevoService.Delete:input_type -> kevo.DeleteRequest
-	7,  // 10: kevo.KevoService.BatchWrite:input_type -> kevo.BatchWriteRequest
-	10, // 11: kevo.KevoService.Scan:input_type -> kevo.ScanRequest
-	12, // 12: kevo.KevoService.BeginTransaction:input_type -> kevo.BeginTransactionRequest
-	14, // 13: kevo.KevoService.CommitTransaction:input_type -> kevo.CommitTransactionRequest
-	16, // 14: kevo.KevoService.RollbackTransaction:input_type -> kevo.RollbackTransactionRequest
-	18, // 15: kevo.KevoService.TxGet:input_type -> kevo.TxGetRequest
-	20, // 16: kevo.KevoService.TxPut:input_type -> kevo.TxPutRequest
-	22, // 17: kevo.KevoService.TxDelete:input_type -> kevo.TxDeleteRequest
-	24, // 18: kevo.KevoService.TxScan:input_type -> kevo.TxScanRequest
-	26, // 19: kevo.KevoService.GetStats:input_type -> kevo.GetStatsRequest
-	30, // 20: kevo.KevoService.Compact:input_type -> kevo.CompactRequest
-	2,  // 21: kevo.KevoService.Get:output_type -> kevo.GetResponse
-	4,  // 22: kevo.KevoService.Put:output_type -> kevo.PutResponse
-	6,  // 23: kevo.KevoService.Delete:output_type -> kevo.DeleteResponse
-	9,  // 24: kevo.KevoService.BatchWrite:output_type -> kevo.BatchWriteResponse
-	11, // 25: kevo.KevoService.Scan:output_type -> kevo.ScanResponse
-	13, // 26: kevo.KevoService.BeginTransaction:output_type -> kevo.BeginTransactionResponse
-	15, // 27: kevo.KevoService.CommitTransaction:output_type -> kevo.CommitTransactionResponse
-	17, // 28: kevo.KevoService.RollbackTransaction:output_type -> kevo.RollbackTransactionResponse
-	19, // 29: kevo.KevoService.TxGet:output_type -> kevo.TxGetResponse
-	21, // 30: kevo.KevoService.TxPut:output_type -> kevo.TxPutResponse
-	23, // 31: kevo.KevoService.TxDelete:output_type -> kevo.TxDeleteResponse
-	25, // 32: kevo.KevoService.TxScan:output_type -> kevo.TxScanResponse
-	27, // 33: kevo.KevoService.GetStats:output_type -> kevo.GetStatsResponse
-	31, // 34: kevo.KevoService.Compact:output_type -> kevo.CompactResponse
-	21, // [21:35] is the sub-list for method output_type
-	7,  // [7:21] is the sub-list for method input_type
-	7,  // [7:7] is the sub-list for extension type_name
-	7,  // [7:7] is the sub-list for extension extendee
-	0,  // [0:7] is the sub-list for field type_name
+	36, // 2: kevo.GetStatsResponse.operation_counts:type_name -> kevo.GetStatsResponse.OperationCountsEntry
+	37, // 3: kevo.GetStatsResponse.latency_stats:type_name -> kevo.GetStatsResponse.LatencyStatsEntry
+	38, // 4: kevo.GetStatsResponse.error_counts:type_name -> kevo.GetStatsResponse.ErrorCountsEntry
+	30, // 5: kevo.GetStatsResponse.recovery_stats:type_name -> kevo.RecoveryStats
+	1,  // 6: kevo.GetNodeInfoResponse.node_role:type_name -> kevo.GetNodeInfoResponse.NodeRole
+	35, // 7: kevo.GetNodeInfoResponse.replicas:type_name -> kevo.ReplicaInfo
+	39, // 8: kevo.ReplicaInfo.meta:type_name -> kevo.ReplicaInfo.MetaEntry
+	29, // 9: kevo.GetStatsResponse.LatencyStatsEntry.value:type_name -> kevo.LatencyStats
+	2,  // 10: kevo.KevoService.Get:input_type -> kevo.GetRequest
+	4,  // 11: kevo.KevoService.Put:input_type -> kevo.PutRequest
+	6,  // 12: kevo.KevoService.Delete:input_type -> kevo.DeleteRequest
+	8,  // 13: kevo.KevoService.BatchWrite:input_type -> kevo.BatchWriteRequest
+	11, // 14: kevo.KevoService.Scan:input_type -> kevo.ScanRequest
+	13, // 15: kevo.KevoService.BeginTransaction:input_type -> kevo.BeginTransactionRequest
+	15, // 16: kevo.KevoService.CommitTransaction:input_type -> kevo.CommitTransactionRequest
+	17, // 17: kevo.KevoService.RollbackTransaction:input_type -> kevo.RollbackTransactionRequest
+	19, // 18: kevo.KevoService.TxGet:input_type -> kevo.TxGetRequest
+	21, // 19: kevo.KevoService.TxPut:input_type -> kevo.TxPutRequest
+	23, // 20: kevo.KevoService.TxDelete:input_type -> kevo.TxDeleteRequest
+	25, // 21: kevo.KevoService.TxScan:input_type -> kevo.TxScanRequest
+	27, // 22: kevo.KevoService.GetStats:input_type -> kevo.GetStatsRequest
+	31, // 23: kevo.KevoService.Compact:input_type -> kevo.CompactRequest
+	33, // 24: kevo.KevoService.GetNodeInfo:input_type -> kevo.GetNodeInfoRequest
+	3,  // 25: kevo.KevoService.Get:output_type -> kevo.GetResponse
+	5,  // 26: kevo.KevoService.Put:output_type -> kevo.PutResponse
+	7,  // 27: kevo.KevoService.Delete:output_type -> kevo.DeleteResponse
+	10, // 28: kevo.KevoService.BatchWrite:output_type -> kevo.BatchWriteResponse
+	12, // 29: kevo.KevoService.Scan:output_type -> kevo.ScanResponse
+	14, // 30: kevo.KevoService.BeginTransaction:output_type -> kevo.BeginTransactionResponse
+	16, // 31: kevo.KevoService.CommitTransaction:output_type -> kevo.CommitTransactionResponse
+	18, // 32: kevo.KevoService.RollbackTransaction:output_type -> kevo.RollbackTransactionResponse
+	20, // 33: kevo.KevoService.TxGet:output_type -> kevo.TxGetResponse
+	22, // 34: kevo.KevoService.TxPut:output_type -> kevo.TxPutResponse
+	24, // 35: kevo.KevoService.TxDelete:output_type -> kevo.TxDeleteResponse
+	26, // 36: kevo.KevoService.TxScan:output_type -> kevo.TxScanResponse
+	28, // 37: kevo.KevoService.GetStats:output_type -> kevo.GetStatsResponse
+	32, // 38: kevo.KevoService.Compact:output_type -> kevo.CompactResponse
+	34, // 39: kevo.KevoService.GetNodeInfo:output_type -> kevo.GetNodeInfoResponse
+	25, // [25:40] is the sub-list for method output_type
+	10, // [10:25] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_proto_kevo_service_proto_init() }
@@ -2017,8 +2290,8 @@ func file_proto_kevo_service_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_kevo_service_proto_rawDesc), len(file_proto_kevo_service_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   34,
+			NumEnums:      2,
+			NumMessages:   38,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

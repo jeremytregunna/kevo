@@ -9,6 +9,6 @@ import (
 func (m *Manager) GetWAL() *wal.WAL {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	return m.wal
 }
