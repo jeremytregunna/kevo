@@ -7,6 +7,7 @@ import (
 
 	"github.com/KevoDB/kevo/pkg/common/iterator"
 	"github.com/KevoDB/kevo/pkg/engine/interfaces"
+	"github.com/KevoDB/kevo/pkg/replication"
 	pb "github.com/KevoDB/kevo/proto/kevo"
 )
 
@@ -21,17 +22,18 @@ type TxRegistry interface {
 // KevoServiceServer implements the gRPC KevoService interface
 type KevoServiceServer struct {
 	pb.UnimplementedKevoServiceServer
-	engine           interfaces.Engine
-	txRegistry       TxRegistry
-	activeTx         sync.Map // map[string]interfaces.Transaction
-	txMu             sync.Mutex
-	compactionSem    chan struct{} // Semaphore for limiting concurrent compactions
-	maxKeySize       int           // Maximum allowed key size
-	maxValueSize     int           // Maximum allowed value size
-	maxBatchSize     int           // Maximum number of operations in a batch
-	maxTransactions  int           // Maximum number of concurrent transactions
-	transactionTTL   int64         // Maximum time in seconds a transaction can be idle
-	activeTransCount int32         // Count of active transactions
+	engine             interfaces.Engine
+	txRegistry         TxRegistry
+	activeTx           sync.Map // map[string]interfaces.Transaction
+	txMu               sync.Mutex
+	compactionSem      chan struct{}           // Semaphore for limiting concurrent compactions
+	maxKeySize         int                     // Maximum allowed key size
+	maxValueSize       int                     // Maximum allowed value size
+	maxBatchSize       int                     // Maximum number of operations in a batch
+	maxTransactions    int                     // Maximum number of concurrent transactions
+	transactionTTL     int64                   // Maximum time in seconds a transaction can be idle
+	activeTransCount   int32                   // Count of active transactions
+	replicationManager ReplicationInfoProvider // Interface to the replication manager
 }
 
 // CleanupConnection implements the ConnectionCleanup interface
@@ -42,17 +44,29 @@ func (s *KevoServiceServer) CleanupConnection(connectionID string) {
 	}
 }
 
+// ReplicationInfoProvider defines an interface for accessing replication topology information
+type ReplicationInfoProvider interface {
+	// GetNodeInfo returns information about the replication topology
+	// Returns: nodeRole, primaryAddr, replicas, lastSequence, readOnly
+	GetNodeInfo() (string, string, []ReplicaInfo, uint64, bool)
+}
+
+// ReplicaInfo contains information about a replica node
+// This should mirror the structure in pkg/replication/info_provider.go
+type ReplicaInfo = replication.ReplicationNodeInfo
+
 // NewKevoServiceServer creates a new KevoServiceServer
-func NewKevoServiceServer(engine interfaces.Engine, txRegistry TxRegistry) *KevoServiceServer {
+func NewKevoServiceServer(engine interfaces.Engine, txRegistry TxRegistry, replicationManager ReplicationInfoProvider) *KevoServiceServer {
 	return &KevoServiceServer{
-		engine:          engine,
-		txRegistry:      txRegistry,
-		compactionSem:   make(chan struct{}, 1), // Allow only one compaction at a time
-		maxKeySize:      4096,                   // 4KB
-		maxValueSize:    10 * 1024 * 1024,       // 10MB
-		maxBatchSize:    1000,
-		maxTransactions: 1000,
-		transactionTTL:  300, // 5 minutes
+		engine:             engine,
+		txRegistry:         txRegistry,
+		replicationManager: replicationManager,
+		compactionSem:      make(chan struct{}, 1), // Allow only one compaction at a time
+		maxKeySize:         4096,                   // 4KB
+		maxValueSize:       10 * 1024 * 1024,       // 10MB
+		maxBatchSize:       1000,
+		maxTransactions:    1000,
+		transactionTTL:     300, // 5 minutes
 	}
 }
 
@@ -789,4 +803,51 @@ func (s *KevoServiceServer) Compact(ctx context.Context, req *pb.CompactRequest)
 	}
 
 	return &pb.CompactResponse{Success: true}, nil
+}
+
+// GetNodeInfo returns information about this node and the replication topology
+func (s *KevoServiceServer) GetNodeInfo(ctx context.Context, req *pb.GetNodeInfoRequest) (*pb.GetNodeInfoResponse, error) {
+	response := &pb.GetNodeInfoResponse{
+		NodeRole:       pb.GetNodeInfoResponse_STANDALONE, // Default to standalone
+		ReadOnly:       false,
+		PrimaryAddress: "",
+		Replicas:       nil,
+	}
+
+	// Check if we can access replication information
+	if s.replicationManager != nil {
+		// Get node role and replication info from the manager
+		nodeRole, primaryAddr, replicas, lastSeq, readOnly := s.replicationManager.GetNodeInfo()
+
+		// Set node role
+		switch nodeRole {
+		case "primary":
+			response.NodeRole = pb.GetNodeInfoResponse_PRIMARY
+		case "replica":
+			response.NodeRole = pb.GetNodeInfoResponse_REPLICA
+		default:
+			response.NodeRole = pb.GetNodeInfoResponse_STANDALONE
+		}
+
+		// Set primary address if available
+		response.PrimaryAddress = primaryAddr
+
+		// Set replicas information
+		for _, replica := range replicas {
+			replicaInfo := &pb.ReplicaInfo{
+				Address:      replica.Address,
+				LastSequence: replica.LastSequence,
+				Available:    replica.Available,
+				Region:       replica.Region,
+				Meta:         replica.Meta,
+			}
+			response.Replicas = append(response.Replicas, replicaInfo)
+		}
+
+		// Set sequence and read-only status
+		response.LastSequence = lastSeq
+		response.ReadOnly = readOnly
+	}
+
+	return response, nil
 }

@@ -93,10 +93,6 @@ func (s *Server) Start() error {
 	// Create gRPC server with options
 	s.grpcServer = grpc.NewServer(serverOpts...)
 
-	// Create and register the Kevo service implementation
-	s.kevoService = grpcservice.NewKevoServiceServer(s.eng, s.txRegistry)
-	pb.RegisterKevoServiceServer(s.grpcServer, s.kevoService)
-
 	// Initialize replication if enabled
 	if s.config.ReplicationEnabled {
 		// Create replication manager config
@@ -127,6 +123,10 @@ func (s *Server) Start() error {
 			fmt.Println("Running as replica: database is in read-only mode")
 		}
 	}
+
+	// Create and register the Kevo service implementation
+	s.kevoService = grpcservice.NewKevoServiceServer(s.eng, s.txRegistry, s.replicationManager)
+	pb.RegisterKevoServiceServer(s.grpcServer, s.kevoService)
 
 	fmt.Println("gRPC server initialized")
 	return nil

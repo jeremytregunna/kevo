@@ -38,6 +38,9 @@ type Engine interface {
 
 	// Lifecycle management
 	Close() error
+
+	// Read-only mode?
+	IsReadOnly() bool
 }
 
 // Components is a struct containing all the components needed by the engine

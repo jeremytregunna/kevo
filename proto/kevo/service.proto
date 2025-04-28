@@ -30,6 +30,9 @@ service KevoService {
   // Administrative Operations
   rpc GetStats(GetStatsRequest) returns (GetStatsResponse);
   rpc Compact(CompactRequest) returns (CompactResponse);
+  
+  // Replication and Topology Operations
+  rpc GetNodeInfo(GetNodeInfoRequest) returns (GetNodeInfoResponse);
 }
 
 // Basic message types
@@ -209,4 +212,35 @@ message CompactRequest {
 
 message CompactResponse {
   bool success = 1;
+}
+
+// Node information and topology 
+message GetNodeInfoRequest {
+  // No parameters needed for now
+}
+
+message GetNodeInfoResponse {
+  // Node role information
+  enum NodeRole {
+    STANDALONE = 0;
+    PRIMARY = 1;
+    REPLICA = 2;
+  }
+  NodeRole node_role = 1;
+  
+  // Connection information
+  string primary_address = 2;  // Empty if standalone
+  repeated ReplicaInfo replicas = 3;  // Empty if standalone
+  
+  // Node status
+  uint64 last_sequence = 4;  // Last applied sequence number
+  bool read_only = 5;        // Whether the node is in read-only mode
+}
+
+message ReplicaInfo {
+  string address = 1;              // Host:port of the replica
+  uint64 last_sequence = 2;        // Last applied sequence number
+  bool available = 3;              // Whether the replica is available
+  string region = 4;               // Optional region information
+  map<string, string> meta = 5;    // Additional metadata
 }

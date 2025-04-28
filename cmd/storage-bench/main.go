@@ -236,11 +236,11 @@ func runWriteBenchmark(e *engine.EngineFacade) string {
 				}
 
 				// Handle WAL rotation errors more gracefully
-				if strings.Contains(err.Error(), "WAL is rotating") || 
-				   strings.Contains(err.Error(), "WAL is closed") {
+				if strings.Contains(err.Error(), "WAL is rotating") ||
+					strings.Contains(err.Error(), "WAL is closed") {
 					// These are expected during WAL rotation, just retry after a short delay
 					walRotationCount++
-					if walRotationCount % 100 == 0 {
+					if walRotationCount%100 == 0 {
 						fmt.Printf("Retrying due to WAL rotation (%d retries so far)...\n", walRotationCount)
 					}
 					time.Sleep(20 * time.Millisecond)
@@ -334,10 +334,10 @@ func runRandomWriteBenchmark(e *engine.EngineFacade) string {
 				}
 
 				// Handle WAL rotation errors
-				if strings.Contains(err.Error(), "WAL is rotating") || 
-				   strings.Contains(err.Error(), "WAL is closed") {
+				if strings.Contains(err.Error(), "WAL is rotating") ||
+					strings.Contains(err.Error(), "WAL is closed") {
 					walRotationCount++
-					if walRotationCount % 100 == 0 {
+					if walRotationCount%100 == 0 {
 						fmt.Printf("Retrying due to WAL rotation (%d retries so far)...\n", walRotationCount)
 					}
 					time.Sleep(20 * time.Millisecond)
@@ -430,10 +430,10 @@ func runSequentialWriteBenchmark(e *engine.EngineFacade) string {
 				}
 
 				// Handle WAL rotation errors
-				if strings.Contains(err.Error(), "WAL is rotating") || 
-				   strings.Contains(err.Error(), "WAL is closed") {
+				if strings.Contains(err.Error(), "WAL is rotating") ||
+					strings.Contains(err.Error(), "WAL is closed") {
 					walRotationCount++
-					if walRotationCount % 100 == 0 {
+					if walRotationCount%100 == 0 {
 						fmt.Printf("Retrying due to WAL rotation (%d retries so far)...\n", walRotationCount)
 					}
 					time.Sleep(20 * time.Millisecond)
@@ -586,9 +586,9 @@ func runRandomReadBenchmark(e *engine.EngineFacade) string {
 
 	// Write the test data with random keys
 	for i := 0; i < actualNumKeys; i++ {
-		keys[i] = []byte(fmt.Sprintf("rand-key-%s-%06d", 
+		keys[i] = []byte(fmt.Sprintf("rand-key-%s-%06d",
 			strconv.FormatUint(r.Uint64(), 16), i))
-			
+
 		if err := e.Put(keys[i], value); err != nil {
 			if err == engine.ErrEngineClosed {
 				fmt.Fprintf(os.Stderr, "Engine closed during preparation\n")
@@ -644,7 +644,7 @@ benchmarkEnd:
 
 	result := fmt.Sprintf("\nRandom Read Benchmark Results:")
 	result += fmt.Sprintf("\n  Operations: %d", opsCount)
-	result += fmt.Sprintf("\n  Hit Rate: %.2f%%", hitRate) 
+	result += fmt.Sprintf("\n  Hit Rate: %.2f%%", hitRate)
 	result += fmt.Sprintf("\n  Time: %.2f seconds", elapsed.Seconds())
 	result += fmt.Sprintf("\n  Throughput: %.2f ops/sec", opsPerSecond)
 	result += fmt.Sprintf("\n  Latency: %.3f µs/op", 1000000.0/opsPerSecond)
@@ -770,18 +770,18 @@ func runRangeScanBenchmark(e *engine.EngineFacade) string {
 	// Keys will be organized into buckets for realistic scanning
 	const BUCKETS = 100
 	keysPerBucket := actualNumKeys / BUCKETS
-	
+
 	value := make([]byte, *valueSize)
 	for i := range value {
 		value[i] = byte(i % 256)
 	}
 
-	fmt.Printf("Creating %d buckets with approximately %d keys each...\n", 
+	fmt.Printf("Creating %d buckets with approximately %d keys each...\n",
 		BUCKETS, keysPerBucket)
 
 	for bucket := 0; bucket < BUCKETS; bucket++ {
 		bucketPrefix := fmt.Sprintf("bucket-%03d:", bucket)
-		
+
 		// Create keys within this bucket
 		for i := 0; i < keysPerBucket; i++ {
 			key := []byte(fmt.Sprintf("%s%06d", bucketPrefix, i))
@@ -811,7 +811,7 @@ func runRangeScanBenchmark(e *engine.EngineFacade) string {
 
 	var opsCount, entriesScanned int
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	
+
 	// Use configured scan size or default to 100
 	scanSize := *scanSize
 
@@ -819,10 +819,10 @@ func runRangeScanBenchmark(e *engine.EngineFacade) string {
 		// Pick a random bucket to scan
 		bucket := r.Intn(BUCKETS)
 		bucketPrefix := fmt.Sprintf("bucket-%03d:", bucket)
-		
+
 		// Determine scan range - either full bucket or partial depending on scan size
 		var startKey, endKey []byte
-		
+
 		if scanSize >= keysPerBucket {
 			// Scan whole bucket
 			startKey = []byte(fmt.Sprintf("%s%06d", bucketPrefix, 0))
