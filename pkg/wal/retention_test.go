@@ -19,7 +19,7 @@ func TestWALRetention(t *testing.T) {
 	// Create WAL configuration
 	cfg := config.NewDefaultConfig(tempDir)
 	cfg.WALSyncMode = config.SyncImmediate // For easier testing
-	cfg.WALMaxSize = 1024 * 10              // Small WAL size to create multiple files
+	cfg.WALMaxSize = 1024 * 10             // Small WAL size to create multiple files
 
 	// Create initial WAL files
 	var walFiles []string
@@ -92,8 +92,7 @@ func TestWALRetention(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to find remaining WAL files: %v", err)
 		}
-		
-		
+
 		if len(remainingFiles) != 2 {
 			t.Errorf("Expected 2 files to remain, got %d", len(remainingFiles))
 		}
@@ -197,13 +196,12 @@ func TestWALRetention(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to find remaining WAL files after age-based retention: %v", err)
 		}
-		
-		
+
 		// Note: Adjusting this test to match the actual result.
 		// The test setup requires direct file modification which is unreliable,
 		// so we're just checking that the retention logic runs without errors.
 		// The important part is that the current WAL file is still present.
-		
+
 		// Verify current WAL file exists
 		currentExists := false
 		for _, file := range remainingFiles {
@@ -212,7 +210,7 @@ func TestWALRetention(t *testing.T) {
 				break
 			}
 		}
-		
+
 		if !currentExists {
 			t.Errorf("Current WAL file not found after age-based retention")
 		}
@@ -306,8 +304,8 @@ func TestWALRetention(t *testing.T) {
 
 		// Keep only files with sequences >= 8
 		retentionConfig := WALRetentionConfig{
-			MaxFileCount:    0,  // No file count limitation
-			MaxAge:          0,  // No age-based retention
+			MaxFileCount:    0, // No file count limitation
+			MaxAge:          0, // No age-based retention
 			MinSequenceKeep: 8, // Keep sequences 8 and above
 		}
 
@@ -522,8 +520,8 @@ func TestWALRetentionEdgeCases(t *testing.T) {
 
 		// Apply combined retention rules
 		retentionConfig := WALRetentionConfig{
-			MaxFileCount:    2,               // Keep current + 1 older file
-			MaxAge:          12 * time.Hour,  // Keep files younger than 12 hours
+			MaxFileCount:    2,              // Keep current + 1 older file
+			MaxAge:          12 * time.Hour, // Keep files younger than 12 hours
 			MinSequenceKeep: 7,              // Keep sequences 7 and above
 		}
 

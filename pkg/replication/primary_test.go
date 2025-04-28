@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/KevoDB/kevo/pkg/config"
-	"github.com/KevoDB/kevo/pkg/wal"
 	proto "github.com/KevoDB/kevo/pkg/replication/proto"
+	"github.com/KevoDB/kevo/pkg/wal"
 )
 
 // TestPrimaryCreation tests that a primary can be created with a WAL
