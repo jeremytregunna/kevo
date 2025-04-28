@@ -35,7 +35,8 @@ type EngineFacade struct {
 	stats      stats.Collector
 
 	// State
-	closed atomic.Bool
+	closed   atomic.Bool
+	readOnly atomic.Bool // Flag to indicate if the engine is in read-only mode (for replicas)
 }
 
 // We keep the Engine name used in legacy code, but redirect it to our new implementation
@@ -115,6 +116,11 @@ func (e *EngineFacade) Put(key, value []byte) error {
 		return ErrEngineClosed
 	}
 
+	// Reject writes in read-only mode
+	if e.readOnly.Load() {
+		return ErrReadOnlyMode
+	}
+
 	// Track the operation start
 	e.stats.TrackOperation(stats.OpPut)
 
@@ -171,6 +177,11 @@ func (e *EngineFacade) Get(key []byte) ([]byte, error) {
 func (e *EngineFacade) Delete(key []byte) error {
 	if e.closed.Load() {
 		return ErrEngineClosed
+	}
+
+	// Reject writes in read-only mode
+	if e.readOnly.Load() {
+		return ErrReadOnlyMode
 	}
 
 	// Track the operation start
@@ -264,6 +275,11 @@ func (e *EngineFacade) BeginTransaction(readOnly bool) (interfaces.Transaction, 
 		return nil, ErrEngineClosed
 	}
 
+	// Force read-only mode if engine is in read-only mode
+	if e.readOnly.Load() {
+		readOnly = true
+	}
+
 	// Track the operation start
 	e.stats.TrackOperation(stats.OpTxBegin)
 
@@ -297,6 +313,11 @@ func (e *EngineFacade) BeginTransaction(readOnly bool) (interfaces.Transaction, 
 func (e *EngineFacade) ApplyBatch(entries []*wal.Entry) error {
 	if e.closed.Load() {
 		return ErrEngineClosed
+	}
+
+	// Reject writes in read-only mode
+	if e.readOnly.Load() {
+		return ErrReadOnlyMode
 	}
 
 	// Track the operation - using a custom operation type might be good in the future
