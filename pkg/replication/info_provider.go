@@ -4,6 +4,12 @@ import (
 	"fmt"
 )
 
+const (
+	ReplicationModeStandalone = "standalone"
+	ReplicationModePrimary = "primary"
+	ReplicationModeReplica = "replica"
+)
+
 // ReplicationNodeInfo contains information about a node in the replication topology
 type ReplicationNodeInfo struct {
 	Address      string            // Host:port of the node
@@ -41,24 +47,24 @@ func (m *Manager) GetNodeInfo() (string, string, []ReplicationNodeInfo, uint64, 
 	role = m.config.Mode
 
 	// Set primary address
-	if role == "replica" {
+	if role == ReplicationModeReplica {
 		primaryAddr = m.config.PrimaryAddr
-	} else if role == "primary" {
+	} else if role == ReplicationModePrimary {
 		primaryAddr = m.config.ListenAddr
 	}
 
 	// Set last sequence
-	if role == "primary" && m.primary != nil {
+	if role == ReplicationModePrimary && m.primary != nil {
 		lastSequence = m.primary.GetLastSequence()
-	} else if role == "replica" && m.replica != nil {
+	} else if role == ReplicationModeReplica && m.replica != nil {
 		lastSequence = m.replica.GetLastAppliedSequence()
 	}
 
 	// Gather replica information
-	if role == "primary" && m.primary != nil {
+	if role == ReplicationModePrimary && m.primary != nil {
 		// Get replica sessions from primary
 		replicas = m.primary.GetReplicaInfo()
-	} else if role == "replica" {
+	} else if role == ReplicationModeReplica {
 		// Add self as a replica
 		replicas = append(replicas, ReplicationNodeInfo{
 			Address:      m.config.ListenAddr,
