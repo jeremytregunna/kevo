@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/KevoDB/kevo/pkg/common/log"
-	proto "github.com/KevoDB/kevo/pkg/replication/proto"
+	proto "github.com/KevoDB/kevo/proto/kevo/replication"
 )
 
 // HeartbeatConfig contains configuration for heartbeat/keepalive.

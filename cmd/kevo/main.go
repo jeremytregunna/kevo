@@ -183,7 +183,11 @@ func parseFlags() Config {
 		dbPath = flag.Arg(0)
 	}
 
-	return Config{
+	// Debug output for flag values
+	fmt.Printf("DEBUG: Parsed flags: replication=%v, mode=%s, addr=%s, primary=%s\n",
+		*replicationEnabled, *replicationMode, *replicationAddr, *primaryAddr)
+
+	config := Config{
 		ServerMode:  *serverMode,
 		DaemonMode:  *daemonMode,
 		ListenAddr:  *listenAddr,
@@ -199,6 +203,10 @@ func parseFlags() Config {
 		ReplicationAddr:    *replicationAddr,
 		PrimaryAddr:        *primaryAddr,
 	}
+	fmt.Printf("DEBUG: Config created: ReplicationEnabled=%v, ReplicationMode=%s\n",
+		config.ReplicationEnabled, config.ReplicationMode)
+	
+	return config
 }
 
 // runServer initializes and runs the Kevo server
@@ -209,6 +217,9 @@ func runServer(eng *engine.Engine, config Config) {
 	}
 
 	// Create and start the server
+	fmt.Printf("DEBUG: Before server creation: ReplicationEnabled=%v, ReplicationMode=%s\n",
+		config.ReplicationEnabled, config.ReplicationMode)
+	
 	server := NewServer(eng, config)
 
 	// Start the server (non-blocking)

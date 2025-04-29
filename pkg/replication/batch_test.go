@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	proto "github.com/KevoDB/kevo/pkg/replication/proto"
 	"github.com/KevoDB/kevo/pkg/wal"
+	proto "github.com/KevoDB/kevo/proto/kevo/replication"
 )
 
 func TestWALBatcher(t *testing.T) {
@@ -137,7 +137,7 @@ func TestWALBatcherWithTransactionBoundaries(t *testing.T) {
 	}
 
 	// Add the batch entry
-	ready, err := batcher.AddEntry(batchEntry)
+	_, err := batcher.AddEntry(batchEntry)
 	if err != nil {
 		t.Fatalf("Failed to add batch entry: %v", err)
 	}
@@ -151,7 +151,7 @@ func TestWALBatcherWithTransactionBoundaries(t *testing.T) {
 			Value:          []byte("value"),
 		}
 
-		ready, err = batcher.AddEntry(entry)
+		_, err = batcher.AddEntry(entry)
 		if err != nil {
 			t.Fatalf("Failed to add entry %d: %v", i, err)
 		}

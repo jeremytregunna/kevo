@@ -6,7 +6,7 @@ import (
 	"io"
 	"sync"
 
-	replication_proto "github.com/KevoDB/kevo/pkg/replication/proto"
+	replication_proto "github.com/KevoDB/kevo/proto/kevo/replication"
 	"github.com/klauspost/compress/snappy"
 	"github.com/klauspost/compress/zstd"
 )
@@ -19,8 +19,8 @@ var (
 	ErrInvalidCompressedData = errors.New("invalid compressed data")
 )
 
-// Compressor provides methods to compress and decompress data for replication
-type Compressor struct {
+// CompressionManager provides methods to compress and decompress data for replication
+type CompressionManager struct {
 	// ZSTD encoder and decoder
 	zstdEncoder *zstd.Encoder
 	zstdDecoder *zstd.Decoder
@@ -29,8 +29,8 @@ type Compressor struct {
 	mu sync.Mutex
 }
 
-// NewCompressor creates a new compressor with initialized codecs
-func NewCompressor() (*Compressor, error) {
+// NewCompressionManager creates a new compressor with initialized codecs
+func NewCompressionManager() (*CompressionManager, error) {
 	// Create ZSTD encoder with default compression level
 	zstdEncoder, err := zstd.NewWriter(nil)
 	if err != nil {
@@ -44,14 +44,14 @@ func NewCompressor() (*Compressor, error) {
 		return nil, fmt.Errorf("failed to create ZSTD decoder: %w", err)
 	}
 
-	return &Compressor{
+	return &CompressionManager{
 		zstdEncoder: zstdEncoder,
 		zstdDecoder: zstdDecoder,
 	}, nil
 }
 
-// NewCompressorWithLevel creates a new compressor with a specific compression level for ZSTD
-func NewCompressorWithLevel(level zstd.EncoderLevel) (*Compressor, error) {
+// NewCompressionManagerWithLevel creates a new compressor with a specific compression level for ZSTD
+func NewCompressionManagerWithLevel(level zstd.EncoderLevel) (*CompressionManager, error) {
 	// Create ZSTD encoder with specified compression level
 	zstdEncoder, err := zstd.NewWriter(nil, zstd.WithEncoderLevel(level))
 	if err != nil {
@@ -65,14 +65,14 @@ func NewCompressorWithLevel(level zstd.EncoderLevel) (*Compressor, error) {
 		return nil, fmt.Errorf("failed to create ZSTD decoder: %w", err)
 	}
 
-	return &Compressor{
+	return &CompressionManager{
 		zstdEncoder: zstdEncoder,
 		zstdDecoder: zstdDecoder,
 	}, nil
 }
 
 // Compress compresses data using the specified codec
-func (c *Compressor) Compress(data []byte, codec replication_proto.CompressionCodec) ([]byte, error) {
+func (c *CompressionManager) Compress(data []byte, codec replication_proto.CompressionCodec) ([]byte, error) {
 	if len(data) == 0 {
 		return data, nil
 	}
@@ -96,7 +96,7 @@ func (c *Compressor) Compress(data []byte, codec replication_proto.CompressionCo
 }
 
 // Decompress decompresses data using the specified codec
-func (c *Compressor) Decompress(data []byte, codec replication_proto.CompressionCodec) ([]byte, error) {
+func (c *CompressionManager) Decompress(data []byte, codec replication_proto.CompressionCodec) ([]byte, error) {
 	if len(data) == 0 {
 		return data, nil
 	}
@@ -128,7 +128,7 @@ func (c *Compressor) Decompress(data []byte, codec replication_proto.Compression
 }
 
 // Close releases resources used by the compressor
-func (c *Compressor) Close() error {
+func (c *CompressionManager) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 

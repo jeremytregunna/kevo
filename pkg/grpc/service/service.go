@@ -807,32 +807,38 @@ func (s *KevoServiceServer) Compact(ctx context.Context, req *pb.CompactRequest)
 
 // GetNodeInfo returns information about this node and the replication topology
 func (s *KevoServiceServer) GetNodeInfo(ctx context.Context, req *pb.GetNodeInfoRequest) (*pb.GetNodeInfoResponse, error) {
+	// Create default response for standalone mode
 	response := &pb.GetNodeInfoResponse{
 		NodeRole:       pb.GetNodeInfoResponse_STANDALONE, // Default to standalone
 		ReadOnly:       false,
 		PrimaryAddress: "",
 		Replicas:       nil,
+		LastSequence:   0,
 	}
 
-	// Check if we can access replication information
-	if s.replicationManager != nil {
-		// Get node role and replication info from the manager
-		nodeRole, primaryAddr, replicas, lastSeq, readOnly := s.replicationManager.GetNodeInfo()
+	// Return default values if replication manager is nil
+	if s.replicationManager == nil {
+		return response, nil
+	}
 
-		// Set node role
-		switch nodeRole {
-		case "primary":
-			response.NodeRole = pb.GetNodeInfoResponse_PRIMARY
-		case "replica":
-			response.NodeRole = pb.GetNodeInfoResponse_REPLICA
-		default:
-			response.NodeRole = pb.GetNodeInfoResponse_STANDALONE
-		}
+	// Get node role and replication info from the manager
+	nodeRole, primaryAddr, replicas, lastSeq, readOnly := s.replicationManager.GetNodeInfo()
 
-		// Set primary address if available
-		response.PrimaryAddress = primaryAddr
+	// Set node role
+	switch nodeRole {
+	case "primary":
+		response.NodeRole = pb.GetNodeInfoResponse_PRIMARY
+	case "replica":
+		response.NodeRole = pb.GetNodeInfoResponse_REPLICA
+	default:
+		response.NodeRole = pb.GetNodeInfoResponse_STANDALONE
+	}
 
-		// Set replicas information
+	// Set primary address if available
+	response.PrimaryAddress = primaryAddr
+
+	// Set replicas information if any
+	if replicas != nil {
 		for _, replica := range replicas {
 			replicaInfo := &pb.ReplicaInfo{
 				Address:      replica.Address,
@@ -843,11 +849,11 @@ func (s *KevoServiceServer) GetNodeInfo(ctx context.Context, req *pb.GetNodeInfo
 			}
 			response.Replicas = append(response.Replicas, replicaInfo)
 		}
-
-		// Set sequence and read-only status
-		response.LastSequence = lastSeq
-		response.ReadOnly = readOnly
 	}
+
+	// Set sequence and read-only status
+	response.LastSequence = lastSeq
+	response.ReadOnly = readOnly
 
 	return response, nil
 }

@@ -143,6 +143,35 @@ func (e *EngineFacade) Put(key, value []byte) error {
 	return err
 }
 
+// PutInternal adds a key-value pair to the database, bypassing the read-only check
+// This is used by replication to apply entries even when in read-only mode
+func (e *EngineFacade) PutInternal(key, value []byte) error {
+	if e.closed.Load() {
+		return ErrEngineClosed
+	}
+
+	// Track the operation start
+	e.stats.TrackOperation(stats.OpPut)
+
+	// Track operation latency
+	start := time.Now()
+
+	// Delegate to storage component
+	err := e.storage.Put(key, value)
+
+	latencyNs := uint64(time.Since(start).Nanoseconds())
+	e.stats.TrackOperationWithLatency(stats.OpPut, latencyNs)
+
+	// Track bytes written
+	if err == nil {
+		e.stats.TrackBytes(true, uint64(len(key)+len(value)))
+	} else {
+		e.stats.TrackError("put_error")
+	}
+
+	return err
+}
+
 // Get retrieves the value for the given key
 func (e *EngineFacade) Get(key []byte) ([]byte, error) {
 	if e.closed.Load() {
@@ -182,6 +211,40 @@ func (e *EngineFacade) Delete(key []byte) error {
 	// Reject writes in read-only mode
 	if e.readOnly.Load() {
 		return ErrReadOnlyMode
+	}
+
+	// Track the operation start
+	e.stats.TrackOperation(stats.OpDelete)
+
+	// Track operation latency
+	start := time.Now()
+
+	// Delegate to storage component
+	err := e.storage.Delete(key)
+
+	latencyNs := uint64(time.Since(start).Nanoseconds())
+	e.stats.TrackOperationWithLatency(stats.OpDelete, latencyNs)
+
+	// Track bytes written (just key for deletes)
+	if err == nil {
+		e.stats.TrackBytes(true, uint64(len(key)))
+
+		// Track tombstone in compaction manager
+		if e.compaction != nil {
+			e.compaction.TrackTombstone(key)
+		}
+	} else {
+		e.stats.TrackError("delete_error")
+	}
+
+	return err
+}
+
+// DeleteInternal removes a key from the database, bypassing the read-only check
+// This is used by replication to apply delete operations even when in read-only mode
+func (e *EngineFacade) DeleteInternal(key []byte) error {
+	if e.closed.Load() {
+		return ErrEngineClosed
 	}
 
 	// Track the operation start
@@ -318,6 +381,50 @@ func (e *EngineFacade) ApplyBatch(entries []*wal.Entry) error {
 	// Reject writes in read-only mode
 	if e.readOnly.Load() {
 		return ErrReadOnlyMode
+	}
+
+	// Track the operation - using a custom operation type might be good in the future
+	e.stats.TrackOperation(stats.OpPut) // Using OpPut since batch operations are primarily writes
+
+	// Count bytes for statistics
+	var totalBytes uint64
+	for _, entry := range entries {
+		totalBytes += uint64(len(entry.Key))
+		if entry.Value != nil {
+			totalBytes += uint64(len(entry.Value))
+		}
+	}
+
+	// Track operation latency
+	start := time.Now()
+	err := e.storage.ApplyBatch(entries)
+	latencyNs := uint64(time.Since(start).Nanoseconds())
+	e.stats.TrackOperationWithLatency(stats.OpPut, latencyNs)
+
+	// Track bytes and errors
+	if err == nil {
+		e.stats.TrackBytes(true, totalBytes)
+
+		// Track tombstones in compaction manager for delete operations
+		if e.compaction != nil {
+			for _, entry := range entries {
+				if entry.Type == wal.OpTypeDelete {
+					e.compaction.TrackTombstone(entry.Key)
+				}
+			}
+		}
+	} else {
+		e.stats.TrackError("batch_error")
+	}
+
+	return err
+}
+
+// ApplyBatchInternal atomically applies a batch of operations, bypassing the read-only check
+// This is used by replication to apply batch operations even when in read-only mode
+func (e *EngineFacade) ApplyBatchInternal(entries []*wal.Entry) error {
+	if e.closed.Load() {
+		return ErrEngineClosed
 	}
 
 	// Track the operation - using a custom operation type might be good in the future

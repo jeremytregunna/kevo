@@ -70,7 +70,7 @@ func NewDefaultConfig(dbPath string) *Config {
 
 		// WAL defaults
 		WALDir:       walDir,
-		WALSyncMode:  SyncBatch,
+		WALSyncMode:  SyncImmediate,
 		WALSyncBytes: 1024 * 1024, // 1MB
 
 		// MemTable defaults

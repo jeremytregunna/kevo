@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"testing"
 
-	proto "github.com/KevoDB/kevo/pkg/replication/proto"
 	"github.com/KevoDB/kevo/pkg/wal"
+	proto "github.com/KevoDB/kevo/proto/kevo/replication"
 )
 
 func TestWALEntriesBuffer(t *testing.T) {

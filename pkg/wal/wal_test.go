@@ -583,3 +583,262 @@ func TestWALErrorHandling(t *testing.T) {
 		t.Error("Expected error when replaying non-existent file")
 	}
 }
+
+func TestAppendWithSequence(t *testing.T) {
+	dir := createTempDir(t)
+	defer os.RemoveAll(dir)
+
+	cfg := createTestConfig()
+	wal, err := NewWAL(cfg, dir)
+	if err != nil {
+		t.Fatalf("Failed to create WAL: %v", err)
+	}
+
+	// Write entries with specific sequence numbers
+	testCases := []struct {
+		key      string
+		value    string
+		seqNum   uint64
+		entryType uint8
+	}{
+		{"key1", "value1", 100, OpTypePut},
+		{"key2", "value2", 200, OpTypePut},
+		{"key3", "value3", 300, OpTypePut},
+		{"key4", "", 400, OpTypeDelete},
+	}
+
+	for _, tc := range testCases {
+		seq, err := wal.AppendWithSequence(tc.entryType, []byte(tc.key), []byte(tc.value), tc.seqNum)
+		if err != nil {
+			t.Fatalf("Failed to append entry with sequence: %v", err)
+		}
+
+		if seq != tc.seqNum {
+			t.Errorf("Expected sequence %d, got %d", tc.seqNum, seq)
+		}
+	}
+
+	// Verify nextSequence was updated correctly (should be highest + 1)
+	if wal.GetNextSequence() != 401 {
+		t.Errorf("Expected next sequence to be 401, got %d", wal.GetNextSequence())
+	}
+
+	// Write a normal entry to verify sequence numbering continues correctly
+	seq, err := wal.Append(OpTypePut, []byte("key5"), []byte("value5"))
+	if err != nil {
+		t.Fatalf("Failed to append normal entry: %v", err)
+	}
+
+	if seq != 401 {
+		t.Errorf("Expected next normal entry to have sequence 401, got %d", seq)
+	}
+
+	// Close the WAL
+	if err := wal.Close(); err != nil {
+		t.Fatalf("Failed to close WAL: %v", err)
+	}
+
+	// Verify entries by replaying
+	seqToKey := make(map[uint64]string)
+	seqToValue := make(map[uint64]string)
+	seqToType := make(map[uint64]uint8)
+
+	_, err = ReplayWALDir(dir, func(entry *Entry) error {
+		seqToKey[entry.SequenceNumber] = string(entry.Key)
+		seqToValue[entry.SequenceNumber] = string(entry.Value)
+		seqToType[entry.SequenceNumber] = entry.Type
+		return nil
+	})
+
+	if err != nil {
+		t.Fatalf("Failed to replay WAL: %v", err)
+	}
+
+	// Verify all entries with specific sequence numbers
+	for _, tc := range testCases {
+		key, ok := seqToKey[tc.seqNum]
+		if !ok {
+			t.Errorf("Entry with sequence %d not found", tc.seqNum)
+			continue
+		}
+
+		if key != tc.key {
+			t.Errorf("Expected key %q for sequence %d, got %q", tc.key, tc.seqNum, key)
+		}
+
+		entryType, ok := seqToType[tc.seqNum]
+		if !ok {
+			t.Errorf("Type for sequence %d not found", tc.seqNum)
+			continue
+		}
+
+		if entryType != tc.entryType {
+			t.Errorf("Expected type %d for sequence %d, got %d", tc.entryType, tc.seqNum, entryType)
+		}
+
+		// Check value for non-delete operations
+		if tc.entryType != OpTypeDelete {
+			value, ok := seqToValue[tc.seqNum]
+			if !ok {
+				t.Errorf("Value for sequence %d not found", tc.seqNum)
+				continue
+			}
+
+			if value != tc.value {
+				t.Errorf("Expected value %q for sequence %d, got %q", tc.value, tc.seqNum, value)
+			}
+		}
+	}
+
+	// Also verify the normal append entry
+	key, ok := seqToKey[401]
+	if !ok {
+		t.Error("Entry with sequence 401 not found")
+	} else if key != "key5" {
+		t.Errorf("Expected key 'key5' for sequence 401, got %q", key)
+	}
+
+	value, ok := seqToValue[401]
+	if !ok {
+		t.Error("Value for sequence 401 not found")
+	} else if value != "value5" {
+		t.Errorf("Expected value 'value5' for sequence 401, got %q", value)
+	}
+}
+
+func TestAppendBatchWithSequence(t *testing.T) {
+	dir := createTempDir(t)
+	defer os.RemoveAll(dir)
+
+	cfg := createTestConfig()
+	wal, err := NewWAL(cfg, dir)
+	if err != nil {
+		t.Fatalf("Failed to create WAL: %v", err)
+	}
+
+	// Create a batch of entries with specific types
+	startSeq := uint64(1000)
+	entries := []*Entry{
+		{
+			Type:  OpTypePut,
+			Key:   []byte("batch_key1"),
+			Value: []byte("batch_value1"),
+		},
+		{
+			Type:  OpTypeDelete,
+			Key:   []byte("batch_key2"),
+			Value: nil,
+		},
+		{
+			Type:  OpTypePut,
+			Key:   []byte("batch_key3"),
+			Value: []byte("batch_value3"),
+		},
+		{
+			Type:  OpTypeMerge,
+			Key:   []byte("batch_key4"),
+			Value: []byte("batch_value4"),
+		},
+	}
+
+	// Write the batch with a specific starting sequence
+	batchSeq, err := wal.AppendBatchWithSequence(entries, startSeq)
+	if err != nil {
+		t.Fatalf("Failed to append batch with sequence: %v", err)
+	}
+
+	if batchSeq != startSeq {
+		t.Errorf("Expected batch sequence %d, got %d", startSeq, batchSeq)
+	}
+
+	// Verify nextSequence was updated correctly
+	expectedNextSeq := startSeq + uint64(len(entries))
+	if wal.GetNextSequence() != expectedNextSeq {
+		t.Errorf("Expected next sequence to be %d, got %d", expectedNextSeq, wal.GetNextSequence())
+	}
+
+	// Write a normal entry and verify its sequence
+	normalSeq, err := wal.Append(OpTypePut, []byte("normal_key"), []byte("normal_value"))
+	if err != nil {
+		t.Fatalf("Failed to append normal entry: %v", err)
+	}
+
+	if normalSeq != expectedNextSeq {
+		t.Errorf("Expected normal entry sequence %d, got %d", expectedNextSeq, normalSeq)
+	}
+
+	// Close the WAL
+	if err := wal.Close(); err != nil {
+		t.Fatalf("Failed to close WAL: %v", err)
+	}
+
+	// Replay and verify all entries
+	var normalEntries []*Entry
+	var batchHeaderFound bool
+
+	_, err = ReplayWALDir(dir, func(entry *Entry) error {
+		if entry.Type == OpTypeBatch {
+			batchHeaderFound = true
+			if entry.SequenceNumber == startSeq {
+				// Decode the batch to verify its contents
+				batch, err := DecodeBatch(entry)
+				if err == nil {
+					// Verify batch sequence
+					if batch.Seq != startSeq {
+						t.Errorf("Expected batch seq %d, got %d", startSeq, batch.Seq)
+					}
+					
+					// Verify batch count
+					if len(batch.Operations) != len(entries) {
+						t.Errorf("Expected %d operations, got %d", len(entries), len(batch.Operations))
+					}
+                    
+                    // Verify batch operations
+                    for i, op := range batch.Operations {
+                        if i < len(entries) {
+                            expected := entries[i]
+                            if op.Type != expected.Type {
+                                t.Errorf("Operation %d: expected type %d, got %d", i, expected.Type, op.Type)
+                            }
+                            if string(op.Key) != string(expected.Key) {
+                                t.Errorf("Operation %d: expected key %q, got %q", i, string(expected.Key), string(op.Key))
+                            }
+                            if expected.Type != OpTypeDelete && string(op.Value) != string(expected.Value) {
+                                t.Errorf("Operation %d: expected value %q, got %q", i, string(expected.Value), string(op.Value))
+                            }
+                        }
+                    }
+				} else {
+					t.Errorf("Failed to decode batch: %v", err)
+				}
+			}
+		} else if entry.SequenceNumber == normalSeq {
+			// Store normal entry
+			normalEntries = append(normalEntries, entry)
+		}
+		return nil
+	})
+
+	if err != nil {
+		t.Fatalf("Failed to replay WAL: %v", err)
+	}
+
+	// Verify batch header was found
+	if !batchHeaderFound {
+		t.Error("Batch header entry not found")
+	}
+
+	// Verify normal entry was found
+	if len(normalEntries) == 0 {
+		t.Error("Normal entry not found")
+	} else {
+		// Check normal entry details
+		normalEntry := normalEntries[0]
+		if string(normalEntry.Key) != "normal_key" {
+			t.Errorf("Expected key 'normal_key', got %q", string(normalEntry.Key))
+		}
+		if string(normalEntry.Value) != "normal_value" {
+			t.Errorf("Expected value 'normal_value', got %q", string(normalEntry.Value))
+		}
+	}
+}

@@ -8,9 +8,10 @@ import (
 	"time"
 
 	"github.com/KevoDB/kevo/pkg/common/log"
-	proto "github.com/KevoDB/kevo/pkg/replication/proto"
 	"github.com/KevoDB/kevo/pkg/wal"
+	proto "github.com/KevoDB/kevo/proto/kevo/replication"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
@@ -19,7 +20,7 @@ import (
 type Primary struct {
 	wal               *wal.WAL                   // Reference to the WAL
 	batcher           *WALBatcher                // Batches WAL entries for efficient transmission
-	compressor        *Compressor                // Handles compression/decompression
+	compressor        *CompressionManager        // Handles compression/decompression
 	sessions          map[string]*ReplicaSession // Active replica sessions
 	lastSyncedSeq     uint64                     // Highest sequence number synced to disk
 	retentionConfig   WALRetentionConfig         // Configuration for WAL retention
@@ -72,6 +73,7 @@ type ReplicaSession struct {
 	Connected       bool                                        // Whether the session is connected
 	Active          bool                                        // Whether the session is actively receiving WAL entries
 	LastActivity    time.Time                                   // Time of last activity
+	ListenerAddress string                                      // Network address (host:port) the replica is listening on
 	mu              sync.Mutex                                  // Protects session state
 }
 
@@ -86,7 +88,7 @@ func NewPrimary(w *wal.WAL, config *PrimaryConfig) (*Primary, error) {
 	}
 
 	// Create compressor
-	compressor, err := NewCompressor()
+	compressor, err := NewCompressionManager()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create compressor: %w", err)
 	}
@@ -123,6 +125,9 @@ func NewPrimary(w *wal.WAL, config *PrimaryConfig) (*Primary, error) {
 
 // OnWALEntryWritten implements WALEntryObserver.OnWALEntryWritten
 func (p *Primary) OnWALEntryWritten(entry *wal.Entry) {
+	log.Info("WAL entry written: seq=%d, type=%d, key=%s",
+		entry.SequenceNumber, entry.Type, string(entry.Key))
+
 	// Add to batch and broadcast if batch is full
 	batchReady, err := p.batcher.AddEntry(entry)
 	if err != nil {
@@ -132,8 +137,20 @@ func (p *Primary) OnWALEntryWritten(entry *wal.Entry) {
 	}
 
 	if batchReady {
+		log.Info("Batch ready for broadcast with %d entries", p.batcher.GetBatchCount())
 		response := p.batcher.GetBatch()
 		p.broadcastToReplicas(response)
+	} else {
+		log.Info("Entry added to batch (not ready for broadcast yet), current count: %d",
+			p.batcher.GetBatchCount())
+
+		// Even if the batch is not technically "ready", force sending if we have entries
+		// This is particularly important in low-traffic scenarios
+		if p.batcher.GetBatchCount() > 0 {
+			log.Info("Forcibly sending partial batch with %d entries", p.batcher.GetBatchCount())
+			response := p.batcher.GetBatch()
+			p.broadcastToReplicas(response)
+		}
 	}
 }
 
@@ -189,6 +206,15 @@ func (p *Primary) StreamWAL(
 
 	// Create a new session for this replica
 	sessionID := fmt.Sprintf("replica-%d", time.Now().UnixNano())
+
+	// Get the listener address from the request
+	listenerAddress := req.ListenerAddress
+	if listenerAddress == "" {
+		return status.Error(codes.InvalidArgument, "listener_address is required")
+	}
+
+	log.Info("Replica registered with address: %s", listenerAddress)
+
 	session := &ReplicaSession{
 		ID:              sessionID,
 		StartSequence:   req.StartSequence,
@@ -198,6 +224,7 @@ func (p *Primary) StreamWAL(
 		Connected:       true,
 		Active:          true,
 		LastActivity:    time.Now(),
+		ListenerAddress: listenerAddress,
 	}
 
 	// Determine compression support
@@ -221,6 +248,16 @@ func (p *Primary) StreamWAL(
 	p.registerReplicaSession(session)
 	defer p.unregisterReplicaSession(session.ID)
 
+	// Send the session ID in the response header metadata
+	// This is critical for the replica to identify itself in future requests
+	md := metadata.Pairs("session-id", session.ID)
+	if err := stream.SendHeader(md); err != nil {
+		log.Error("Failed to send session ID in header: %v", err)
+		return status.Errorf(codes.Internal, "Failed to send session ID: %v", err)
+	}
+
+	log.Info("Successfully sent session ID %s in stream header", session.ID)
+
 	// Send initial entries if starting from a specific sequence
 	if req.StartSequence > 0 {
 		if err := p.sendInitialEntries(session); err != nil {
@@ -228,11 +265,87 @@ func (p *Primary) StreamWAL(
 		}
 	}
 
-	// Keep the stream alive until client disconnects
+	// Keep the stream alive and continue sending entries as they arrive
 	ctx := stream.Context()
-	<-ctx.Done()
 
-	return ctx.Err()
+	// Periodically check if we have more entries to send
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			// Context was canceled, exit
+			return ctx.Err()
+		case <-ticker.C:
+			// Check if we have new entries to send
+			currentSeq := p.wal.GetNextSequence() - 1
+			if currentSeq > session.LastAckSequence {
+				log.Info("Checking for new entries: currentSeq=%d > lastAck=%d",
+					currentSeq, session.LastAckSequence)
+				if err := p.sendUpdatedEntries(session); err != nil {
+					log.Error("Failed to send updated entries: %v", err)
+					// Don't terminate the stream on error, just continue
+				}
+			}
+		}
+	}
+}
+
+// sendUpdatedEntries sends any new WAL entries to the replica since its last acknowledged sequence
+func (p *Primary) sendUpdatedEntries(session *ReplicaSession) error {
+	// Take the mutex to safely read and update session state
+	session.mu.Lock()
+	defer session.mu.Unlock()
+
+	// Get the next sequence number we should send
+	nextSequence := session.LastAckSequence + 1
+
+	log.Info("Sending updated entries to replica %s starting from sequence %d",
+		session.ID, nextSequence)
+
+	// Get the next entries from WAL
+	entries, err := p.getWALEntriesFromSequence(nextSequence)
+	if err != nil {
+		return fmt.Errorf("failed to get WAL entries: %w", err)
+	}
+
+	if len(entries) == 0 {
+		// No new entries, nothing to send
+		log.Info("No new entries to send to replica %s", session.ID)
+		return nil
+	}
+
+	// Log what we're sending
+	log.Info("Sending %d entries to replica %s, sequence range: %d to %d",
+		len(entries), session.ID, entries[0].SequenceNumber, entries[len(entries)-1].SequenceNumber)
+
+	// Convert WAL entries to protocol buffer entries
+	protoEntries := make([]*proto.WALEntry, 0, len(entries))
+	for _, entry := range entries {
+		protoEntry, err := WALEntryToProto(entry, proto.FragmentType_FULL)
+		if err != nil {
+			log.Error("Error converting entry %d to proto: %v", entry.SequenceNumber, err)
+			continue
+		}
+		protoEntries = append(protoEntries, protoEntry)
+	}
+
+	// Create a response with the entries
+	response := &proto.WALStreamResponse{
+		Entries:    protoEntries,
+		Compressed: false, // For simplicity, not compressing these entries
+		Codec:      proto.CompressionCodec_NONE,
+	}
+
+	// Send to the replica (we're already holding the lock)
+	if err := session.Stream.Send(response); err != nil {
+		return fmt.Errorf("failed to send entries: %w", err)
+	}
+
+	log.Info("Successfully sent %d entries to replica %s", len(protoEntries), session.ID)
+	session.LastActivity = time.Now()
+	return nil
 }
 
 // Acknowledge implements WALReplicationServiceServer.Acknowledge
@@ -240,22 +353,45 @@ func (p *Primary) Acknowledge(
 	ctx context.Context,
 	req *proto.Ack,
 ) (*proto.AckResponse, error) {
+	// Log the acknowledgment request
+	log.Info("Received acknowledgment request: AcknowledgedUpTo=%d", req.AcknowledgedUpTo)
+
+	// Extract metadata for debugging
+	md, ok := metadata.FromIncomingContext(ctx)
+	if ok {
+		sessionIDs := md.Get("session-id")
+		if len(sessionIDs) > 0 {
+			log.Info("Acknowledge request contains session ID in metadata: %s", sessionIDs[0])
+		} else {
+			log.Warn("Acknowledge request missing session ID in metadata")
+		}
+	} else {
+		log.Warn("No metadata in acknowledge request")
+	}
+
 	// Update session with acknowledgment
 	sessionID := p.getSessionIDFromContext(ctx)
 	if sessionID == "" {
+		log.Error("Failed to identify session for acknowledgment")
 		return &proto.AckResponse{
 			Success: false,
 			Message: "Unknown session",
 		}, nil
 	}
 
+	log.Info("Using session ID for acknowledgment: %s", sessionID)
+
 	// Update the session's acknowledged sequence
 	if err := p.updateSessionAck(sessionID, req.AcknowledgedUpTo); err != nil {
+		log.Error("Failed to update acknowledgment: %v", err)
 		return &proto.AckResponse{
 			Success: false,
 			Message: err.Error(),
 		}, nil
 	}
+
+	log.Info("Successfully processed acknowledgment for session %s up to sequence %d",
+		sessionID, req.AcknowledgedUpTo)
 
 	// Check if we can prune WAL files
 	p.maybeManageWALRetention()
@@ -484,45 +620,51 @@ func (p *Primary) resendEntries(session *ReplicaSession, fromSequence uint64) er
 }
 
 // getWALEntriesFromSequence retrieves WAL entries starting from the specified sequence
+// in batches of up to maxEntriesToReturn entries at a time
 func (p *Primary) getWALEntriesFromSequence(fromSequence uint64) ([]*wal.Entry, error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
 	// Get current sequence in WAL (next sequence - 1)
-	// For real implementation, we're using the actual next sequence
 	// We subtract 1 to get the current highest assigned sequence
 	currentSeq := p.wal.GetNextSequence() - 1
 
-	log.Debug("GetWALEntriesFromSequence called with fromSequence=%d, currentSeq=%d",
+	log.Info("GetWALEntriesFromSequence called with fromSequence=%d, currentSeq=%d",
 		fromSequence, currentSeq)
 
 	if currentSeq == 0 || fromSequence > currentSeq {
 		// No entries to return yet
+		log.Info("No entries to return: currentSeq=%d, fromSequence=%d", currentSeq, fromSequence)
 		return []*wal.Entry{}, nil
 	}
 
-	// In a real implementation, we would use a more efficient method
-	// to retrieve entries directly from WAL files without scanning everything
-	// For testing purposes, we'll create synthetic entries with incrementing sequence numbers
-	entries := make([]*wal.Entry, 0)
-
-	// For testing purposes, don't return more than 10 entries at a time
-	maxEntriesToReturn := 10
-
-	// For each sequence number starting from fromSequence
-	for seq := fromSequence; seq <= currentSeq && len(entries) < maxEntriesToReturn; seq++ {
-		entry := &wal.Entry{
-			SequenceNumber: seq,
-			Type:           wal.OpTypePut,
-			Key:            []byte(fmt.Sprintf("key%d", seq)),
-			Value:          []byte(fmt.Sprintf("value%d", seq)),
-		}
-		entries = append(entries, entry)
-		log.Debug("Added entry with sequence %d to response", seq)
+	// Use the WAL's built-in method to get entries starting from the specified sequence
+	// This preserves the original keys and values exactly as they were written
+	allEntries, err := p.wal.GetEntriesFrom(fromSequence)
+	if err != nil {
+		log.Error("Failed to get WAL entries: %v", err)
+		return nil, fmt.Errorf("failed to get WAL entries: %w", err)
 	}
 
-	log.Debug("Returning %d entries starting from sequence %d", len(entries), fromSequence)
-	return entries, nil
+	log.Info("Retrieved %d entries from WAL starting at sequence %d", len(allEntries), fromSequence)
+
+	// Debugging: Log entry details
+	for i, entry := range allEntries {
+		if i < 5 { // Only log first few entries to avoid excessive logging
+			log.Info("Entry %d: seq=%d, type=%d, key=%s",
+				i, entry.SequenceNumber, entry.Type, string(entry.Key))
+		}
+	}
+
+	// Limit the number of entries to return to avoid overwhelming the network
+	maxEntriesToReturn := 100
+	if len(allEntries) > maxEntriesToReturn {
+		allEntries = allEntries[:maxEntriesToReturn]
+		log.Info("Limited entries to %d for network efficiency", maxEntriesToReturn)
+	}
+
+	log.Info("Returning %d entries starting from sequence %d", len(allEntries), fromSequence)
+	return allEntries, nil
 }
 
 // registerReplicaSession adds a new replica session
@@ -549,20 +691,48 @@ func (p *Primary) unregisterReplicaSession(id string) {
 // getSessionIDFromContext extracts the session ID from the gRPC context
 // Note: In a real implementation, this would use proper authentication and session tracking
 func (p *Primary) getSessionIDFromContext(ctx context.Context) string {
-	// In a real implementation, this would extract session information
-	// from authentication metadata or other context values
+	// Check for session ID in metadata (would be set by a proper authentication system)
+	md, ok := metadata.FromIncomingContext(ctx)
+	if ok {
+		// Look for session ID in metadata
+		sessionIDs := md.Get("session-id")
+		if len(sessionIDs) > 0 {
+			sessionID := sessionIDs[0]
+			log.Info("Found session ID in metadata: %s", sessionID)
 
-	// For now, we'll use a placeholder approach
+			// Verify the session exists
+			p.mu.RLock()
+			defer p.mu.RUnlock()
+
+			if _, exists := p.sessions[sessionID]; exists {
+				return sessionID
+			}
+
+			log.Error("Session ID from metadata not found in sessions map: %s", sessionID)
+			return ""
+		}
+	}
+
+	// Fallback to first active session approach
 	p.mu.RLock()
 	defer p.mu.RUnlock()
+
+	// Log the available sessions for debugging
+	log.Info("Looking for active session in %d available sessions", len(p.sessions))
+	for id, session := range p.sessions {
+		log.Info("Session %s: connected=%v, active=%v, lastAck=%d",
+			id, session.Connected, session.Active, session.LastAckSequence)
+	}
 
 	// Return the first active session ID (this is just a placeholder)
 	for id, session := range p.sessions {
 		if session.Connected {
+			log.Info("Selected active session %s", id)
 			return id
 		}
 	}
 
+	log.Error("No active session found")
 	return ""
 }
 
@@ -576,7 +746,23 @@ func (p *Primary) updateSessionAck(sessionID string, ackSeq uint64) error {
 		return fmt.Errorf("session %s not found", sessionID)
 	}
 
-	session.LastAckSequence = ackSeq
+	// We need to lock the session to safely update LastAckSequence
+	session.mu.Lock()
+	defer session.mu.Unlock()
+
+	// Log the updated acknowledgement
+	log.Info("Updating replica %s acknowledgement: previous=%d, new=%d",
+		sessionID, session.LastAckSequence, ackSeq)
+
+	// Only update if the new ack sequence is higher than the current one
+	if ackSeq > session.LastAckSequence {
+		session.LastAckSequence = ackSeq
+		log.Info("Replica %s acknowledged data up to sequence %d", sessionID, ackSeq)
+	} else {
+		log.Warn("Received outdated acknowledgement from replica %s: got=%d, current=%d",
+			sessionID, ackSeq, session.LastAckSequence)
+	}
+
 	session.LastActivity = time.Now()
 
 	return nil
