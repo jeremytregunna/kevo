@@ -23,7 +23,8 @@ type ManagerConfig struct {
 	// Whether replication is enabled
 	Enabled bool
 
-	// The replication mode: "primary", "replica", or "standalone"
+	// The replication mode: ReplicationModePrimary, ReplicationModeReplica, or
+	// ReplicationModeStandalone
 	Mode string
 
 	// Address of the primary node (for replicas)
@@ -114,11 +115,11 @@ func (m *Manager) Start() error {
 	log.Info("Starting replication in %s mode", m.config.Mode)
 
 	switch m.config.Mode {
-	case "primary":
+	case ReplicationModePrimary:
 		return m.startPrimary()
-	case "replica":
+	case ReplicationModeReplica:
 		return m.startReplica()
-	case "standalone":
+	case ReplicationModeStandalone:
 		log.Info("Running in standalone mode (no replication)")
 		return nil
 	default:
@@ -180,13 +181,13 @@ func (m *Manager) Status() map[string]interface{} {
 
 	// Add mode-specific status
 	switch m.config.Mode {
-	case "primary":
+	case ReplicationModePrimary:
 		if m.primary != nil {
 			// Add information about connected replicas, etc.
 			status["listen_address"] = m.config.ListenAddr
 			// TODO: Add more detailed primary status
 		}
-	case "replica":
+	case ReplicationModeReplica:
 		if m.replica != nil {
 			status["primary_address"] = m.config.PrimaryAddr
 			status["last_applied_sequence"] = m.lastApplied
