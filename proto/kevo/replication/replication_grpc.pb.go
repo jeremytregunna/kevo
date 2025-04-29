@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.5.1
 // - protoc             v3.20.3
-// source: proto/kevo/replication.proto
+// source: proto/kevo/replication/replication.proto
 
 package replication_proto
 
@@ -217,5 +217,5 @@ var WALReplicationService_ServiceDesc = grpc.ServiceDesc{
 			ServerStreams: true,
 		},
 	},
-	Metadata: "proto/kevo/replication.proto",
+	Metadata: "proto/kevo/replication/replication.proto",
 }

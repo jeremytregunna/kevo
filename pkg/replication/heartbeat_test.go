@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/KevoDB/kevo/pkg/config"
-	proto "github.com/KevoDB/kevo/pkg/replication/proto"
 	"github.com/KevoDB/kevo/pkg/wal"
+	proto "github.com/KevoDB/kevo/proto/kevo/replication"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )

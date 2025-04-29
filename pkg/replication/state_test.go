@@ -159,3 +159,28 @@ func TestStateStringRepresentation(t *testing.T) {
 		})
 	}
 }
+
+func TestGetStateString(t *testing.T) {
+	tracker := NewStateTracker()
+
+	// Test initial state string
+	if tracker.GetStateString() != "CONNECTING" {
+		t.Errorf("Expected state string CONNECTING, got %s", tracker.GetStateString())
+	}
+
+	// Change state and test string
+	err := tracker.SetState(StateStreamingEntries)
+	if err != nil {
+		t.Fatalf("Unexpected error transitioning states: %v", err)
+	}
+
+	if tracker.GetStateString() != "STREAMING_ENTRIES" {
+		t.Errorf("Expected state string STREAMING_ENTRIES, got %s", tracker.GetStateString())
+	}
+
+	// Set error state and test string
+	tracker.SetError(errors.New("test error"))
+	if tracker.GetStateString() != "ERROR" {
+		t.Errorf("Expected state string ERROR, got %s", tracker.GetStateString())
+	}
+}

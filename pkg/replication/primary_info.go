@@ -14,7 +14,7 @@ func (p *Primary) GetReplicaInfo() []ReplicationNodeInfo {
 		}
 
 		replica := ReplicationNodeInfo{
-			Address:      session.ID, // We don't have actual address, so use ID
+			Address:      session.ListenerAddress, // Use actual listener address
 			LastSequence: session.LastAckSequence,
 			Available:    session.Active,
 			Region:       "",

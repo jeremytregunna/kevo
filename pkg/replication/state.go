@@ -116,6 +116,7 @@ func NewStateTracker() *StateTracker {
 
 	tracker.transitions[StateWaitingForData] = []ReplicaState{
 		StateStreamingEntries,
+		StateWaitingForData, // Allow staying in waiting state
 		StateError,
 	}
 
@@ -238,6 +239,14 @@ func (t *StateTracker) GetStateDuration() time.Duration {
 	}
 
 	return time.Since(stateStartTime)
+}
+
+// GetStateString returns a string representation of the current state
+func (t *StateTracker) GetStateString() string {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	return t.currentState.String()
 }
 
 // ResetState resets the state tracker to its initial state

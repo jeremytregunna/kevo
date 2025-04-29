@@ -125,7 +125,17 @@ func (s *Server) Start() error {
 	}
 
 	// Create and register the Kevo service implementation
-	s.kevoService = grpcservice.NewKevoServiceServer(s.eng, s.txRegistry, s.replicationManager)
+	// Only pass replicationManager if it's properly initialized
+	var repManager grpcservice.ReplicationInfoProvider
+	if s.replicationManager != nil && s.config.ReplicationEnabled {
+		fmt.Printf("DEBUG: Using replication manager for role %s\n", s.config.ReplicationMode)
+		repManager = s.replicationManager
+	} else {
+		fmt.Printf("DEBUG: No replication manager available. ReplicationEnabled: %v, Manager nil: %v\n", 
+			s.config.ReplicationEnabled, s.replicationManager == nil)
+	}
+
+	s.kevoService = grpcservice.NewKevoServiceServer(s.eng, s.txRegistry, repManager)
 	pb.RegisterKevoServiceServer(s.grpcServer, s.kevoService)
 
 	fmt.Println("gRPC server initialized")

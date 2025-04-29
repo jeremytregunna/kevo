@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
-	replication_proto "github.com/KevoDB/kevo/pkg/replication/proto"
 	"github.com/KevoDB/kevo/pkg/wal"
+	replication_proto "github.com/KevoDB/kevo/proto/kevo/replication"
 )
 
 // WALEntriesBuffer is a buffer for accumulating WAL entries to be sent in batches
@@ -94,11 +94,14 @@ func WALEntryToProto(entry *wal.Entry, fragmentType replication_proto.FragmentTy
 
 // SerializeWALEntry converts a WAL entry to its binary representation
 func SerializeWALEntry(entry *wal.Entry) ([]byte, error) {
-	// This is a simple implementation that can be enhanced
-	// with more efficient binary serialization if needed
+	// Log the entry being serialized
+	fmt.Printf("Serializing WAL entry: seq=%d, type=%d, key=%v\n",
+		entry.SequenceNumber, entry.Type, string(entry.Key))
 
 	// Create a buffer with appropriate size
 	entrySize := 1 + 8 + 4 + len(entry.Key) // type + seq + keylen + key
+
+	// Include value for Put, Merge, and Batch operations (but not Delete)
 	if entry.Type != wal.OpTypeDelete {
 		entrySize += 4 + len(entry.Value) // vallen + value
 	}
@@ -127,7 +130,7 @@ func SerializeWALEntry(entry *wal.Entry) ([]byte, error) {
 	copy(payload[offset:], entry.Key)
 	offset += len(entry.Key)
 
-	// Write value length and value (if not a delete)
+	// Write value length and value (for all types except delete)
 	if entry.Type != wal.OpTypeDelete {
 		// Write value length (4 bytes)
 		valLen := uint32(len(entry.Value))
@@ -140,6 +143,15 @@ func SerializeWALEntry(entry *wal.Entry) ([]byte, error) {
 		copy(payload[offset:], entry.Value)
 	}
 
+	// Debug: show the first few bytes of the serialized entry
+	hexBytes := ""
+	for i, b := range payload {
+		if i < 20 {
+			hexBytes += fmt.Sprintf("%02x ", b)
+		}
+	}
+	fmt.Printf("Serialized %d bytes, first 20: %s\n", len(payload), hexBytes)
+
 	return payload, nil
 }
 
@@ -149,14 +161,33 @@ func DeserializeWALEntry(payload []byte) (*wal.Entry, error) {
 		return nil, fmt.Errorf("payload too small: %d bytes", len(payload))
 	}
 
+	fmt.Printf("Deserializing WAL entry with %d bytes\n", len(payload))
+
+	// Debugging: show the first 32 bytes in hex for troubleshooting
+	hexBytes := ""
+	for i, b := range payload {
+		if i < 32 {
+			hexBytes += fmt.Sprintf("%02x ", b)
+		}
+	}
+	fmt.Printf("Payload first 32 bytes: %s\n", hexBytes)
+
 	offset := 0
 
 	// Read operation type
 	opType := payload[offset]
+	fmt.Printf("Entry operation type: %d\n", opType)
 	offset++
 
+	// Check for supported batch operation
+	if opType == wal.OpTypeBatch {
+		fmt.Printf("Found batch operation (type 4), which is supported\n")
+	}
+
 	// Validate operation type
-	if opType != wal.OpTypePut && opType != wal.OpTypeDelete && opType != wal.OpTypeMerge {
+	// Fix: Add support for OpTypeBatch (4)
+	if opType != wal.OpTypePut && opType != wal.OpTypeDelete &&
+		opType != wal.OpTypeMerge && opType != wal.OpTypeBatch {
 		return nil, fmt.Errorf("invalid operation type: %d", opType)
 	}
 
@@ -166,6 +197,7 @@ func DeserializeWALEntry(payload []byte) (*wal.Entry, error) {
 		seqNum |= uint64(payload[offset+i]) << (i * 8)
 	}
 	offset += 8
+	fmt.Printf("Sequence number: %d\n", seqNum)
 
 	// Read key length (4 bytes)
 	var keyLen uint32
@@ -173,10 +205,15 @@ func DeserializeWALEntry(payload []byte) (*wal.Entry, error) {
 		keyLen |= uint32(payload[offset+i]) << (i * 8)
 	}
 	offset += 4
+	fmt.Printf("Key length: %d bytes\n", keyLen)
 
 	// Validate key length
+	if keyLen > 1024*1024 { // Sanity check - keys shouldn't be more than 1MB
+		return nil, fmt.Errorf("key length too large: %d bytes", keyLen)
+	}
+
 	if offset+int(keyLen) > len(payload) {
-		return nil, fmt.Errorf("invalid key length: %d", keyLen)
+		return nil, fmt.Errorf("invalid key length: %d, would exceed payload size", keyLen)
 	}
 
 	// Read key
@@ -192,11 +229,27 @@ func DeserializeWALEntry(payload []byte) (*wal.Entry, error) {
 		Value:          nil,
 	}
 
+	// Show key as string if it's likely printable
+	isPrintable := true
+	for _, b := range key {
+		if b < 32 || b > 126 {
+			isPrintable = false
+			break
+		}
+	}
+
+	if isPrintable {
+		fmt.Printf("Key as string: %s\n", string(key))
+	} else {
+		fmt.Printf("Key contains non-printable characters\n")
+	}
+
 	// Read value for non-delete operations
 	if opType != wal.OpTypeDelete {
 		// Make sure we have at least 4 bytes for value length
 		if offset+4 > len(payload) {
-			return nil, fmt.Errorf("payload too small for value length")
+			return nil, fmt.Errorf("payload too small for value length, offset=%d, remaining=%d",
+				offset, len(payload)-offset)
 		}
 
 		// Read value length (4 bytes)
@@ -205,27 +258,41 @@ func DeserializeWALEntry(payload []byte) (*wal.Entry, error) {
 			valLen |= uint32(payload[offset+i]) << (i * 8)
 		}
 		offset += 4
+		fmt.Printf("Value length: %d bytes\n", valLen)
 
 		// Validate value length
+		if valLen > 10*1024*1024 { // Sanity check - values shouldn't be more than 10MB
+			return nil, fmt.Errorf("value length too large: %d bytes", valLen)
+		}
+
 		if offset+int(valLen) > len(payload) {
-			return nil, fmt.Errorf("invalid value length: %d", valLen)
+			return nil, fmt.Errorf("invalid value length: %d, would exceed payload size", valLen)
 		}
 
 		// Read value
 		value := make([]byte, valLen)
 		copy(value, payload[offset:offset+int(valLen)])
+		offset += int(valLen)
 
 		entry.Value = value
+
+		// Check if we have unprocessed bytes
+		if offset < len(payload) {
+			fmt.Printf("Warning: %d unprocessed bytes in payload\n", len(payload)-offset)
+		}
 	}
 
+	fmt.Printf("Successfully deserialized WAL entry with sequence %d\n", seqNum)
 	return entry, nil
 }
 
 // ReplicationError represents an error in the replication system
 type ReplicationError struct {
-	Code    ErrorCode
-	Message string
-	Time    time.Time
+	Code     ErrorCode
+	Message  string
+	Time     time.Time
+	Sequence uint64
+	Cause    error
 }
 
 // ErrorCode defines the types of errors that can occur in replication
@@ -252,11 +319,26 @@ const (
 
 	// ErrorRetention indicates a WAL retention issue (requested WAL no longer available)
 	ErrorRetention
+
+	// ErrorDeserialization represents an error deserializing WAL entries
+	ErrorDeserialization
+
+	// ErrorApplication represents an error applying WAL entries
+	ErrorApplication
 )
 
 // Error implements the error interface
 func (e *ReplicationError) Error() string {
+	if e.Sequence > 0 {
+		return fmt.Sprintf("%s: %s at sequence %d (at %s)",
+			e.Code, e.Message, e.Sequence, e.Time.Format(time.RFC3339))
+	}
 	return fmt.Sprintf("%s: %s (at %s)", e.Code, e.Message, e.Time.Format(time.RFC3339))
+}
+
+// Unwrap returns the underlying cause
+func (e *ReplicationError) Unwrap() error {
+	return e.Cause
 }
 
 // NewReplicationError creates a new replication error
@@ -265,6 +347,50 @@ func NewReplicationError(code ErrorCode, message string) *ReplicationError {
 		Code:    code,
 		Message: message,
 		Time:    time.Now(),
+	}
+}
+
+// WithCause adds a cause to the error
+func (e *ReplicationError) WithCause(cause error) *ReplicationError {
+	e.Cause = cause
+	return e
+}
+
+// WithSequence adds a sequence number to the error
+func (e *ReplicationError) WithSequence(seq uint64) *ReplicationError {
+	e.Sequence = seq
+	return e
+}
+
+// NewSequenceGapError creates a new sequence gap error
+func NewSequenceGapError(expected, actual uint64) *ReplicationError {
+	return &ReplicationError{
+		Code:     ErrorSequenceGap,
+		Message:  fmt.Sprintf("sequence gap: expected %d, got %d", expected, actual),
+		Time:     time.Now(),
+		Sequence: actual,
+	}
+}
+
+// NewDeserializationError creates a new deserialization error
+func NewDeserializationError(seq uint64, cause error) *ReplicationError {
+	return &ReplicationError{
+		Code:     ErrorDeserialization,
+		Message:  "failed to deserialize entry",
+		Time:     time.Now(),
+		Sequence: seq,
+		Cause:    cause,
+	}
+}
+
+// NewApplicationError creates a new application error
+func NewApplicationError(seq uint64, cause error) *ReplicationError {
+	return &ReplicationError{
+		Code:     ErrorApplication,
+		Message:  "failed to apply entry",
+		Time:     time.Now(),
+		Sequence: seq,
+		Cause:    cause,
 	}
 }
 
@@ -285,6 +411,10 @@ func (c ErrorCode) String() string {
 		return "AUTHENTICATION"
 	case ErrorRetention:
 		return "RETENTION"
+	case ErrorDeserialization:
+		return "DESERIALIZATION"
+	case ErrorApplication:
+		return "APPLICATION"
 	default:
 		return fmt.Sprintf("ERROR(%d)", c)
 	}

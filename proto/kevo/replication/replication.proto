@@ -34,6 +34,9 @@ message WALStreamRequest {
   
   // Preferred compression codec
   CompressionCodec preferred_codec = 4;
+  
+  // The network address (host:port) the replica is listening on
+  string listener_address = 5;
 }
 
 // WALStreamResponse contains a batch of WAL entries sent from the primary to a replica.

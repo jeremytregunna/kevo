@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.6
 // 	protoc        v3.20.3
-// source: proto/kevo/replication.proto
+// source: proto/kevo/replication/replication.proto
 
 package replication_proto
 
@@ -62,11 +62,11 @@ func (x FragmentType) String() string {
 }
 
 func (FragmentType) Descriptor() protoreflect.EnumDescriptor {
-	return file_proto_kevo_replication_proto_enumTypes[0].Descriptor()
+	return file_proto_kevo_replication_replication_proto_enumTypes[0].Descriptor()
 }
 
 func (FragmentType) Type() protoreflect.EnumType {
-	return &file_proto_kevo_replication_proto_enumTypes[0]
+	return &file_proto_kevo_replication_replication_proto_enumTypes[0]
 }
 
 func (x FragmentType) Number() protoreflect.EnumNumber {
@@ -75,7 +75,7 @@ func (x FragmentType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use FragmentType.Descriptor instead.
 func (FragmentType) EnumDescriptor() ([]byte, []int) {
-	return file_proto_kevo_replication_proto_rawDescGZIP(), []int{0}
+	return file_proto_kevo_replication_replication_proto_rawDescGZIP(), []int{0}
 }
 
 // CompressionCodec defines the supported compression algorithms.
@@ -115,11 +115,11 @@ func (x CompressionCodec) String() string {
 }
 
 func (CompressionCodec) Descriptor() protoreflect.EnumDescriptor {
-	return file_proto_kevo_replication_proto_enumTypes[1].Descriptor()
+	return file_proto_kevo_replication_replication_proto_enumTypes[1].Descriptor()
 }
 
 func (CompressionCodec) Type() protoreflect.EnumType {
-	return &file_proto_kevo_replication_proto_enumTypes[1]
+	return &file_proto_kevo_replication_replication_proto_enumTypes[1]
 }
 
 func (x CompressionCodec) Number() protoreflect.EnumNumber {
@@ -128,7 +128,7 @@ func (x CompressionCodec) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use CompressionCodec.Descriptor instead.
 func (CompressionCodec) EnumDescriptor() ([]byte, []int) {
-	return file_proto_kevo_replication_proto_rawDescGZIP(), []int{1}
+	return file_proto_kevo_replication_replication_proto_rawDescGZIP(), []int{1}
 }
 
 // WALStreamRequest is sent by replicas to initiate or resume WAL streaming.
@@ -150,7 +150,7 @@ type WALStreamRequest struct {
 
 func (x *WALStreamRequest) Reset() {
 	*x = WALStreamRequest{}
-	mi := &file_proto_kevo_replication_proto_msgTypes[0]
+	mi := &file_proto_kevo_replication_replication_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -162,7 +162,7 @@ func (x *WALStreamRequest) String() string {
 func (*WALStreamRequest) ProtoMessage() {}
 
 func (x *WALStreamRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_kevo_replication_proto_msgTypes[0]
+	mi := &file_proto_kevo_replication_replication_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -175,7 +175,7 @@ func (x *WALStreamRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WALStreamRequest.ProtoReflect.Descriptor instead.
 func (*WALStreamRequest) Descriptor() ([]byte, []int) {
-	return file_proto_kevo_replication_proto_rawDescGZIP(), []int{0}
+	return file_proto_kevo_replication_replication_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *WALStreamRequest) GetStartSequence() uint64 {
@@ -228,7 +228,7 @@ type WALStreamResponse struct {
 
 func (x *WALStreamResponse) Reset() {
 	*x = WALStreamResponse{}
-	mi := &file_proto_kevo_replication_proto_msgTypes[1]
+	mi := &file_proto_kevo_replication_replication_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -240,7 +240,7 @@ func (x *WALStreamResponse) String() string {
 func (*WALStreamResponse) ProtoMessage() {}
 
 func (x *WALStreamResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_kevo_replication_proto_msgTypes[1]
+	mi := &file_proto_kevo_replication_replication_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -253,7 +253,7 @@ func (x *WALStreamResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WALStreamResponse.ProtoReflect.Descriptor instead.
 func (*WALStreamResponse) Descriptor() ([]byte, []int) {
-	return file_proto_kevo_replication_proto_rawDescGZIP(), []int{1}
+	return file_proto_kevo_replication_replication_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *WALStreamResponse) GetEntries() []*WALEntry {
@@ -294,7 +294,7 @@ type WALEntry struct {
 
 func (x *WALEntry) Reset() {
 	*x = WALEntry{}
-	mi := &file_proto_kevo_replication_proto_msgTypes[2]
+	mi := &file_proto_kevo_replication_replication_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -306,7 +306,7 @@ func (x *WALEntry) String() string {
 func (*WALEntry) ProtoMessage() {}
 
 func (x *WALEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_kevo_replication_proto_msgTypes[2]
+	mi := &file_proto_kevo_replication_replication_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -319,7 +319,7 @@ func (x *WALEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WALEntry.ProtoReflect.Descriptor instead.
 func (*WALEntry) Descriptor() ([]byte, []int) {
-	return file_proto_kevo_replication_proto_rawDescGZIP(), []int{2}
+	return file_proto_kevo_replication_replication_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *WALEntry) GetSequenceNumber() uint64 {
@@ -363,7 +363,7 @@ type Ack struct {
 
 func (x *Ack) Reset() {
 	*x = Ack{}
-	mi := &file_proto_kevo_replication_proto_msgTypes[3]
+	mi := &file_proto_kevo_replication_replication_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -375,7 +375,7 @@ func (x *Ack) String() string {
 func (*Ack) ProtoMessage() {}
 
 func (x *Ack) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_kevo_replication_proto_msgTypes[3]
+	mi := &file_proto_kevo_replication_replication_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -388,7 +388,7 @@ func (x *Ack) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Ack.ProtoReflect.Descriptor instead.
 func (*Ack) Descriptor() ([]byte, []int) {
-	return file_proto_kevo_replication_proto_rawDescGZIP(), []int{3}
+	return file_proto_kevo_replication_replication_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *Ack) GetAcknowledgedUpTo() uint64 {
@@ -411,7 +411,7 @@ type AckResponse struct {
 
 func (x *AckResponse) Reset() {
 	*x = AckResponse{}
-	mi := &file_proto_kevo_replication_proto_msgTypes[4]
+	mi := &file_proto_kevo_replication_replication_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -423,7 +423,7 @@ func (x *AckResponse) String() string {
 func (*AckResponse) ProtoMessage() {}
 
 func (x *AckResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_kevo_replication_proto_msgTypes[4]
+	mi := &file_proto_kevo_replication_replication_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -436,7 +436,7 @@ func (x *AckResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AckResponse.ProtoReflect.Descriptor instead.
 func (*AckResponse) Descriptor() ([]byte, []int) {
-	return file_proto_kevo_replication_proto_rawDescGZIP(), []int{4}
+	return file_proto_kevo_replication_replication_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *AckResponse) GetSuccess() bool {
@@ -465,7 +465,7 @@ type Nack struct {
 
 func (x *Nack) Reset() {
 	*x = Nack{}
-	mi := &file_proto_kevo_replication_proto_msgTypes[5]
+	mi := &file_proto_kevo_replication_replication_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -477,7 +477,7 @@ func (x *Nack) String() string {
 func (*Nack) ProtoMessage() {}
 
 func (x *Nack) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_kevo_replication_proto_msgTypes[5]
+	mi := &file_proto_kevo_replication_replication_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -490,7 +490,7 @@ func (x *Nack) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Nack.ProtoReflect.Descriptor instead.
 func (*Nack) Descriptor() ([]byte, []int) {
-	return file_proto_kevo_replication_proto_rawDescGZIP(), []int{5}
+	return file_proto_kevo_replication_replication_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *Nack) GetMissingFromSequence() uint64 {
@@ -513,7 +513,7 @@ type NackResponse struct {
 
 func (x *NackResponse) Reset() {
 	*x = NackResponse{}
-	mi := &file_proto_kevo_replication_proto_msgTypes[6]
+	mi := &file_proto_kevo_replication_replication_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -525,7 +525,7 @@ func (x *NackResponse) String() string {
 func (*NackResponse) ProtoMessage() {}
 
 func (x *NackResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_kevo_replication_proto_msgTypes[6]
+	mi := &file_proto_kevo_replication_replication_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -538,7 +538,7 @@ func (x *NackResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NackResponse.ProtoReflect.Descriptor instead.
 func (*NackResponse) Descriptor() ([]byte, []int) {
-	return file_proto_kevo_replication_proto_rawDescGZIP(), []int{6}
+	return file_proto_kevo_replication_replication_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *NackResponse) GetSuccess() bool {
@@ -555,11 +555,11 @@ func (x *NackResponse) GetMessage() string {
 	return ""
 }
 
-var File_proto_kevo_replication_proto protoreflect.FileDescriptor
+var File_proto_kevo_replication_replication_proto protoreflect.FileDescriptor
 
-const file_proto_kevo_replication_proto_rawDesc = "" +
+const file_proto_kevo_replication_replication_proto_rawDesc = "" +
 	"\n" +
-	"\x1cproto/kevo/replication.proto\x12\x10kevo.replication\"\x91\x02\n" +
+	"(proto/kevo/replication/replication.proto\x12\x10kevo.replication\"\x91\x02\n" +
 	"\x10WALStreamRequest\x12%\n" +
 	"\x0estart_sequence\x18\x01 \x01(\x04R\rstartSequence\x12)\n" +
 	"\x10protocol_version\x18\x02 \x01(\rR\x0fprotocolVersion\x123\n" +
@@ -604,20 +604,20 @@ const file_proto_kevo_replication_proto_rawDesc = "" +
 	"\x13NegativeAcknowledge\x12\x16.kevo.replication.Nack\x1a\x1e.kevo.replication.NackResponseB@Z>github.com/KevoDB/kevo/pkg/replication/proto;replication_protob\x06proto3"
 
 var (
-	file_proto_kevo_replication_proto_rawDescOnce sync.Once
-	file_proto_kevo_replication_proto_rawDescData []byte
+	file_proto_kevo_replication_replication_proto_rawDescOnce sync.Once
+	file_proto_kevo_replication_replication_proto_rawDescData []byte
 )
 
-func file_proto_kevo_replication_proto_rawDescGZIP() []byte {
-	file_proto_kevo_replication_proto_rawDescOnce.Do(func() {
-		file_proto_kevo_replication_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_proto_kevo_replication_proto_rawDesc), len(file_proto_kevo_replication_proto_rawDesc)))
+func file_proto_kevo_replication_replication_proto_rawDescGZIP() []byte {
+	file_proto_kevo_replication_replication_proto_rawDescOnce.Do(func() {
+		file_proto_kevo_replication_replication_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_proto_kevo_replication_replication_proto_rawDesc), len(file_proto_kevo_replication_replication_proto_rawDesc)))
 	})
-	return file_proto_kevo_replication_proto_rawDescData
+	return file_proto_kevo_replication_replication_proto_rawDescData
 }
 
-var file_proto_kevo_replication_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_proto_kevo_replication_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
-var file_proto_kevo_replication_proto_goTypes = []any{
+var file_proto_kevo_replication_replication_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_proto_kevo_replication_replication_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_proto_kevo_replication_replication_proto_goTypes = []any{
 	(FragmentType)(0),         // 0: kevo.replication.FragmentType
 	(CompressionCodec)(0),     // 1: kevo.replication.CompressionCodec
 	(*WALStreamRequest)(nil),  // 2: kevo.replication.WALStreamRequest
@@ -628,7 +628,7 @@ var file_proto_kevo_replication_proto_goTypes = []any{
 	(*Nack)(nil),              // 7: kevo.replication.Nack
 	(*NackResponse)(nil),      // 8: kevo.replication.NackResponse
 }
-var file_proto_kevo_replication_proto_depIdxs = []int32{
+var file_proto_kevo_replication_replication_proto_depIdxs = []int32{
 	1, // 0: kevo.replication.WALStreamRequest.preferred_codec:type_name -> kevo.replication.CompressionCodec
 	4, // 1: kevo.replication.WALStreamResponse.entries:type_name -> kevo.replication.WALEntry
 	1, // 2: kevo.replication.WALStreamResponse.codec:type_name -> kevo.replication.CompressionCodec
@@ -646,27 +646,27 @@ var file_proto_kevo_replication_proto_depIdxs = []int32{
 	0, // [0:4] is the sub-list for field type_name
 }
 
-func init() { file_proto_kevo_replication_proto_init() }
-func file_proto_kevo_replication_proto_init() {
-	if File_proto_kevo_replication_proto != nil {
+func init() { file_proto_kevo_replication_replication_proto_init() }
+func file_proto_kevo_replication_replication_proto_init() {
+	if File_proto_kevo_replication_replication_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_kevo_replication_proto_rawDesc), len(file_proto_kevo_replication_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_kevo_replication_replication_proto_rawDesc), len(file_proto_kevo_replication_replication_proto_rawDesc)),
 			NumEnums:      2,
 			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_proto_kevo_replication_proto_goTypes,
-		DependencyIndexes: file_proto_kevo_replication_proto_depIdxs,
-		EnumInfos:         file_proto_kevo_replication_proto_enumTypes,
-		MessageInfos:      file_proto_kevo_replication_proto_msgTypes,
+		GoTypes:           file_proto_kevo_replication_replication_proto_goTypes,
+		DependencyIndexes: file_proto_kevo_replication_replication_proto_depIdxs,
+		EnumInfos:         file_proto_kevo_replication_replication_proto_enumTypes,
+		MessageInfos:      file_proto_kevo_replication_replication_proto_msgTypes,
 	}.Build()
-	File_proto_kevo_replication_proto = out.File
-	file_proto_kevo_replication_proto_goTypes = nil
-	file_proto_kevo_replication_proto_depIdxs = nil
+	File_proto_kevo_replication_replication_proto = out.File
+	file_proto_kevo_replication_replication_proto_goTypes = nil
+	file_proto_kevo_replication_replication_proto_depIdxs = nil
 }

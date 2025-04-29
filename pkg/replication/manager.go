@@ -11,8 +11,8 @@ import (
 
 	"github.com/KevoDB/kevo/pkg/common/log"
 	"github.com/KevoDB/kevo/pkg/engine/interfaces"
-	proto "github.com/KevoDB/kevo/pkg/replication/proto"
 	"github.com/KevoDB/kevo/pkg/wal"
+	proto "github.com/KevoDB/kevo/proto/kevo/replication"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
@@ -73,35 +73,7 @@ type Manager struct {
 	cancel        context.CancelFunc
 }
 
-// EngineApplier implements the WALEntryApplier interface for applying WAL entries to an engine
-type EngineApplier struct {
-	engine interfaces.Engine
-}
-
-// NewEngineApplier creates a new engine applier
-func NewEngineApplier(engine interfaces.Engine) *EngineApplier {
-	return &EngineApplier{engine: engine}
-}
-
-// Apply applies a WAL entry to the engine
-func (e *EngineApplier) Apply(entry *wal.Entry) error {
-	switch entry.Type {
-	case wal.OpTypePut:
-		return e.engine.Put(entry.Key, entry.Value)
-	case wal.OpTypeDelete:
-		return e.engine.Delete(entry.Key)
-	case wal.OpTypeBatch:
-		return e.engine.ApplyBatch([]*wal.Entry{entry})
-	default:
-		return fmt.Errorf("unsupported WAL entry type: %d", entry.Type)
-	}
-}
-
-// Sync ensures all applied entries are persisted
-func (e *EngineApplier) Sync() error {
-	// Force a flush of in-memory tables to ensure durability
-	return e.engine.FlushImMemTables()
-}
+// Manager using EngineApplier from engine_applier.go for WAL entry application
 
 // NewManager creates a new replication manager
 func NewManager(engine interfaces.Engine, config *ManagerConfig) (*Manager, error) {
@@ -218,7 +190,7 @@ func (m *Manager) Status() map[string]interface{} {
 		if m.replica != nil {
 			status["primary_address"] = m.config.PrimaryAddr
 			status["last_applied_sequence"] = m.lastApplied
-			status["state"] = m.replica.GetCurrentState().String()
+			status["state"] = m.replica.GetStateString()
 			// TODO: Add more detailed replica status
 		}
 	}
@@ -303,6 +275,7 @@ func (m *Manager) startReplica() error {
 
 	// Configure the connection to the primary
 	replicaConfig.Connection.PrimaryAddress = m.config.PrimaryAddr
+	replicaConfig.ReplicationListenerAddr = m.config.ListenAddr // Set replica's own listener address
 	replicaConfig.Connection.UseTLS = m.config.TLSConfig != nil
 
 	// Set TLS credentials if configured
@@ -343,10 +316,10 @@ func (m *Manager) startReplica() error {
 }
 
 // setEngineReadOnly sets the read-only mode on the engine (if supported)
+// This only affects client operations, not internal replication operations
 func (m *Manager) setEngineReadOnly(readOnly bool) error {
 	// Try to access the SetReadOnly method if available
 	// This would be engine-specific and may require interface enhancement
-	// For now, we'll assume this is implemented via type assertion
 	type readOnlySetter interface {
 		SetReadOnly(bool)
 	}

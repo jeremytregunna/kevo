@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	proto "github.com/KevoDB/kevo/pkg/replication/proto"
+	proto "github.com/KevoDB/kevo/proto/kevo/replication"
 	"github.com/klauspost/compress/zstd"
 )
 
@@ -15,7 +15,7 @@ func TestCompressor(t *testing.T) {
 	testData := []byte(strings.Repeat("hello world, this is a test message with some repetition. ", 100))
 
 	// Create a new compressor
-	comp, err := NewCompressor()
+	comp, err := NewCompressionManager()
 	if err != nil {
 		t.Fatalf("Failed to create compressor: %v", err)
 	}
@@ -65,7 +65,7 @@ func TestCompressor(t *testing.T) {
 
 func TestCompressorWithInvalidData(t *testing.T) {
 	// Create a new compressor
-	comp, err := NewCompressor()
+	comp, err := NewCompressionManager()
 	if err != nil {
 		t.Fatalf("Failed to create compressor: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestCompressorWithLevel(t *testing.T) {
 	var results []int
 
 	for _, level := range levels {
-		comp, err := NewCompressorWithLevel(level)
+		comp, err := NewCompressionManagerWithLevel(level)
 		if err != nil {
 			t.Fatalf("Failed to create compressor with level %v: %v", level, err)
 		}
@@ -211,7 +211,7 @@ func BenchmarkCompression(b *testing.B) {
 	benchData := []byte(strings.Repeat("benchmark compression data with repetitive content for measuring performance ", 100))
 
 	// Create a compressor
-	comp, err := NewCompressor()
+	comp, err := NewCompressionManager()
 	if err != nil {
 		b.Fatalf("Failed to create compressor: %v", err)
 	}

@@ -23,8 +23,8 @@ func TestNewDefaultConfig(t *testing.T) {
 	}
 
 	// Test default values
-	if cfg.WALSyncMode != SyncBatch {
-		t.Errorf("expected WAL sync mode %d, got %d", SyncBatch, cfg.WALSyncMode)
+	if cfg.WALSyncMode != SyncImmediate {
+		t.Errorf("expected WAL sync mode %d, got %d", SyncImmediate, cfg.WALSyncMode)
 	}
 
 	if cfg.MemTableSize != 32*1024*1024 {

@@ -58,6 +58,18 @@ type Entry struct {
 	Type           uint8 // OpTypePut, OpTypeDelete, etc.
 	Key            []byte
 	Value          []byte
+	rawBytes       []byte // Used for exact replication
+}
+
+// SetRawBytes sets the raw bytes for this entry
+// This is used for replication to ensure exact byte-for-byte compatibility
+func (e *Entry) SetRawBytes(bytes []byte) {
+	e.rawBytes = bytes
+}
+
+// RawBytes returns the raw bytes for this entry, if available
+func (e *Entry) RawBytes() ([]byte, bool) {
+	return e.rawBytes, e.rawBytes != nil && len(e.rawBytes) > 0
 }
 
 // Global variable to control whether to print recovery logs
@@ -95,8 +107,15 @@ func NewWAL(cfg *config.Config, dir string) (*WAL, error) {
 		return nil, errors.New("config cannot be nil")
 	}
 
+	// Ensure the WAL directory exists with proper permissions
+	fmt.Printf("Creating WAL directory: %s\n", dir)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create WAL directory: %w", err)
+	}
+	
+	// Verify that the directory was successfully created
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		return nil, fmt.Errorf("WAL directory creation failed: %s does not exist after MkdirAll", dir)
 	}
 
 	// Create a new WAL file
@@ -254,6 +273,73 @@ func (w *WAL) Append(entryType uint8, key, value []byte) (uint64, error) {
 	return seqNum, nil
 }
 
+// AppendWithSequence adds an entry to the WAL with a specified sequence number
+// This is primarily used for replication to ensure byte-for-byte identical WAL entries
+// between primary and replica nodes
+func (w *WAL) AppendWithSequence(entryType uint8, key, value []byte, sequenceNumber uint64) (uint64, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	status := atomic.LoadInt32(&w.status)
+	if status == WALStatusClosed {
+		return 0, ErrWALClosed
+	} else if status == WALStatusRotating {
+		return 0, ErrWALRotating
+	}
+
+	if entryType != OpTypePut && entryType != OpTypeDelete && entryType != OpTypeMerge {
+		return 0, ErrInvalidOpType
+	}
+
+	// Use the provided sequence number directly
+	seqNum := sequenceNumber
+
+	// Update nextSequence if the provided sequence is higher
+	// This ensures future entries won't reuse sequence numbers
+	if seqNum >= w.nextSequence {
+		w.nextSequence = seqNum + 1
+	}
+
+	// Encode the entry
+	// Format: type(1) + seq(8) + keylen(4) + key + vallen(4) + val
+	entrySize := 1 + 8 + 4 + len(key)
+	if entryType != OpTypeDelete {
+		entrySize += 4 + len(value)
+	}
+
+	// Check if we need to split the record
+	if entrySize <= MaxRecordSize {
+		// Single record case
+		recordType := uint8(RecordTypeFull)
+		if err := w.writeRecord(recordType, entryType, seqNum, key, value); err != nil {
+			return 0, err
+		}
+	} else {
+		// Split into multiple records
+		if err := w.writeFragmentedRecord(entryType, seqNum, key, value); err != nil {
+			return 0, err
+		}
+	}
+
+	// Create an entry object for notification
+	entry := &Entry{
+		SequenceNumber: seqNum,
+		Type:           entryType,
+		Key:            key,
+		Value:          value,
+	}
+
+	// Notify observers of the new entry
+	w.notifyEntryObservers(entry)
+
+	// Sync the file if needed
+	if err := w.maybeSync(); err != nil {
+		return 0, err
+	}
+
+	return seqNum, nil
+}
+
 // Write a single record
 func (w *WAL) writeRecord(recordType uint8, entryType uint8, seqNum uint64, key, value []byte) error {
 	// Calculate the record size
@@ -343,6 +429,64 @@ func (w *WAL) writeRawRecord(recordType uint8, data []byte) error {
 	w.batchByteSize += int64(HeaderSize + len(data))
 
 	return nil
+}
+
+// AppendExactBytes adds raw WAL data to ensure byte-for-byte compatibility with the primary
+// This takes the raw WAL record bytes (header + payload) and writes them unchanged
+// This is used specifically for replication to ensure exact byte-for-byte compatibility between
+// primary and replica WAL files
+func (w *WAL) AppendExactBytes(rawBytes []byte, seqNum uint64) (uint64, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	status := atomic.LoadInt32(&w.status)
+	if status == WALStatusClosed {
+		return 0, ErrWALClosed
+	} else if status == WALStatusRotating {
+		return 0, ErrWALRotating
+	}
+	
+	// Verify we have at least a header
+	if len(rawBytes) < HeaderSize {
+		return 0, fmt.Errorf("raw WAL record too small: %d bytes", len(rawBytes))
+	}
+	
+	// Extract payload size to validate record integrity
+	payloadSize := int(binary.LittleEndian.Uint16(rawBytes[4:6]))
+	if len(rawBytes) != HeaderSize + payloadSize {
+		return 0, fmt.Errorf("raw WAL record size mismatch: header says %d payload bytes, but got %d total bytes",
+			payloadSize, len(rawBytes))
+	}
+	
+	// Update nextSequence if the provided sequence is higher
+	if seqNum >= w.nextSequence {
+		w.nextSequence = seqNum + 1
+	}
+	
+	// Write the raw bytes directly to the WAL
+	if _, err := w.writer.Write(rawBytes); err != nil {
+		return 0, fmt.Errorf("failed to write raw WAL record: %w", err)
+	}
+
+	// Update bytes written
+	w.bytesWritten += int64(len(rawBytes))
+	w.batchByteSize += int64(len(rawBytes))
+	
+	// Notify observers (with a simplified Entry since we can't properly parse the raw bytes)
+	entry := &Entry{
+		SequenceNumber: seqNum,
+		Type:           rawBytes[HeaderSize], // Read first byte of payload as entry type
+		Key:            []byte{},
+		Value:          []byte{},
+	}
+	w.notifyEntryObservers(entry)
+	
+	// Sync if needed
+	if err := w.maybeSync(); err != nil {
+		return 0, err
+	}
+	
+	return seqNum, nil
 }
 
 // Write a fragmented record
@@ -535,6 +679,103 @@ func (w *WAL) AppendBatch(entries []*Entry) (uint64, error) {
 
 	// Update next sequence number
 	w.nextSequence = startSeqNum + uint64(len(entries))
+
+	// Notify observers about the batch
+	w.notifyBatchObservers(startSeqNum, entries)
+
+	// Sync if needed
+	if err := w.maybeSync(); err != nil {
+		return 0, err
+	}
+
+	return startSeqNum, nil
+}
+
+// AppendBatchWithSequence adds a batch of entries to the WAL with a specified starting sequence number
+// This is primarily used for replication to ensure byte-for-byte identical WAL entries
+// between primary and replica nodes
+func (w *WAL) AppendBatchWithSequence(entries []*Entry, startSequence uint64) (uint64, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	status := atomic.LoadInt32(&w.status)
+	if status == WALStatusClosed {
+		return 0, ErrWALClosed
+	} else if status == WALStatusRotating {
+		return 0, ErrWALRotating
+	}
+
+	if len(entries) == 0 {
+		return startSequence, nil
+	}
+
+	// Use the provided sequence number directly
+	startSeqNum := startSequence
+
+	// Create a batch to use the existing batch serialization
+	batch := &Batch{
+		Operations: make([]BatchOperation, 0, len(entries)),
+		Seq:        startSeqNum,
+	}
+
+	// Convert entries to batch operations
+	for _, entry := range entries {
+		batch.Operations = append(batch.Operations, BatchOperation{
+			Type:  entry.Type,
+			Key:   entry.Key,
+			Value: entry.Value,
+		})
+	}
+
+	// Serialize the batch
+	size := batch.Size()
+	data := make([]byte, size)
+	offset := 0
+
+	// Write count
+	binary.LittleEndian.PutUint32(data[offset:offset+4], uint32(len(batch.Operations)))
+	offset += 4
+
+	// Write sequence base
+	binary.LittleEndian.PutUint64(data[offset:offset+8], batch.Seq)
+	offset += 8
+
+	// Write operations
+	for _, op := range batch.Operations {
+		// Write type
+		data[offset] = op.Type
+		offset++
+
+		// Write key length
+		binary.LittleEndian.PutUint32(data[offset:offset+4], uint32(len(op.Key)))
+		offset += 4
+
+		// Write key
+		copy(data[offset:], op.Key)
+		offset += len(op.Key)
+
+		// Write value for non-delete operations
+		if op.Type != OpTypeDelete {
+			// Write value length
+			binary.LittleEndian.PutUint32(data[offset:offset+4], uint32(len(op.Value)))
+			offset += 4
+
+			// Write value
+			copy(data[offset:], op.Value)
+			offset += len(op.Value)
+		}
+	}
+
+	// Write the batch entry to WAL
+	if err := w.writeRecord(RecordTypeFull, OpTypeBatch, startSeqNum, data, nil); err != nil {
+		return 0, fmt.Errorf("failed to write batch with sequence %d: %w", startSeqNum, err)
+	}
+
+	// Update next sequence number if the provided sequence would advance it
+	endSeq := startSeqNum + uint64(len(entries))
+	if endSeq > w.nextSequence {
+		w.nextSequence = endSeq
+	}
 
 	// Notify observers about the batch
 	w.notifyBatchObservers(startSeqNum, entries)

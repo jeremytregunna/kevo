@@ -1,5 +1,9 @@
 package replication
 
+import (
+	"fmt"
+)
+
 // ReplicationNodeInfo contains information about a node in the replication topology
 type ReplicationNodeInfo struct {
 	Address      string            // Host:port of the node
@@ -16,9 +20,22 @@ func (m *Manager) GetNodeInfo() (string, string, []ReplicationNodeInfo, uint64, 
 	var primaryAddr string
 	var replicas []ReplicationNodeInfo
 	var lastSequence uint64
+	var readOnly bool
 
+	// Safety check - the manager itself cannot be nil here (as this is a method on it),
+	// but we need to make sure we have valid internal state
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+
+	// Check if we have a valid configuration
+	if m.config == nil {
+		fmt.Printf("DEBUG[GetNodeInfo]: Replication manager has nil config\n")
+		// Return safe default values if config is nil
+		return "standalone", "", nil, 0, false
+	}
+
+	fmt.Printf("DEBUG[GetNodeInfo]: Replication mode: %s, Enabled: %v\n",
+		m.config.Mode, m.config.Enabled)
 
 	// Set role
 	role = m.config.Mode
@@ -52,5 +69,10 @@ func (m *Manager) GetNodeInfo() (string, string, []ReplicationNodeInfo, uint64, 
 		})
 	}
 
-	return role, primaryAddr, replicas, lastSequence, m.engine.IsReadOnly()
+	// Check for a valid engine before calling IsReadOnly
+	if m.engine != nil {
+		readOnly = m.engine.IsReadOnly()
+	}
+
+	return role, primaryAddr, replicas, lastSequence, readOnly
 }

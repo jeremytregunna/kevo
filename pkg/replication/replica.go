@@ -4,26 +4,21 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math/rand"
 	"sync"
 	"time"
 
-	replication_proto "github.com/KevoDB/kevo/pkg/replication/proto"
 	"github.com/KevoDB/kevo/pkg/wal"
+	replication_proto "github.com/KevoDB/kevo/proto/kevo/replication"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
-// WALEntryApplier defines an interface for applying WAL entries on a replica
-type WALEntryApplier interface {
-	// Apply applies a single WAL entry to the local storage
-	Apply(entry *wal.Entry) error
-
-	// Sync ensures all applied entries are persisted to disk
-	Sync() error
-}
+// WALEntryApplier interface is defined in interfaces.go
 
 // ConnectionConfig contains configuration for connecting to the primary
 type ConnectionConfig struct {
@@ -50,6 +45,9 @@ type ConnectionConfig struct {
 type ReplicaConfig struct {
 	// Connection configuration
 	Connection ConnectionConfig
+
+	// Replica's listener address that clients can connect to (from -replication-address)
+	ReplicationListenerAddr string
 
 	// Compression settings
 	CompressionSupported bool
@@ -80,12 +78,13 @@ func DefaultReplicaConfig() *ReplicaConfig {
 			RetryMaxDelay:   time.Minute,
 			RetryMultiplier: 1.5,
 		},
-		CompressionSupported: true,
-		PreferredCodec:       replication_proto.CompressionCodec_ZSTD,
-		ProtocolVersion:      1,
-		AckInterval:          time.Second * 5,
-		MaxBatchSize:         1024 * 1024, // 1MB
-		ReportMetrics:        true,
+		ReplicationListenerAddr: "localhost:50053", // Default, should be overridden with CLI value
+		CompressionSupported:    true,
+		PreferredCodec:          replication_proto.CompressionCodec_ZSTD,
+		ProtocolVersion:         1,
+		AckInterval:             time.Second * 5,
+		MaxBatchSize:            1024 * 1024, // 1MB
+		ReportMetrics:           true,
 	}
 }
 
@@ -110,8 +109,14 @@ type Replica struct {
 	// Replication client
 	client replication_proto.WALReplicationServiceClient
 
+	// Stream client for receiving WAL entries
+	streamClient replication_proto.WALReplicationService_StreamWALClient
+
+	// Session ID for communication with primary
+	sessionID string
+
 	// Compressor for handling compressed payloads
-	compressor *Compressor
+	compressor *CompressionManager
 
 	// WAL batch applier
 	batchApplier *WALBatchApplier
@@ -143,7 +148,7 @@ func NewReplica(lastAppliedSeq uint64, applier WALEntryApplier, config *ReplicaC
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Create compressor
-	compressor, err := NewCompressor()
+	compressor, err := NewCompressionManager()
 	if err != nil {
 		cancel()
 		return nil, fmt.Errorf("failed to create compressor: %w", err)
@@ -212,11 +217,13 @@ func (r *Replica) Stop() error {
 	// Wait for all goroutines to finish
 	r.wg.Wait()
 
-	// Close connection
+	// Close connection and reset clients
 	if r.conn != nil {
 		r.conn.Close()
 		r.conn = nil
 	}
+	r.client = nil
+	r.streamClient = nil
 
 	// Close compressor
 	if r.compressor != nil {
@@ -236,6 +243,11 @@ func (r *Replica) GetLastAppliedSequence() uint64 {
 // GetCurrentState returns the current state of the replica
 func (r *Replica) GetCurrentState() ReplicaState {
 	return r.stateTracker.GetState()
+}
+
+// GetStateString returns the string representation of the current state
+func (r *Replica) GetStateString() string {
+	return r.stateTracker.GetStateString()
 }
 
 // replicationLoop runs the main replication state machine loop
@@ -296,108 +308,190 @@ func (r *Replica) handleConnectingState() error {
 
 // handleStreamingState handles the STREAMING_ENTRIES state
 func (r *Replica) handleStreamingState() error {
-	// Create a WAL stream request
-	nextSeq := r.batchApplier.GetExpectedNext()
-	fmt.Printf("Creating stream request, starting from sequence: %d\n", nextSeq)
-
-	request := &replication_proto.WALStreamRequest{
-		StartSequence:        nextSeq,
-		ProtocolVersion:      r.config.ProtocolVersion,
-		CompressionSupported: r.config.CompressionSupported,
-		PreferredCodec:       r.config.PreferredCodec,
+	// Check if we already have an active client and stream
+	if r.client == nil {
+		return fmt.Errorf("replication client is nil, reconnection required")
 	}
 
-	// Start streaming from the primary
-	stream, err := r.client.StreamWAL(r.ctx, request)
-	if err != nil {
-		return fmt.Errorf("failed to start WAL stream: %w", err)
+	// Initialize streamClient if it doesn't exist
+	if r.streamClient == nil {
+		// Create a WAL stream request
+		nextSeq := r.batchApplier.GetExpectedNext()
+		fmt.Printf("Creating stream request, starting from sequence: %d\n", nextSeq)
+
+		request := &replication_proto.WALStreamRequest{
+			StartSequence:        nextSeq,
+			ProtocolVersion:      r.config.ProtocolVersion,
+			CompressionSupported: r.config.CompressionSupported,
+			PreferredCodec:       r.config.PreferredCodec,
+			ListenerAddress:      r.config.ReplicationListenerAddr, // Use the replica's actual replication listener address
+		}
+
+		// Start streaming from the primary
+		var err error
+		r.streamClient, err = r.client.StreamWAL(r.ctx, request)
+		if err != nil {
+			return fmt.Errorf("failed to start WAL stream: %w", err)
+		}
+
+		// Get the session ID from the response header metadata
+		md, err := r.streamClient.Header()
+		if err != nil {
+			fmt.Printf("Failed to get header metadata: %v\n", err)
+		} else {
+			// Extract session ID
+			sessionIDs := md.Get("session-id")
+			if len(sessionIDs) > 0 {
+				r.sessionID = sessionIDs[0]
+				fmt.Printf("Received session ID from primary: %s\n", r.sessionID)
+			} else {
+				fmt.Printf("No session ID received from primary\n")
+			}
+		}
+
+		fmt.Printf("Stream established, waiting for entries. Starting from sequence: %d\n", nextSeq)
 	}
 
-	fmt.Printf("Stream established, waiting for entries\n")
+	// Process the stream - we'll use a non-blocking approach with a short timeout
+	// to allow other state machine operations to happen
+	select {
+	case <-r.ctx.Done():
+		fmt.Printf("Context done, exiting streaming state\n")
+		return nil
+	default:
+		// Receive next batch with a timeout context to make this non-blocking
+		// Increased timeout to 1 second to avoid missing entries due to timing
+		receiveCtx, cancel := context.WithTimeout(r.ctx, 1000*time.Millisecond)
+		defer cancel()
 
-	// Process the stream
-	for {
-		select {
-		case <-r.ctx.Done():
-			fmt.Printf("Context done, exiting streaming state\n")
-			return nil
-		default:
-			// Receive next batch
-			fmt.Printf("Waiting to receive next batch...\n")
-			response, err := stream.Recv()
+		fmt.Printf("Waiting to receive next batch...\n")
+
+		// Make sure we have a valid stream client
+		if r.streamClient == nil {
+			return fmt.Errorf("stream client is nil")
+		}
+
+		// Set up a channel to receive the result
+		type receiveResult struct {
+			response *replication_proto.WALStreamResponse
+			err      error
+		}
+		resultCh := make(chan receiveResult, 1)
+
+		go func() {
+			fmt.Printf("Starting Recv() call to wait for entries from primary\n")
+			response, err := r.streamClient.Recv()
 			if err != nil {
-				if err == io.EOF {
-					// Stream ended normally
-					fmt.Printf("Stream ended with EOF\n")
-					return r.stateTracker.SetState(StateWaitingForData)
-				}
-				// Handle GRPC errors
-				st, ok := status.FromError(err)
-				if ok {
-					switch st.Code() {
-					case codes.Unavailable:
-						// Connection issue, reconnect
-						fmt.Printf("Connection unavailable: %s\n", st.Message())
-						return NewReplicationError(ErrorConnection, st.Message())
-					case codes.OutOfRange:
-						// Requested sequence no longer available
-						fmt.Printf("Sequence out of range: %s\n", st.Message())
-						return NewReplicationError(ErrorRetention, st.Message())
-					default:
-						// Other gRPC error
-						fmt.Printf("GRPC error: %s\n", st.Message())
-						return fmt.Errorf("stream error: %w", err)
+				fmt.Printf("Error in Recv() call: %v\n", err)
+			} else if response != nil {
+				numEntries := len(response.Entries)
+				fmt.Printf("Successfully received a response with %d entries\n", numEntries)
+
+				// IMPORTANT DEBUG: If we received entries but stay in WAITING_FOR_DATA,
+				// this indicates a serious state machine issue
+				if numEntries > 0 {
+					fmt.Printf("CRITICAL: Received %d entries that need processing!\n", numEntries)
+					for i, entry := range response.Entries {
+						if i < 3 { // Only log a few entries
+							fmt.Printf("Entry %d: seq=%d, fragment=%s, payload_size=%d\n",
+								i, entry.SequenceNumber, entry.FragmentType, len(entry.Payload))
+						}
 					}
 				}
-				fmt.Printf("Stream receive error: %v\n", err)
-				return fmt.Errorf("stream receive error: %w", err)
+			} else {
+				fmt.Printf("Received nil response without error\n")
 			}
+			resultCh <- receiveResult{response, err}
+		}()
 
-			// Check if we received entries
-			fmt.Printf("Received batch with %d entries\n", len(response.Entries))
-			if len(response.Entries) == 0 {
-				// No entries received, wait for more
-				fmt.Printf("Received empty batch, waiting for more data\n")
-				if err := r.stateTracker.SetState(StateWaitingForData); err != nil {
-					return err
-				}
-				continue
-			}
+		// Wait for either timeout or result
+		var response *replication_proto.WALStreamResponse
+		var err error
 
-			// Log sequence numbers received
-			for i, entry := range response.Entries {
-				fmt.Printf("Entry %d: sequence number %d\n", i, entry.SequenceNumber)
-			}
-
-			// Store the received batch for processing
-			r.mu.Lock()
-			// Store received batch data for processing
-			receivedBatch := response
-			r.mu.Unlock()
-
-			// Move to applying state
-			fmt.Printf("Moving to APPLYING_ENTRIES state\n")
-			if err := r.stateTracker.SetState(StateApplyingEntries); err != nil {
-				return err
-			}
-
-			// Process the entries
-			fmt.Printf("Processing received entries\n")
-			if err := r.processEntries(receivedBatch); err != nil {
-				fmt.Printf("Error processing entries: %v\n", err)
-				return err
-			}
-			fmt.Printf("Entries processed successfully\n")
+		select {
+		case <-receiveCtx.Done():
+			// Timeout occurred - this is normal if no data is available
+			return r.stateTracker.SetState(StateWaitingForData)
+		case result := <-resultCh:
+			// Got a result
+			response = result.response
+			err = result.err
 		}
+
+		if err != nil {
+			if err == io.EOF {
+				// Stream ended normally
+				fmt.Printf("Stream ended with EOF\n")
+				return r.stateTracker.SetState(StateWaitingForData)
+			}
+			// Handle GRPC errors
+			st, ok := status.FromError(err)
+			if ok {
+				switch st.Code() {
+				case codes.Unavailable:
+					// Connection issue, reconnect
+					fmt.Printf("Connection unavailable: %s\n", st.Message())
+					return NewReplicationError(ErrorConnection, st.Message())
+				case codes.OutOfRange:
+					// Requested sequence no longer available
+					fmt.Printf("Sequence out of range: %s\n", st.Message())
+					return NewReplicationError(ErrorRetention, st.Message())
+				default:
+					// Other gRPC error
+					fmt.Printf("GRPC error: %s\n", st.Message())
+					return fmt.Errorf("stream error: %w", err)
+				}
+			}
+			fmt.Printf("Stream receive error: %v\n", err)
+			return fmt.Errorf("stream receive error: %w", err)
+		}
+
+		// Check if we received entries
+		entryCount := len(response.Entries)
+		fmt.Printf("STREAM STATE: Received batch with %d entries\n", entryCount)
+
+		if entryCount == 0 {
+			// No entries received, wait for more
+			fmt.Printf("Received empty batch, waiting for more data\n")
+			return r.stateTracker.SetState(StateWaitingForData)
+		}
+
+		// Important fix: We have received entries and need to process them
+		fmt.Printf("IMPORTANT: Processing %d entries DIRECTLY\n", entryCount)
+
+		// Process the entries directly without going through state transitions
+		fmt.Printf("DIRECT PROCESSING: Processing %d entries without state transitions\n", entryCount)
+		receivedBatch := response
+
+		if err := r.processEntriesWithoutStateTransitions(receivedBatch); err != nil {
+			fmt.Printf("Error directly processing entries: %v\n", err)
+			return err
+		}
+
+		fmt.Printf("Successfully processed entries directly\n")
+
+		// Return to streaming state to continue receiving
+		return r.stateTracker.SetState(StateStreamingEntries)
 	}
 }
 
 // handleApplyingState handles the APPLYING_ENTRIES state
 func (r *Replica) handleApplyingState() error {
-	// This is handled by processEntries called from handleStreamingState
-	// The state should have already moved to FSYNC_PENDING
-	// If we're still in APPLYING_ENTRIES, it's an error
-	return fmt.Errorf("invalid state: still in APPLYING_ENTRIES without active processing")
+	fmt.Printf("In APPLYING_ENTRIES state - processing received entries\n")
+
+	// In practice, this state is directly handled in processEntries called from handleStreamingState
+	// But we need to handle the case where we might end up in this state without active processing
+
+	// Check if we have a valid stream client
+	if r.streamClient == nil {
+		fmt.Printf("Stream client is nil in APPLYING_ENTRIES state, transitioning to CONNECTING\n")
+		return r.stateTracker.SetState(StateConnecting)
+	}
+
+	// If we're in this state without active processing, transition to STREAMING_ENTRIES
+	// to try to receive more entries
+	fmt.Printf("No active processing in APPLYING_ENTRIES state, transitioning back to STREAMING_ENTRIES\n")
+	return r.stateTracker.SetState(StateStreamingEntries)
 }
 
 // handleFsyncState handles the FSYNC_PENDING state
@@ -423,41 +517,175 @@ func (r *Replica) handleAcknowledgingState() error {
 	maxApplied := r.batchApplier.GetMaxApplied()
 	fmt.Printf("Acknowledging entries up to sequence: %d\n", maxApplied)
 
+	// Check if the client is nil - can happen if connection was broken
+	if r.client == nil {
+		fmt.Printf("ERROR: Client is nil in ACKNOWLEDGING state, reconnecting\n")
+		return r.stateTracker.SetState(StateConnecting)
+	}
+
 	// Send acknowledgment to the primary
 	ack := &replication_proto.Ack{
 		AcknowledgedUpTo: maxApplied,
 	}
 
-	// Update the last acknowledged sequence
-	r.batchApplier.AcknowledgeUpTo(maxApplied)
-
-	// Send the acknowledgment
-	_, err := r.client.Acknowledge(r.ctx, ack)
-	if err != nil {
-		fmt.Printf("Failed to send acknowledgment: %v\n", err)
-		return fmt.Errorf("failed to send acknowledgment: %w", err)
-	}
-	fmt.Printf("Acknowledgment sent successfully\n")
-
-	// Update our tracking
+	// Update our tracking (even if ack fails, we've still applied the entries)
 	r.mu.Lock()
 	r.lastAppliedSeq = maxApplied
 	r.mu.Unlock()
 
+	// Create a context with the session ID in the metadata if we have one
+	ctx := r.ctx
+	if r.sessionID != "" {
+		md := metadata.Pairs("session-id", r.sessionID)
+		ctx = metadata.NewOutgoingContext(r.ctx, md)
+		fmt.Printf("Adding session ID %s to acknowledgment metadata\n", r.sessionID)
+	} else {
+		fmt.Printf("WARNING: No session ID available for acknowledgment - this will likely fail\n")
+		// Try to extract session ID from stream header if available and streamClient exists
+		if r.streamClient != nil {
+			md, err := r.streamClient.Header()
+			if err == nil {
+				sessionIDs := md.Get("session-id")
+				if len(sessionIDs) > 0 {
+					r.sessionID = sessionIDs[0]
+					fmt.Printf("Retrieved session ID from stream header: %s\n", r.sessionID)
+					md = metadata.Pairs("session-id", r.sessionID)
+					ctx = metadata.NewOutgoingContext(r.ctx, md)
+				}
+			}
+		}
+	}
+
+	// Log the actual request we're sending
+	fmt.Printf("Sending acknowledgment request: {AcknowledgedUpTo: %d}\n", ack.AcknowledgedUpTo)
+
+	// Send the acknowledgment with session ID in context
+	fmt.Printf("Calling Acknowledge RPC method on primary...\n")
+	resp, err := r.client.Acknowledge(ctx, ack)
+	if err != nil {
+		fmt.Printf("ERROR: Failed to send acknowledgment: %v\n", err)
+
+		// Try to determine if it's a connection issue or session issue
+		st, ok := status.FromError(err)
+		if ok {
+			switch st.Code() {
+			case codes.Unavailable:
+				fmt.Printf("Connection unavailable (code: %s): %s\n", st.Code(), st.Message())
+				return r.stateTracker.SetState(StateConnecting)
+			case codes.NotFound, codes.Unauthenticated, codes.PermissionDenied:
+				fmt.Printf("Session issue (code: %s): %s\n", st.Code(), st.Message())
+				// Try reconnecting to get a new session
+				return r.stateTracker.SetState(StateConnecting)
+			default:
+				fmt.Printf("RPC error (code: %s): %s\n", st.Code(), st.Message())
+			}
+		}
+
+		// Mark it as an error but don't update applied sequence since we did apply the entries
+		return fmt.Errorf("failed to send acknowledgment: %w", err)
+	}
+
+	// Log the acknowledgment response
+	if resp.Success {
+		fmt.Printf("SUCCESS: Acknowledgment accepted by primary up to sequence %d\n", maxApplied)
+	} else {
+		fmt.Printf("ERROR: Acknowledgment rejected by primary: %s\n", resp.Message)
+
+		// Try to recover from session errors by reconnecting
+		if resp.Message == "Unknown session" {
+			fmt.Printf("Session issue detected, reconnecting...\n")
+			return r.stateTracker.SetState(StateConnecting)
+		}
+	}
+
+	// Update the last acknowledged sequence only after successful acknowledgment
+	r.batchApplier.AcknowledgeUpTo(maxApplied)
+	fmt.Printf("Local state updated, acknowledged up to sequence %d\n", maxApplied)
+
 	// Return to streaming state
 	fmt.Printf("Moving back to STREAMING_ENTRIES state\n")
+
+	// Reset the streamClient to ensure the next fetch starts from our last acknowledged position
+	// This is important to fix the issue where the same entries were being fetched repeatedly
+	r.mu.Lock()
+	r.streamClient = nil
+	fmt.Printf("Reset stream client after acknowledgment. Next expected sequence will be %d\n",
+		r.batchApplier.GetExpectedNext())
+	r.mu.Unlock()
+
 	return r.stateTracker.SetState(StateStreamingEntries)
 }
 
 // handleWaitingForDataState handles the WAITING_FOR_DATA state
 func (r *Replica) handleWaitingForDataState() error {
-	// Wait for a short period before checking again
+	// This is a critical transition point - we need to check if we have entries
+	// that need to be processed
+
+	// Check if we have any pending entries from our stream client
+	if r.streamClient != nil {
+		// Use a non-blocking check to see if data is available
+		receiveCtx, cancel := context.WithTimeout(r.ctx, 50*time.Millisecond)
+		defer cancel()
+
+		// Use a separate goroutine to receive data to avoid blocking
+		done := make(chan struct{})
+		var response *replication_proto.WALStreamResponse
+		var err error
+
+		go func() {
+			fmt.Printf("Quick check for available entries from primary\n")
+			response, err = r.streamClient.Recv()
+			close(done)
+		}()
+
+		// Wait for either the receive to complete or the timeout
+		select {
+		case <-receiveCtx.Done():
+			// No data immediately available, continue waiting
+			fmt.Printf("No data immediately available in WAITING_FOR_DATA state\n")
+		case <-done:
+			// We got some data!
+			if err != nil {
+				fmt.Printf("Error checking for entries in WAITING_FOR_DATA: %v\n", err)
+			} else if response != nil && len(response.Entries) > 0 {
+				fmt.Printf("Found %d entries in WAITING_FOR_DATA state - processing immediately\n",
+					len(response.Entries))
+
+				// Process these entries immediately
+				fmt.Printf("Moving to APPLYING_ENTRIES state from WAITING_FOR_DATA\n")
+				if err := r.stateTracker.SetState(StateApplyingEntries); err != nil {
+					return err
+				}
+
+				// Process the entries
+				fmt.Printf("Processing received entries from WAITING_FOR_DATA\n")
+				if err := r.processEntries(response); err != nil {
+					fmt.Printf("Error processing entries: %v\n", err)
+					return err
+				}
+				fmt.Printf("Entries processed successfully from WAITING_FOR_DATA\n")
+
+				// Return to streaming state
+				return r.stateTracker.SetState(StateStreamingEntries)
+			}
+		}
+	}
+
+	// Default behavior - just wait for more data
 	select {
 	case <-r.ctx.Done():
 		return nil
 	case <-time.After(time.Second):
-		// Return to streaming state
-		return r.stateTracker.SetState(StateStreamingEntries)
+		// Simply continue in waiting state, we'll try to receive data again
+		// This avoids closing and reopening connections
+
+		// Try to transition back to STREAMING_ENTRIES occasionally
+		// This helps recover if we're stuck in WAITING_FOR_DATA
+		if rand.Intn(5) == 0 { // 20% chance to try streaming state again
+			fmt.Printf("Periodic transition back to STREAMING_ENTRIES from WAITING_FOR_DATA\n")
+			return r.stateTracker.SetState(StateStreamingEntries)
+		}
+		return nil
 	}
 }
 
@@ -478,6 +706,7 @@ func (r *Replica) handleErrorState(backoff *time.Timer) error {
 			r.conn = nil
 		}
 		r.client = nil
+		r.streamClient = nil // Also reset the stream client
 		r.mu.Unlock()
 
 		// Transition back to connecting state
@@ -503,6 +732,8 @@ func (c *DefaultPrimaryConnector) Connect(r *Replica) error {
 		return nil
 	}
 
+	fmt.Printf("Connecting to primary at %s\n", r.config.Connection.PrimaryAddress)
+
 	// Set up connection options
 	opts := []grpc.DialOption{
 		grpc.WithBlock(),
@@ -521,11 +752,14 @@ func (c *DefaultPrimaryConnector) Connect(r *Replica) error {
 	}
 
 	// Connect to the server
+	fmt.Printf("Dialing primary server at %s with timeout %v\n",
+		r.config.Connection.PrimaryAddress, r.config.Connection.DialTimeout)
 	conn, err := grpc.Dial(r.config.Connection.PrimaryAddress, opts...)
 	if err != nil {
 		return fmt.Errorf("failed to connect to primary at %s: %w",
 			r.config.Connection.PrimaryAddress, err)
 	}
+	fmt.Printf("Successfully connected to primary server\n")
 
 	// Create client
 	client := replication_proto.NewWALReplicationServiceClient(conn)
@@ -534,12 +768,87 @@ func (c *DefaultPrimaryConnector) Connect(r *Replica) error {
 	r.conn = conn
 	r.client = client
 
+	fmt.Printf("Connection established and client created\n")
+
 	return nil
 }
 
 // connectToPrimary establishes a connection to the primary node
 func (r *Replica) connectToPrimary() error {
 	return r.connector.Connect(r)
+}
+
+// processEntriesWithoutStateTransitions processes a batch of WAL entries without attempting state transitions
+// This function is called from handleStreamingState and skips the state transitions at the end
+func (r *Replica) processEntriesWithoutStateTransitions(response *replication_proto.WALStreamResponse) error {
+	fmt.Printf("Processing %d entries (no state transitions)\n", len(response.Entries))
+
+	// Check if entries are compressed
+	entries := response.Entries
+	if response.Compressed && len(entries) > 0 {
+		fmt.Printf("Decompressing entries with codec: %v\n", response.Codec)
+		// Decompress payload for each entry
+		for i, entry := range entries {
+			if len(entry.Payload) > 0 {
+				decompressed, err := r.compressor.Decompress(entry.Payload, response.Codec)
+				if err != nil {
+					return NewReplicationError(ErrorCompression,
+						fmt.Sprintf("failed to decompress entry %d: %v", i, err))
+				}
+				entries[i].Payload = decompressed
+			}
+		}
+	}
+
+	fmt.Printf("Starting to apply entries, expected next: %d\n", r.batchApplier.GetExpectedNext())
+
+	// Log details of first few entries for debugging
+	for i, entry := range entries {
+		if i < 3 { // Only log a few
+			fmt.Printf("Entry to apply %d: seq=%d, fragment=%v, payload=%d bytes\n",
+				i, entry.SequenceNumber, entry.FragmentType, len(entry.Payload))
+
+			// Add more detailed debug info for the first few entries
+			if len(entry.Payload) > 0 {
+				hexBytes := ""
+				for j, b := range entry.Payload {
+					if j < 16 {
+						hexBytes += fmt.Sprintf("%02x ", b)
+					}
+				}
+				fmt.Printf("  Payload first 16 bytes: %s\n", hexBytes)
+			}
+		}
+	}
+
+	// Apply the entries
+	maxSeq, hasGap, err := r.batchApplier.ApplyEntries(entries, r.applyEntry)
+	if err != nil {
+		if hasGap {
+			// Handle gap by requesting retransmission
+			fmt.Printf("Sequence gap detected, requesting retransmission\n")
+			return r.handleSequenceGap(entries[0].SequenceNumber)
+		}
+		fmt.Printf("Failed to apply entries: %v\n", err)
+		return fmt.Errorf("failed to apply entries: %w", err)
+	}
+
+	fmt.Printf("Successfully applied entries up to sequence %d\n", maxSeq)
+
+	// Update last applied sequence
+	r.mu.Lock()
+	r.lastAppliedSeq = maxSeq
+	r.mu.Unlock()
+
+	// Perform fsync directly without transitioning state
+	fmt.Printf("Performing direct fsync to ensure entries are persisted\n")
+	if err := r.applier.Sync(); err != nil {
+		fmt.Printf("Failed to sync WAL entries: %v\n", err)
+		return fmt.Errorf("failed to sync WAL entries: %w", err)
+	}
+	fmt.Printf("Successfully synced WAL entries to disk\n")
+
+	return nil
 }
 
 // processEntries processes a batch of WAL entries
@@ -564,6 +873,25 @@ func (r *Replica) processEntries(response *replication_proto.WALStreamResponse) 
 	}
 
 	fmt.Printf("Starting to apply entries, expected next: %d\n", r.batchApplier.GetExpectedNext())
+
+	// Log details of first few entries for debugging
+	for i, entry := range entries {
+		if i < 3 { // Only log a few
+			fmt.Printf("Entry to apply %d: seq=%d, fragment=%v, payload=%d bytes\n",
+				i, entry.SequenceNumber, entry.FragmentType, len(entry.Payload))
+
+			// Add more detailed debug info for the first few entries
+			if len(entry.Payload) > 0 {
+				hexBytes := ""
+				for j, b := range entry.Payload {
+					if j < 16 {
+						hexBytes += fmt.Sprintf("%02x ", b)
+					}
+				}
+				fmt.Printf("  Payload first 16 bytes: %s\n", hexBytes)
+			}
+		}
+	}
 
 	// Apply the entries
 	maxSeq, hasGap, err := r.batchApplier.ApplyEntries(entries, r.applyEntry)
@@ -598,7 +926,18 @@ func (r *Replica) processEntries(response *replication_proto.WALStreamResponse) 
 
 // applyEntry applies a single WAL entry using the configured applier
 func (r *Replica) applyEntry(entry *wal.Entry) error {
-	return r.applier.Apply(entry)
+	fmt.Printf("Applying WAL entry: seq=%d, type=%d, key=%s\n",
+		entry.SequenceNumber, entry.Type, string(entry.Key))
+
+	// Apply the entry using the configured applier
+	err := r.applier.Apply(entry)
+	if err != nil {
+		fmt.Printf("Error applying entry: %v\n", err)
+		return fmt.Errorf("failed to apply entry: %w", err)
+	}
+
+	fmt.Printf("Successfully applied entry seq=%d\n", entry.SequenceNumber)
+	return nil
 }
 
 // handleSequenceGap handles a detected sequence gap by requesting retransmission
@@ -608,8 +947,18 @@ func (r *Replica) handleSequenceGap(receivedSeq uint64) error {
 		MissingFromSequence: r.batchApplier.GetExpectedNext(),
 	}
 
-	// Send the NACK
-	_, err := r.client.NegativeAcknowledge(r.ctx, nack)
+	// Create a context with the session ID in the metadata if we have one
+	ctx := r.ctx
+	if r.sessionID != "" {
+		md := metadata.Pairs("session-id", r.sessionID)
+		ctx = metadata.NewOutgoingContext(r.ctx, md)
+		fmt.Printf("Adding session ID %s to NACK metadata\n", r.sessionID)
+	} else {
+		fmt.Printf("Warning: No session ID available for NACK\n")
+	}
+
+	// Send the NACK with session ID in context
+	_, err := r.client.NegativeAcknowledge(ctx, nack)
 	if err != nil {
 		return fmt.Errorf("failed to send negative acknowledgment: %w", err)
 	}

@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/KevoDB/kevo/pkg/config"
-	replication_proto "github.com/KevoDB/kevo/pkg/replication/proto"
 	"github.com/KevoDB/kevo/pkg/wal"
+	replication_proto "github.com/KevoDB/kevo/proto/kevo/replication"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
@@ -300,7 +300,7 @@ func TestReplicaStreamingWithRealWAL(t *testing.T) {
 		t.Logf("Waiting for replication, current applied entries: %d/%d", len(appliedEntries), numEntries)
 
 		// Log the state of the replica for debugging
-		t.Logf("Replica state: %s", replica.GetCurrentState().String())
+		t.Logf("Replica state: %s", replica.GetStateString())
 
 		// Also check sync count
 		syncCount := applier.GetSyncCount()

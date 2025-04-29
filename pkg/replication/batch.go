@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"sync"
 
-	replication_proto "github.com/KevoDB/kevo/pkg/replication/proto"
 	"github.com/KevoDB/kevo/pkg/wal"
+	replication_proto "github.com/KevoDB/kevo/proto/kevo/replication"
 )
 
 // DefaultMaxBatchSizeKB is the default maximum batch size in kilobytes
@@ -155,10 +155,15 @@ type WALBatchApplier struct {
 
 // NewWALBatchApplier creates a new WAL batch applier
 func NewWALBatchApplier(startSeq uint64) *WALBatchApplier {
+	var nextSeq uint64 = 1
+	if startSeq > 0 {
+		nextSeq = startSeq + 1
+	}
+
 	return &WALBatchApplier{
 		maxAppliedSeq:   startSeq,
 		lastAckSeq:      startSeq,
-		expectedNextSeq: startSeq + 1,
+		expectedNextSeq: nextSeq,
 	}
 }
 
@@ -175,6 +180,9 @@ func (a *WALBatchApplier) ApplyEntries(entries []*replication_proto.WALEntry, ap
 	// Check for sequence gaps
 	hasGap := false
 	firstSeq := entries[0].SequenceNumber
+
+	fmt.Printf("Batch applier: checking for sequence gap. Expected: %d, Got: %d\n",
+		a.expectedNextSeq, firstSeq)
 
 	if firstSeq != a.expectedNextSeq {
 		// We have a gap
@@ -197,12 +205,22 @@ func (a *WALBatchApplier) ApplyEntries(entries []*replication_proto.WALEntry, ap
 		// Deserialize and apply the entry
 		entry, err := DeserializeWALEntry(protoEntry.Payload)
 		if err != nil {
+			fmt.Printf("Failed to deserialize entry %d: %v\n",
+				protoEntry.SequenceNumber, err)
 			return a.maxAppliedSeq, false, fmt.Errorf("failed to deserialize entry %d: %w",
 				protoEntry.SequenceNumber, err)
 		}
 
+		// Log the entry being applied for debugging
+		if i < 3 || i == len(entries)-1 { // Log first few and last entry
+			fmt.Printf("Applying entry seq=%d, type=%d, key=%s\n",
+				entry.SequenceNumber, entry.Type, string(entry.Key))
+		}
+
 		// Apply the entry
 		if err := applyFn(entry); err != nil {
+			fmt.Printf("Failed to apply entry %d: %v\n",
+				protoEntry.SequenceNumber, err)
 			return a.maxAppliedSeq, false, fmt.Errorf("failed to apply entry %d: %w",
 				protoEntry.SequenceNumber, err)
 		}
@@ -214,6 +232,9 @@ func (a *WALBatchApplier) ApplyEntries(entries []*replication_proto.WALEntry, ap
 	a.maxAppliedSeq = lastAppliedSeq
 	a.expectedNextSeq = lastAppliedSeq + 1
 
+	fmt.Printf("Batch successfully applied. Last sequence: %d, Next expected: %d\n",
+		a.maxAppliedSeq, a.expectedNextSeq)
+
 	return a.maxAppliedSeq, false, nil
 }
 
@@ -224,6 +245,10 @@ func (a *WALBatchApplier) AcknowledgeUpTo(seq uint64) {
 
 	if seq > a.lastAckSeq {
 		a.lastAckSeq = seq
+		fmt.Printf("Updated last acknowledged sequence to %d\n", seq)
+	} else {
+		fmt.Printf("Not updating acknowledged sequence: current=%d, received=%d\n",
+			a.lastAckSeq, seq)
 	}
 }
 
@@ -258,5 +283,11 @@ func (a *WALBatchApplier) Reset(seq uint64) {
 
 	a.maxAppliedSeq = seq
 	a.lastAckSeq = seq
-	a.expectedNextSeq = seq + 1
+
+	// Always start from 1 if seq is 0
+	if seq == 0 {
+		a.expectedNextSeq = 1
+	} else {
+		a.expectedNextSeq = seq + 1
+	}
 }
