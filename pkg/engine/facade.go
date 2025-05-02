@@ -560,6 +560,11 @@ func (e *EngineFacade) GetStats() map[string]interface{} {
 	return stats
 }
 
+// GetTransactionManager returns the transaction manager
+func (e *EngineFacade) GetTransactionManager() interfaces.TransactionManager {
+	return e.txManager
+}
+
 // GetCompactionStats returns statistics about the compaction state
 func (e *EngineFacade) GetCompactionStats() (map[string]interface{}, error) {
 	if e.closed.Load() {

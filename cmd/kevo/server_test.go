@@ -3,17 +3,15 @@ package main
 import (
 	"context"
 	"os"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/KevoDB/kevo/pkg/engine"
-	"github.com/KevoDB/kevo/pkg/engine/transaction"
 )
 
-func TestTransactionRegistry(t *testing.T) {
+func TestTransactionManager(t *testing.T) {
 	// Create a timeout context for the whole test
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	_, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	// Set up temporary directory for test
@@ -30,62 +28,35 @@ func TestTransactionRegistry(t *testing.T) {
 	}
 	defer eng.Close()
 
-	// Create transaction registry
-	registry := transaction.NewRegistry()
-
-	// Test begin transaction
-	txID, err := registry.Begin(ctx, eng, false)
+	// Get the transaction manager
+	txManager := eng.GetTransactionManager()
+	
+	// Test read-write transaction
+	rwTx, err := txManager.BeginTransaction(false)
 	if err != nil {
-		// If we get a timeout, don't fail the test - the engine might be busy
-		if ctx.Err() != nil || strings.Contains(err.Error(), "timed out") {
-			t.Skip("Skipping test due to transaction timeout")
-		}
-		t.Fatalf("Failed to begin transaction: %v", err)
+		t.Fatalf("Failed to begin read-write transaction: %v", err)
 	}
-	if txID == "" {
-		t.Fatal("Expected non-empty transaction ID")
+	if rwTx.IsReadOnly() {
+		t.Fatal("Expected non-read-only transaction")
 	}
-
-	// Test get transaction
-	tx, exists := registry.Get(txID)
-	if !exists {
-		t.Fatalf("Transaction %s not found in registry", txID)
+	
+	// Test committing the transaction
+	if err := rwTx.Commit(); err != nil {
+		t.Fatalf("Failed to commit transaction: %v", err)
 	}
-	if tx == nil {
-		t.Fatal("Expected non-nil transaction")
-	}
-	if tx.IsReadOnly() {
-		t.Fatal("Expected read-write transaction")
-	}
-
+	
 	// Test read-only transaction
-	roTxID, err := registry.Begin(ctx, eng, true)
+	roTx, err := txManager.BeginTransaction(true)
 	if err != nil {
-		// If we get a timeout, don't fail the test - the engine might be busy
-		if ctx.Err() != nil || strings.Contains(err.Error(), "timed out") {
-			t.Skip("Skipping test due to transaction timeout")
-		}
 		t.Fatalf("Failed to begin read-only transaction: %v", err)
-	}
-	roTx, exists := registry.Get(roTxID)
-	if !exists {
-		t.Fatalf("Transaction %s not found in registry", roTxID)
 	}
 	if !roTx.IsReadOnly() {
 		t.Fatal("Expected read-only transaction")
 	}
-
-	// Test remove transaction
-	registry.Remove(txID)
-	_, exists = registry.Get(txID)
-	if exists {
-		t.Fatalf("Transaction %s should have been removed", txID)
-	}
-
-	// Test graceful shutdown
-	shutdownErr := registry.GracefulShutdown(ctx)
-	if shutdownErr != nil && !strings.Contains(shutdownErr.Error(), "timed out") {
-		t.Fatalf("Failed to gracefully shutdown registry: %v", shutdownErr)
+	
+	// Test rollback
+	if err := roTx.Rollback(); err != nil {
+		t.Fatalf("Failed to rollback transaction: %v", err)
 	}
 }
 

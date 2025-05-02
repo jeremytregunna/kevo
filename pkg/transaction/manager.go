@@ -4,14 +4,13 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/KevoDB/kevo/pkg/engine/interfaces"
 	"github.com/KevoDB/kevo/pkg/stats"
 )
 
-// Manager implements the interfaces.TransactionManager interface
+// Manager implements the TransactionManager interface
 type Manager struct {
-	// Storage interface for transaction operations
-	storage interfaces.StorageManager
+	// Storage backend for transaction operations
+	storage StorageBackend
 
 	// Statistics collector
 	stats stats.Collector
@@ -26,7 +25,7 @@ type Manager struct {
 }
 
 // NewManager creates a new transaction manager
-func NewManager(storage interfaces.StorageManager, stats stats.Collector) *Manager {
+func NewManager(storage StorageBackend, stats stats.Collector) *Manager {
 	return &Manager{
 		storage: storage,
 		stats:   stats,
@@ -34,14 +33,39 @@ func NewManager(storage interfaces.StorageManager, stats stats.Collector) *Manag
 }
 
 // BeginTransaction starts a new transaction
-func (m *Manager) BeginTransaction(readOnly bool) (interfaces.Transaction, error) {
+func (m *Manager) BeginTransaction(readOnly bool) (Transaction, error) {
 	// Track transaction start
-	m.stats.TrackOperation(stats.OpTxBegin)
+	if m.stats != nil {
+		m.stats.TrackOperation(stats.OpTxBegin)
+	}
 	m.txStarted.Add(1)
 
-	// Create either a read-only or read-write transaction
-	// This will acquire appropriate locks
-	tx := NewTransaction(m, m.storage, readOnly)
+	// Convert to transaction mode
+	mode := ReadWrite
+	if readOnly {
+		mode = ReadOnly
+	}
+
+	// Create a new transaction
+	tx := &TransactionImpl{
+		storage:     m.storage,
+		mode:        mode,
+		buffer:      NewBuffer(),
+		rwLock:      &m.txLock,
+		stats:       m,
+	}
+	
+	// Set transaction as active
+	tx.active.Store(true)
+	
+	// Acquire appropriate lock
+	if mode == ReadOnly {
+		m.txLock.RLock()
+		tx.hasReadLock.Store(true)
+	} else {
+		m.txLock.Lock()
+		tx.hasWriteLock.Store(true)
+	}
 
 	return tx, nil
 }
@@ -56,7 +80,9 @@ func (m *Manager) IncrementTxCompleted() {
 	m.txCompleted.Add(1)
 
 	// Track the commit operation
-	m.stats.TrackOperation(stats.OpTxCommit)
+	if m.stats != nil {
+		m.stats.TrackOperation(stats.OpTxCommit)
+	}
 }
 
 // IncrementTxAborted increments the aborted transaction counter
@@ -64,7 +90,9 @@ func (m *Manager) IncrementTxAborted() {
 	m.txAborted.Add(1)
 
 	// Track the rollback operation
-	m.stats.TrackOperation(stats.OpTxRollback)
+	if m.stats != nil {
+		m.stats.TrackOperation(stats.OpTxRollback)
+	}
 }
 
 // GetTransactionStats returns transaction statistics
