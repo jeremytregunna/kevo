@@ -112,7 +112,7 @@ func NewWAL(cfg *config.Config, dir string) (*WAL, error) {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create WAL directory: %w", err)
 	}
-	
+
 	// Verify that the directory was successfully created
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
 		return nil, fmt.Errorf("WAL directory creation failed: %s does not exist after MkdirAll", dir)
@@ -445,24 +445,24 @@ func (w *WAL) AppendExactBytes(rawBytes []byte, seqNum uint64) (uint64, error) {
 	} else if status == WALStatusRotating {
 		return 0, ErrWALRotating
 	}
-	
+
 	// Verify we have at least a header
 	if len(rawBytes) < HeaderSize {
 		return 0, fmt.Errorf("raw WAL record too small: %d bytes", len(rawBytes))
 	}
-	
+
 	// Extract payload size to validate record integrity
 	payloadSize := int(binary.LittleEndian.Uint16(rawBytes[4:6]))
-	if len(rawBytes) != HeaderSize + payloadSize {
+	if len(rawBytes) != HeaderSize+payloadSize {
 		return 0, fmt.Errorf("raw WAL record size mismatch: header says %d payload bytes, but got %d total bytes",
 			payloadSize, len(rawBytes))
 	}
-	
+
 	// Update nextSequence if the provided sequence is higher
 	if seqNum >= w.nextSequence {
 		w.nextSequence = seqNum + 1
 	}
-	
+
 	// Write the raw bytes directly to the WAL
 	if _, err := w.writer.Write(rawBytes); err != nil {
 		return 0, fmt.Errorf("failed to write raw WAL record: %w", err)
@@ -471,7 +471,7 @@ func (w *WAL) AppendExactBytes(rawBytes []byte, seqNum uint64) (uint64, error) {
 	// Update bytes written
 	w.bytesWritten += int64(len(rawBytes))
 	w.batchByteSize += int64(len(rawBytes))
-	
+
 	// Notify observers (with a simplified Entry since we can't properly parse the raw bytes)
 	entry := &Entry{
 		SequenceNumber: seqNum,
@@ -480,12 +480,12 @@ func (w *WAL) AppendExactBytes(rawBytes []byte, seqNum uint64) (uint64, error) {
 		Value:          []byte{},
 	}
 	w.notifyEntryObservers(entry)
-	
+
 	// Sync if needed
 	if err := w.maybeSync(); err != nil {
 		return 0, err
 	}
-	
+
 	return seqNum, nil
 }
 

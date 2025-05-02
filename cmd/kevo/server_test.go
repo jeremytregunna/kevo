@@ -30,7 +30,7 @@ func TestTransactionManager(t *testing.T) {
 
 	// Get the transaction manager
 	txManager := eng.GetTransactionManager()
-	
+
 	// Test read-write transaction
 	rwTx, err := txManager.BeginTransaction(false)
 	if err != nil {
@@ -39,12 +39,12 @@ func TestTransactionManager(t *testing.T) {
 	if rwTx.IsReadOnly() {
 		t.Fatal("Expected non-read-only transaction")
 	}
-	
+
 	// Test committing the transaction
 	if err := rwTx.Commit(); err != nil {
 		t.Fatalf("Failed to commit transaction: %v", err)
 	}
-	
+
 	// Test read-only transaction
 	roTx, err := txManager.BeginTransaction(true)
 	if err != nil {
@@ -53,7 +53,7 @@ func TestTransactionManager(t *testing.T) {
 	if !roTx.IsReadOnly() {
 		t.Fatal("Expected read-only transaction")
 	}
-	
+
 	// Test rollback
 	if err := roTx.Rollback(); err != nil {
 		t.Fatalf("Failed to rollback transaction: %v", err)

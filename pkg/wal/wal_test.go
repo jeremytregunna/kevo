@@ -596,9 +596,9 @@ func TestAppendWithSequence(t *testing.T) {
 
 	// Write entries with specific sequence numbers
 	testCases := []struct {
-		key      string
-		value    string
-		seqNum   uint64
+		key       string
+		value     string
+		seqNum    uint64
 		entryType uint8
 	}{
 		{"key1", "value1", 100, OpTypePut},
@@ -787,27 +787,27 @@ func TestAppendBatchWithSequence(t *testing.T) {
 					if batch.Seq != startSeq {
 						t.Errorf("Expected batch seq %d, got %d", startSeq, batch.Seq)
 					}
-					
+
 					// Verify batch count
 					if len(batch.Operations) != len(entries) {
 						t.Errorf("Expected %d operations, got %d", len(entries), len(batch.Operations))
 					}
-                    
-                    // Verify batch operations
-                    for i, op := range batch.Operations {
-                        if i < len(entries) {
-                            expected := entries[i]
-                            if op.Type != expected.Type {
-                                t.Errorf("Operation %d: expected type %d, got %d", i, expected.Type, op.Type)
-                            }
-                            if string(op.Key) != string(expected.Key) {
-                                t.Errorf("Operation %d: expected key %q, got %q", i, string(expected.Key), string(op.Key))
-                            }
-                            if expected.Type != OpTypeDelete && string(op.Value) != string(expected.Value) {
-                                t.Errorf("Operation %d: expected value %q, got %q", i, string(expected.Value), string(op.Value))
-                            }
-                        }
-                    }
+
+					// Verify batch operations
+					for i, op := range batch.Operations {
+						if i < len(entries) {
+							expected := entries[i]
+							if op.Type != expected.Type {
+								t.Errorf("Operation %d: expected type %d, got %d", i, expected.Type, op.Type)
+							}
+							if string(op.Key) != string(expected.Key) {
+								t.Errorf("Operation %d: expected key %q, got %q", i, string(expected.Key), string(op.Key))
+							}
+							if expected.Type != OpTypeDelete && string(op.Value) != string(expected.Value) {
+								t.Errorf("Operation %d: expected value %q, got %q", i, string(expected.Value), string(op.Value))
+							}
+						}
+					}
 				} else {
 					t.Errorf("Failed to decode batch: %v", err)
 				}

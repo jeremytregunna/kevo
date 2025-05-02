@@ -205,7 +205,7 @@ func parseFlags() Config {
 	}
 	fmt.Printf("DEBUG: Config created: ReplicationEnabled=%v, ReplicationMode=%s\n",
 		config.ReplicationEnabled, config.ReplicationMode)
-	
+
 	return config
 }
 
@@ -219,7 +219,7 @@ func runServer(eng *engine.Engine, config Config) {
 	// Create and start the server
 	fmt.Printf("DEBUG: Before server creation: ReplicationEnabled=%v, ReplicationMode=%s\n",
 		config.ReplicationEnabled, config.ReplicationMode)
-	
+
 	server := NewServer(eng, config)
 
 	// Start the server (non-blocking)

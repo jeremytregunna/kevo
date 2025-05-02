@@ -3,7 +3,7 @@ package transaction
 import (
 	"context"
 	"sync"
-	
+
 	"github.com/KevoDB/kevo/pkg/common/iterator"
 	"github.com/KevoDB/kevo/pkg/engine/interfaces"
 	"github.com/KevoDB/kevo/pkg/stats"
@@ -139,7 +139,7 @@ func (w *registryWrapper) GracefulShutdown(ctx context.Context) error {
 func NewManager(storage interfaces.StorageManager, statsCollector stats.Collector) interfaces.TransactionManager {
 	// Create a storage adapter that works with our new transaction implementation
 	adapter := &storageAdapter{storage: storage}
-	
+
 	// Create the new transaction manager and wrap it
 	return &managerWrapper{
 		inner: tx.NewManager(adapter, statsCollector),

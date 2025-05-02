@@ -85,7 +85,7 @@ func (s *MemoryStorage) newIterator(startKey, endKey []byte) *MemoryIterator {
 	keys := make([][]byte, 0, len(s.data))
 	for k := range s.data {
 		keyBytes := []byte(k)
-		
+
 		// Apply range filtering if specified
 		if startKey != nil && bytes.Compare(keyBytes, startKey) < 0 {
 			continue
@@ -93,7 +93,7 @@ func (s *MemoryStorage) newIterator(startKey, endKey []byte) *MemoryIterator {
 		if endKey != nil && bytes.Compare(keyBytes, endKey) >= 0 {
 			continue
 		}
-		
+
 		keys = append(keys, keyBytes)
 	}
 
@@ -162,7 +162,7 @@ func (it *MemoryIterator) Next() bool {
 		it.SeekToFirst()
 		return it.Valid()
 	}
-	
+
 	if it.position >= len(it.keys)-1 {
 		it.position = -1
 		return false
@@ -202,14 +202,14 @@ func (it *MemoryIterator) IsTombstone() bool {
 func (s *MemoryStorage) Put(key, value []byte) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	// Make a copy of the key and value
 	keyCopy := make([]byte, len(key))
 	copy(keyCopy, key)
-	
+
 	valueCopy := make([]byte, len(value))
 	copy(valueCopy, value)
-	
+
 	s.data[string(keyCopy)] = valueCopy
 }
 
@@ -217,7 +217,7 @@ func (s *MemoryStorage) Put(key, value []byte) {
 func (s *MemoryStorage) Delete(key []byte) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	delete(s.data, string(key))
 }
 
@@ -225,6 +225,6 @@ func (s *MemoryStorage) Delete(key []byte) {
 func (s *MemoryStorage) Size() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	
+
 	return len(s.data)
 }

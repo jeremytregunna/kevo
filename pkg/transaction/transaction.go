@@ -14,28 +14,28 @@ import (
 type TransactionImpl struct {
 	// Reference to the storage backend
 	storage StorageBackend
-	
+
 	// Transaction mode (ReadOnly or ReadWrite)
 	mode TransactionMode
-	
+
 	// Buffer for transaction operations
 	buffer *Buffer
-	
+
 	// Tracks if the transaction is still active
 	active atomic.Bool
-	
+
 	// For read-only transactions, tracks if we have a read lock
 	hasReadLock atomic.Bool
-	
+
 	// For read-write transactions, tracks if we have the write lock
 	hasWriteLock atomic.Bool
-	
+
 	// Lock for transaction-level synchronization
 	mu sync.Mutex
-	
+
 	// RWLock for transaction isolation
 	rwLock *sync.RWMutex
-	
+
 	// Stats collector
 	stats StatsCollector
 }
@@ -51,12 +51,12 @@ func (tx *TransactionImpl) Get(key []byte) ([]byte, error) {
 	// Use transaction lock for consistent view
 	tx.mu.Lock()
 	defer tx.mu.Unlock()
-	
+
 	// Check if transaction is still active
 	if !tx.active.Load() {
 		return nil, ErrTransactionClosed
 	}
-	
+
 	// First check the transaction buffer for any pending changes
 	if val, found := tx.buffer.Get(key); found {
 		if val == nil {
@@ -65,7 +65,7 @@ func (tx *TransactionImpl) Get(key []byte) ([]byte, error) {
 		}
 		return val, nil
 	}
-	
+
 	// Not in the buffer, get from the underlying storage
 	return tx.storage.Get(key)
 }
@@ -75,17 +75,17 @@ func (tx *TransactionImpl) Put(key, value []byte) error {
 	// Use transaction lock for consistent view
 	tx.mu.Lock()
 	defer tx.mu.Unlock()
-	
+
 	// Check if transaction is still active
 	if !tx.active.Load() {
 		return ErrTransactionClosed
 	}
-	
+
 	// Check if transaction is read-only
 	if tx.mode == ReadOnly {
 		return ErrReadOnlyTransaction
 	}
-	
+
 	// Buffer the change - it will be applied on commit
 	tx.buffer.Put(key, value)
 	return nil
@@ -96,17 +96,17 @@ func (tx *TransactionImpl) Delete(key []byte) error {
 	// Use transaction lock for consistent view
 	tx.mu.Lock()
 	defer tx.mu.Unlock()
-	
+
 	// Check if transaction is still active
 	if !tx.active.Load() {
 		return ErrTransactionClosed
 	}
-	
+
 	// Check if transaction is read-only
 	if tx.mode == ReadOnly {
 		return ErrReadOnlyTransaction
 	}
-	
+
 	// Buffer the deletion - it will be applied on commit
 	tx.buffer.Delete(key)
 	return nil
@@ -117,28 +117,28 @@ func (tx *TransactionImpl) NewIterator() iterator.Iterator {
 	// Use transaction lock for consistent view
 	tx.mu.Lock()
 	defer tx.mu.Unlock()
-	
+
 	// Check if transaction is still active
 	if !tx.active.Load() {
 		// Return an empty iterator
 		return &emptyIterator{}
 	}
-	
+
 	// Get the storage iterator
 	storageIter, err := tx.storage.GetIterator()
 	if err != nil {
 		// If we can't get a storage iterator, return a buffer-only iterator
 		return tx.buffer.NewIterator()
 	}
-	
+
 	// If there are no changes in the buffer, just use the storage's iterator
 	if tx.buffer.Size() == 0 {
 		return storageIter
 	}
-	
+
 	// Merge buffer and storage iterators
 	bufferIter := tx.buffer.NewIterator()
-	
+
 	// Use composite hierarchical iterator
 	return composite.NewHierarchicalIterator([]iterator.Iterator{bufferIter, storageIter})
 }
@@ -148,13 +148,13 @@ func (tx *TransactionImpl) NewRangeIterator(startKey, endKey []byte) iterator.It
 	// Use transaction lock for consistent view
 	tx.mu.Lock()
 	defer tx.mu.Unlock()
-	
+
 	// Check if transaction is still active
 	if !tx.active.Load() {
 		// Return an empty iterator
 		return &emptyIterator{}
 	}
-	
+
 	// Get the storage iterator for the range
 	storageIter, err := tx.storage.GetRangeIterator(startKey, endKey)
 	if err != nil {
@@ -162,16 +162,16 @@ func (tx *TransactionImpl) NewRangeIterator(startKey, endKey []byte) iterator.It
 		bufferIter := tx.buffer.NewIterator()
 		return bounded.NewBoundedIterator(bufferIter, startKey, endKey)
 	}
-	
+
 	// If there are no changes in the buffer, just use the storage's range iterator
 	if tx.buffer.Size() == 0 {
 		return storageIter
 	}
-	
+
 	// Create a bounded buffer iterator
 	bufferIter := tx.buffer.NewIterator()
 	boundedBufferIter := bounded.NewBoundedIterator(bufferIter, startKey, endKey)
-	
+
 	// Merge the bounded buffer iterator with the storage range iterator
 	return composite.NewHierarchicalIterator([]iterator.Iterator{boundedBufferIter, storageIter})
 }
@@ -193,34 +193,34 @@ func (tx *TransactionImpl) Commit() error {
 	// Use transaction lock for consistent view
 	tx.mu.Lock()
 	defer tx.mu.Unlock()
-	
+
 	// Only proceed if the transaction is still active
 	if !tx.active.CompareAndSwap(true, false) {
 		return ErrTransactionClosed
 	}
-	
+
 	var err error
-	
+
 	// For read-only transactions, just release the read lock
 	if tx.mode == ReadOnly {
 		tx.releaseReadLock()
-		
+
 		// Track transaction completion
 		if tx.stats != nil {
 			tx.stats.IncrementTxCompleted()
 		}
-		
+
 		return nil
 	}
-	
+
 	// For read-write transactions, apply the changes
 	if tx.buffer.Size() > 0 {
 		// Get operations from the buffer
 		ops := tx.buffer.Operations()
-		
+
 		// Create a batch for all operations
 		walBatch := make([]*wal.Entry, 0, len(ops))
-		
+
 		// Build WAL entries for each operation
 		for _, op := range ops {
 			if op.IsDelete {
@@ -238,19 +238,19 @@ func (tx *TransactionImpl) Commit() error {
 				})
 			}
 		}
-		
+
 		// Apply the batch atomically
 		err = tx.storage.ApplyBatch(walBatch)
 	}
-	
+
 	// Release the write lock
 	tx.releaseWriteLock()
-	
+
 	// Track transaction completion
 	if tx.stats != nil {
 		tx.stats.IncrementTxCompleted()
 	}
-	
+
 	return err
 }
 
@@ -259,27 +259,27 @@ func (tx *TransactionImpl) Rollback() error {
 	// Use transaction lock for consistent view
 	tx.mu.Lock()
 	defer tx.mu.Unlock()
-	
+
 	// Only proceed if the transaction is still active
 	if !tx.active.CompareAndSwap(true, false) {
 		return ErrTransactionClosed
 	}
-	
+
 	// Clear the buffer
 	tx.buffer.Clear()
-	
+
 	// Release locks based on transaction mode
 	if tx.mode == ReadOnly {
 		tx.releaseReadLock()
 	} else {
 		tx.releaseWriteLock()
 	}
-	
+
 	// Track transaction abort
 	if tx.stats != nil {
 		tx.stats.IncrementTxAborted()
 	}
-	
+
 	return nil
 }
 

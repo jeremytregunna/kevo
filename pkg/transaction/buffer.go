@@ -199,7 +199,7 @@ func (it *BufferIterator) Next() bool {
 		it.SeekToFirst()
 		return it.Valid()
 	}
-	
+
 	if it.position >= len(it.operations)-1 {
 		it.position = -1
 		return false

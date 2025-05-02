@@ -131,7 +131,7 @@ func (s *Server) Start() error {
 		fmt.Printf("DEBUG: Using replication manager for role %s\n", s.config.ReplicationMode)
 		repManager = s.replicationManager
 	} else {
-		fmt.Printf("DEBUG: No replication manager available. ReplicationEnabled: %v, Manager nil: %v\n", 
+		fmt.Printf("DEBUG: No replication manager available. ReplicationEnabled: %v, Manager nil: %v\n",
 			s.config.ReplicationEnabled, s.replicationManager == nil)
 	}
 

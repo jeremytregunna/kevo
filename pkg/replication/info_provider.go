@@ -6,8 +6,8 @@ import (
 
 const (
 	ReplicationModeStandalone = "standalone"
-	ReplicationModePrimary = "primary"
-	ReplicationModeReplica = "replica"
+	ReplicationModePrimary    = "primary"
+	ReplicationModeReplica    = "replica"
 )
 
 // ReplicationNodeInfo contains information about a node in the replication topology

@@ -125,95 +125,96 @@ func (m *MockStatsCollector) StartRecovery() time.Time {
 	return time.Now()
 }
 
-func (m *MockStatsCollector) FinishRecovery(startTime time.Time, filesRecovered, entriesRecovered, corruptedEntries uint64) {}
+func (m *MockStatsCollector) FinishRecovery(startTime time.Time, filesRecovered, entriesRecovered, corruptedEntries uint64) {
+}
 
 func TestForwardingLayer(t *testing.T) {
 	// Create mocks
 	storage := &MockStorage{}
 	statsCollector := &MockStatsCollector{}
-	
+
 	// Create the manager through the forwarding layer
 	manager := NewManager(storage, statsCollector)
-	
+
 	// Verify the manager was created
 	if manager == nil {
 		t.Fatal("Expected manager to be created, got nil")
 	}
-	
+
 	// Get the RWLock
 	rwLock := manager.GetRWLock()
 	if rwLock == nil {
 		t.Fatal("Expected non-nil RWLock")
 	}
-	
+
 	// Test transaction creation
 	tx, err := manager.BeginTransaction(true)
 	if err != nil {
 		t.Fatalf("Unexpected error beginning transaction: %v", err)
 	}
-	
+
 	// Verify it's a read-only transaction
 	if !tx.IsReadOnly() {
 		t.Error("Expected read-only transaction")
 	}
-	
+
 	// Test some operations
 	_, err = tx.Get([]byte("key"))
 	if err != nil {
 		t.Errorf("Unexpected error in Get: %v", err)
 	}
-	
+
 	// Commit the transaction
 	err = tx.Commit()
 	if err != nil {
 		t.Errorf("Unexpected error committing transaction: %v", err)
 	}
-	
+
 	// Create a read-write transaction
 	tx, err = manager.BeginTransaction(false)
 	if err != nil {
 		t.Fatalf("Unexpected error beginning transaction: %v", err)
 	}
-	
+
 	// Verify it's a read-write transaction
 	if tx.IsReadOnly() {
 		t.Error("Expected read-write transaction")
 	}
-	
+
 	// Test put operation
 	err = tx.Put([]byte("key"), []byte("value"))
 	if err != nil {
 		t.Errorf("Unexpected error in Put: %v", err)
 	}
-	
+
 	// Test delete operation
 	err = tx.Delete([]byte("key"))
 	if err != nil {
 		t.Errorf("Unexpected error in Delete: %v", err)
 	}
-	
+
 	// Test iterator
 	it := tx.NewIterator()
 	if it == nil {
 		t.Error("Expected non-nil iterator")
 	}
-	
+
 	// Test range iterator
 	rangeIt := tx.NewRangeIterator([]byte("a"), []byte("z"))
 	if rangeIt == nil {
 		t.Error("Expected non-nil range iterator")
 	}
-	
+
 	// Rollback the transaction
 	err = tx.Rollback()
 	if err != nil {
 		t.Errorf("Unexpected error rolling back transaction: %v", err)
 	}
-	
+
 	// Verify IncrementTxCompleted and IncrementTxAborted are working
 	manager.IncrementTxCompleted()
 	manager.IncrementTxAborted()
-	
+
 	// Test the registry creation
 	registry := NewRegistry()
 	if registry == nil {

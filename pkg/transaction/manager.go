@@ -48,16 +48,16 @@ func (m *Manager) BeginTransaction(readOnly bool) (Transaction, error) {
 
 	// Create a new transaction
 	tx := &TransactionImpl{
-		storage:     m.storage,
-		mode:        mode,
-		buffer:      NewBuffer(),
-		rwLock:      &m.txLock,
-		stats:       m,
+		storage: m.storage,
+		mode:    mode,
+		buffer:  NewBuffer(),
+		rwLock:  &m.txLock,
+		stats:   m,
 	}
-	
+
 	// Set transaction as active
 	tx.active.Store(true)
-	
+
 	// Acquire appropriate lock
 	if mode == ReadOnly {
 		m.txLock.RLock()
