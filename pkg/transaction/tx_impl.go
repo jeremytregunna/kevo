@@ -38,6 +38,9 @@ type EngineTransaction struct {
 
 	// For read-only transactions, ensures we release the read lock exactly once
 	readUnlocked int32
+
+	// Mutex for transaction-level synchronization
+	mu sync.Mutex
 }
 
 // NewTransaction creates a new transaction
@@ -49,26 +52,29 @@ func NewTransaction(eng *engine.Engine, mode TransactionMode) (*EngineTransactio
 		active: 1,
 	}
 
-	// For read-write transactions, we need a write lock
-	if mode == ReadWrite {
-		// Get the engine's lock - we'll use the same one for all transactions
-		lock := eng.GetRWLock()
+	// Get the engine's lock - we'll use the same one for all transactions
+	// We always get the lock in the same place to establish consistent lock ordering
+	lock := eng.GetRWLock()
 
-		// Acquire the write lock
+	// Acquire the appropriate lock based on transaction mode
+	// This ensures consistent lock acquisition order to prevent deadlocks
+	if mode == ReadWrite {
 		lock.Lock()
-		tx.writeLock = lock
 	} else {
-		// For read-only transactions, just acquire a read lock
-		lock := eng.GetRWLock()
 		lock.RLock()
-		tx.writeLock = lock
 	}
+	
+	tx.writeLock = lock
 
 	return tx, nil
 }
 
 // Get retrieves a value for the given key
 func (tx *EngineTransaction) Get(key []byte) ([]byte, error) {
+	// Use a read lock to ensure consistent view of transaction state
+	tx.mu.Lock()
+	defer tx.mu.Unlock()
+	
 	if atomic.LoadInt32(&tx.active) == 0 {
 		return nil, ErrTransactionClosed
 	}
@@ -88,6 +94,10 @@ func (tx *EngineTransaction) Get(key []byte) ([]byte, error) {
 
 // Put adds or updates a key-value pair
 func (tx *EngineTransaction) Put(key, value []byte) error {
+	// Use a lock to ensure consistent view of transaction state
+	tx.mu.Lock()
+	defer tx.mu.Unlock()
+	
 	if atomic.LoadInt32(&tx.active) == 0 {
 		return ErrTransactionClosed
 	}
@@ -103,6 +113,10 @@ func (tx *EngineTransaction) Put(key, value []byte) error {
 
 // Delete removes a key
 func (tx *EngineTransaction) Delete(key []byte) error {
+	// Use a lock to ensure consistent view of transaction state
+	tx.mu.Lock()
+	defer tx.mu.Unlock()
+	
 	if atomic.LoadInt32(&tx.active) == 0 {
 		return ErrTransactionClosed
 	}
@@ -119,6 +133,10 @@ func (tx *EngineTransaction) Delete(key []byte) error {
 // NewIterator returns an iterator that first reads from the transaction buffer
 // and then from the underlying engine
 func (tx *EngineTransaction) NewIterator() iterator.Iterator {
+	// Use a lock to ensure consistent view of transaction state
+	tx.mu.Lock()
+	defer tx.mu.Unlock()
+	
 	if atomic.LoadInt32(&tx.active) == 0 {
 		// Return an empty iterator if transaction is closed
 		return &emptyIterator{}
@@ -131,8 +149,11 @@ func (tx *EngineTransaction) NewIterator() iterator.Iterator {
 		return tx.buffer.NewIterator()
 	}
 
+	// Make a thread-safe check of buffer size
+	bufferSize := tx.buffer.Size()
+	
 	// If there are no changes in the buffer, just use the engine's iterator
-	if tx.buffer.Size() == 0 {
+	if bufferSize == 0 {
 		return engineIter
 	}
 
@@ -142,6 +163,10 @@ func (tx *EngineTransaction) NewIterator() iterator.Iterator {
 
 // NewRangeIterator returns an iterator limited to a specific key range
 func (tx *EngineTransaction) NewRangeIterator(startKey, endKey []byte) iterator.Iterator {
+	// Use a lock to ensure consistent view of transaction state
+	tx.mu.Lock()
+	defer tx.mu.Unlock()
+	
 	if atomic.LoadInt32(&tx.active) == 0 {
 		// Return an empty iterator if transaction is closed
 		return &emptyIterator{}
@@ -156,8 +181,11 @@ func (tx *EngineTransaction) NewRangeIterator(startKey, endKey []byte) iterator.
 		return newRangeIterator(bufferIter, startKey, endKey)
 	}
 
+	// Make a thread-safe check of buffer size
+	bufferSize := tx.buffer.Size()
+	
 	// If there are no changes in the buffer, just use the engine's range iterator
-	if tx.buffer.Size() == 0 {
+	if bufferSize == 0 {
 		return engineIter
 	}
 
@@ -468,7 +496,11 @@ func (ri *rangeIterator) checkBounds() bool {
 
 // Commit makes all changes permanent
 func (tx *EngineTransaction) Commit() error {
-	// Only proceed if the transaction is still active
+	// Use transaction mutex to ensure only one goroutine can execute commit
+	tx.mu.Lock()
+	defer tx.mu.Unlock()
+
+	// Check if the transaction is still active
 	if !atomic.CompareAndSwapInt32(&tx.active, 1, 0) {
 		return ErrTransactionClosed
 	}
@@ -477,16 +509,32 @@ func (tx *EngineTransaction) Commit() error {
 
 	// For read-only transactions, just release the read lock
 	if tx.mode == ReadOnly {
-		tx.releaseReadLock()
+		// Release read lock inline instead of calling releaseReadLock to avoid deadlock
+		if atomic.CompareAndSwapInt32(&tx.readUnlocked, 0, 1) {
+			if tx.writeLock != nil {
+				tx.writeLock.RUnlock()
+				tx.writeLock = nil
+			}
+		}
 
 		// Track transaction completion
 		tx.engine.IncrementTxCompleted()
 		return nil
 	}
 
+	// Create write lock guard to ensure proper cleanup on error
+	writeLockReleased := false
+	defer func() {
+		// Only release the lock if we haven't already
+		if !writeLockReleased && tx.writeLock != nil {
+			tx.writeLock.Unlock()
+			tx.writeLock = nil
+		}
+	}()
+
 	// For read-write transactions, apply the changes
 	if tx.buffer.Size() > 0 {
-		// Get operations from the buffer
+		// Get operations from the buffer - creates a safe copy
 		ops := tx.buffer.Operations()
 
 		// Create a batch for all operations
@@ -514,10 +562,11 @@ func (tx *EngineTransaction) Commit() error {
 		err = tx.engine.ApplyBatch(walBatch)
 	}
 
-	// Release the write lock
+	// Only release the write lock if everything succeeded
 	if tx.writeLock != nil {
 		tx.writeLock.Unlock()
 		tx.writeLock = nil
+		writeLockReleased = true
 	}
 
 	// Track transaction completion
@@ -528,17 +577,47 @@ func (tx *EngineTransaction) Commit() error {
 
 // Rollback discards all transaction changes
 func (tx *EngineTransaction) Rollback() error {
+	// Use transaction mutex to ensure only one goroutine can execute rollback
+	tx.mu.Lock()
+	defer tx.mu.Unlock()
+
 	// Only proceed if the transaction is still active
 	if !atomic.CompareAndSwapInt32(&tx.active, 1, 0) {
 		return ErrTransactionClosed
 	}
+
+	// Create lock guard to ensure proper cleanup
+	lockReleased := false
+	defer func() {
+		// Only release the lock if we haven't already
+		if !lockReleased {
+			if tx.mode == ReadOnly {
+				// Only release once to avoid panics from multiple unlocks
+				if atomic.CompareAndSwapInt32(&tx.readUnlocked, 0, 1) {
+					if tx.writeLock != nil {
+						tx.writeLock.RUnlock()
+						tx.writeLock = nil
+					}
+				}
+			} else if tx.writeLock != nil {
+				tx.writeLock.Unlock()
+				tx.writeLock = nil
+			}
+		}
+	}()
 
 	// Clear the buffer
 	tx.buffer.Clear()
 
 	// Release locks based on transaction mode
 	if tx.mode == ReadOnly {
-		tx.releaseReadLock()
+		// Only release once to avoid panics from multiple unlocks
+		if atomic.CompareAndSwapInt32(&tx.readUnlocked, 0, 1) {
+			if tx.writeLock != nil {
+				tx.writeLock.RUnlock()
+				tx.writeLock = nil
+			}
+		}
 	} else {
 		// Release write lock
 		if tx.writeLock != nil {
@@ -546,6 +625,7 @@ func (tx *EngineTransaction) Rollback() error {
 			tx.writeLock = nil
 		}
 	}
+	lockReleased = true
 
 	// Track transaction abort in engine stats
 	tx.engine.IncrementTxAborted()
@@ -559,6 +639,7 @@ func (tx *EngineTransaction) IsReadOnly() bool {
 }
 
 // releaseReadLock safely releases the read lock for read-only transactions
+// Note: This method assumes the transaction mutex (tx.mu) is already held by the caller
 func (tx *EngineTransaction) releaseReadLock() {
 	// Only release once to avoid panics from multiple unlocks
 	if atomic.CompareAndSwapInt32(&tx.readUnlocked, 0, 1) {
