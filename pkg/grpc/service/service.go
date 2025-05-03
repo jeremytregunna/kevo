@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/KevoDB/kevo/pkg/common/iterator"
+	"github.com/KevoDB/kevo/pkg/common/iterator/filtered"
 	"github.com/KevoDB/kevo/pkg/common/log"
 	"github.com/KevoDB/kevo/pkg/engine/interfaces"
 	"github.com/KevoDB/kevo/pkg/replication"
@@ -198,16 +199,16 @@ func (s *KevoServiceServer) Scan(req *pb.ScanRequest, stream pb.KevoService_Scan
 	if len(req.Prefix) > 0 && len(req.Suffix) > 0 {
 		// Create a combined prefix-suffix iterator
 		baseIter := tx.NewIterator()
-		prefixIter := newPrefixIterator(baseIter, req.Prefix)
-		iter = newSuffixIterator(prefixIter, req.Suffix)
+		prefixIter := filtered.NewPrefixIterator(baseIter, req.Prefix)
+		iter = filtered.NewSuffixIterator(prefixIter, req.Suffix)
 	} else if len(req.Prefix) > 0 {
 		// Create a prefix iterator
-		prefixIter := tx.NewIterator()
-		iter = newPrefixIterator(prefixIter, req.Prefix)
+		baseIter := tx.NewIterator()
+		iter = filtered.NewPrefixIterator(baseIter, req.Prefix)
 	} else if len(req.Suffix) > 0 {
 		// Create a suffix iterator
-		suffixIter := tx.NewIterator()
-		iter = newSuffixIterator(suffixIter, req.Suffix)
+		baseIter := tx.NewIterator()
+		iter = filtered.NewSuffixIterator(baseIter, req.Suffix)
 	} else if len(req.StartKey) > 0 || len(req.EndKey) > 0 {
 		// Create a range iterator
 		iter = tx.NewRangeIterator(req.StartKey, req.EndKey)
@@ -244,183 +245,6 @@ func (s *KevoServiceServer) Scan(req *pb.ScanRequest, stream pb.KevoService_Scan
 	return nil
 }
 
-// prefixIterator wraps another iterator and filters for a prefix
-type prefixIterator struct {
-	iter   iterator.Iterator
-	prefix []byte
-	err    error
-}
-
-func newPrefixIterator(iter iterator.Iterator, prefix []byte) *prefixIterator {
-	return &prefixIterator{
-		iter:   iter,
-		prefix: prefix,
-	}
-}
-
-func (pi *prefixIterator) Next() bool {
-	for pi.iter.Next() {
-		// Check if current key has the prefix
-		key := pi.iter.Key()
-		if len(key) >= len(pi.prefix) &&
-			equalByteSlice(key[:len(pi.prefix)], pi.prefix) {
-			return true
-		}
-	}
-	return false
-}
-
-func (pi *prefixIterator) Key() []byte {
-	return pi.iter.Key()
-}
-
-func (pi *prefixIterator) Value() []byte {
-	return pi.iter.Value()
-}
-
-func (pi *prefixIterator) Valid() bool {
-	if !pi.iter.Valid() {
-		return false
-	}
-
-	// Check if the current key has the correct prefix
-	key := pi.iter.Key()
-	if len(key) < len(pi.prefix) {
-		return false
-	}
-
-	return equalByteSlice(key[:len(pi.prefix)], pi.prefix)
-}
-
-func (pi *prefixIterator) IsTombstone() bool {
-	return pi.iter.IsTombstone()
-}
-
-func (pi *prefixIterator) SeekToFirst() {
-	pi.iter.SeekToFirst()
-
-	// After seeking to first, we need to advance to the first key
-	// that actually matches our prefix
-	if pi.iter.Valid() {
-		key := pi.iter.Key()
-		if len(key) >= len(pi.prefix) {
-			if equalByteSlice(key[:len(pi.prefix)], pi.prefix) {
-				// Found a match, no need to advance
-				return
-			}
-		}
-
-		// Current key doesn't match, find the first one that does
-		pi.Next()
-	}
-}
-
-func (pi *prefixIterator) SeekToLast() {
-	pi.iter.SeekToLast()
-}
-
-func (pi *prefixIterator) Seek(target []byte) bool {
-	return pi.iter.Seek(target)
-}
-
-// equalByteSlice compares two byte slices for equality
-func equalByteSlice(a, b []byte) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := 0; i < len(a); i++ {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
-// suffixIterator wraps another iterator and filters for a suffix
-type suffixIterator struct {
-	iter   iterator.Iterator
-	suffix []byte
-	err    error
-}
-
-func newSuffixIterator(iter iterator.Iterator, suffix []byte) *suffixIterator {
-	return &suffixIterator{
-		iter:   iter,
-		suffix: suffix,
-	}
-}
-
-func (si *suffixIterator) Next() bool {
-	// Keep advancing the underlying iterator until we find a key with the correct suffix
-	// or reach the end
-	for si.iter.Next() {
-		// Check if current key has the suffix
-		key := si.iter.Key()
-		if len(key) >= len(si.suffix) {
-			// Compare the suffix portion
-			suffixStart := len(key) - len(si.suffix)
-			if equalByteSlice(key[suffixStart:], si.suffix) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func (si *suffixIterator) Key() []byte {
-	return si.iter.Key()
-}
-
-func (si *suffixIterator) Value() []byte {
-	return si.iter.Value()
-}
-
-func (si *suffixIterator) Valid() bool {
-	if !si.iter.Valid() {
-		return false
-	}
-
-	// Check if the current key has the correct suffix
-	key := si.iter.Key()
-	if len(key) < len(si.suffix) {
-		return false
-	}
-
-	suffixStart := len(key) - len(si.suffix)
-	return equalByteSlice(key[suffixStart:], si.suffix)
-}
-
-func (si *suffixIterator) IsTombstone() bool {
-	return si.iter.IsTombstone()
-}
-
-func (si *suffixIterator) SeekToFirst() {
-	si.iter.SeekToFirst()
-
-	// After seeking to first, we need to advance to the first key
-	// that actually matches our suffix
-	if si.iter.Valid() {
-		key := si.iter.Key()
-		if len(key) >= len(si.suffix) {
-			suffixStart := len(key) - len(si.suffix)
-			if equalByteSlice(key[suffixStart:], si.suffix) {
-				// Found a match, no need to advance
-				return
-			}
-		}
-
-		// Current key doesn't match, find the first one that does
-		si.Next()
-	}
-}
-
-func (si *suffixIterator) SeekToLast() {
-	si.iter.SeekToLast()
-}
-
-func (si *suffixIterator) Seek(target []byte) bool {
-	return si.iter.Seek(target)
-}
 
 // BeginTransaction starts a new transaction
 func (s *KevoServiceServer) BeginTransaction(ctx context.Context, req *pb.BeginTransactionRequest) (*pb.BeginTransactionResponse, error) {
@@ -590,16 +414,16 @@ func (s *KevoServiceServer) TxScan(req *pb.TxScanRequest, stream pb.KevoService_
 	if len(req.Prefix) > 0 && len(req.Suffix) > 0 {
 		// Create a combined prefix-suffix iterator
 		baseIter := tx.NewIterator()
-		prefixIter := newPrefixIterator(baseIter, req.Prefix)
-		iter = newSuffixIterator(prefixIter, req.Suffix)
+		prefixIter := filtered.NewPrefixIterator(baseIter, req.Prefix)
+		iter = filtered.NewSuffixIterator(prefixIter, req.Suffix)
 	} else if len(req.Prefix) > 0 {
 		// Create a prefix iterator
-		rawIter := tx.NewIterator()
-		iter = newPrefixIterator(rawIter, req.Prefix)
+		baseIter := tx.NewIterator()
+		iter = filtered.NewPrefixIterator(baseIter, req.Prefix)
 	} else if len(req.Suffix) > 0 {
 		// Create a suffix iterator
-		rawIter := tx.NewIterator()
-		iter = newSuffixIterator(rawIter, req.Suffix)
+		baseIter := tx.NewIterator()
+		iter = filtered.NewSuffixIterator(baseIter, req.Suffix)
 	} else if len(req.StartKey) > 0 || len(req.EndKey) > 0 {
 		// Create a range iterator
 		iter = tx.NewRangeIterator(req.StartKey, req.EndKey)
