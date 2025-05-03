@@ -29,20 +29,6 @@ func (m *Manager) RetryOnWALRotating(operation func() error) error {
 	return m.RetryWithConfig(operation, config, isWALRotating)
 }
 
-// RetryWithSequence retries the operation if it fails with ErrWALRotating
-// and returns the sequence number
-func (m *Manager) RetryWithSequence(operation func() (uint64, error)) (uint64, error) {
-	config := DefaultRetryConfig()
-	var seq uint64
-
-	err := m.RetryWithConfig(func() error {
-		var opErr error
-		seq, opErr = operation()
-		return opErr
-	}, config, isWALRotating)
-
-	return seq, err
-}
 
 // RetryWithConfig retries an operation with the given configuration
 func (m *Manager) RetryWithConfig(operation func() error, config *RetryConfig, isRetryable func(error) bool) error {
