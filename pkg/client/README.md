@@ -16,7 +16,7 @@ This package provides a Go client for connecting to a Kevo database server. The 
 ## Installation
 
 ```bash
-go get github.com/jeremytregunna/kevo
+go get github.com/KevoDB/kevo
 ```
 
 ## Quick Start
@@ -29,48 +29,48 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/jeremytregunna/kevo/pkg/client"
-	_ "github.com/jeremytregunna/kevo/pkg/grpc/transport" // Register gRPC transport
+	"github.com/KevoDB/kevo/pkg/client"
+	_ "github.com/KevoDB/kevo/pkg/grpc/transport" // Register gRPC transport
 )
 
 func main() {
 	// Create a client with default options
 	options := client.DefaultClientOptions()
 	options.Endpoint = "localhost:50051"
-	
+
 	c, err := client.NewClient(options)
 	if err != nil {
 		log.Fatalf("Failed to create client: %v", err)
 	}
-	
+
 	// Connect to the server
 	ctx := context.Background()
 	if err := c.Connect(ctx); err != nil {
 		log.Fatalf("Failed to connect: %v", err)
 	}
 	defer c.Close()
-	
+
 	// Basic key-value operations
 	key := []byte("hello")
 	value := []byte("world")
-	
+
 	// Store a value
 	if _, err := c.Put(ctx, key, value, true); err != nil {
 		log.Fatalf("Put failed: %v", err)
 	}
-	
+
 	// Retrieve a value
 	val, found, err := c.Get(ctx, key)
 	if err != nil {
 		log.Fatalf("Get failed: %v", err)
 	}
-	
+
 	if found {
 		fmt.Printf("Value: %s\n", val)
 	} else {
 		fmt.Println("Key not found")
 	}
-	
+
 	// Delete a value
 	if _, err := c.Delete(ctx, key, true); err != nil {
 		log.Fatalf("Delete failed: %v", err)
@@ -90,20 +90,20 @@ options := client.ClientOptions{
 	RequestTimeout:  10 * time.Second,
 	TransportType:   "grpc",
 	PoolSize:        5,
-	
+
 	// Security options
 	TLSEnabled:      true,
 	CertFile:        "/path/to/cert.pem",
 	KeyFile:         "/path/to/key.pem",
 	CAFile:          "/path/to/ca.pem",
-	
+
 	// Retry options
 	MaxRetries:      3,
 	InitialBackoff:  100 * time.Millisecond,
 	MaxBackoff:      2 * time.Second,
 	BackoffFactor:   1.5,
 	RetryJitter:     0.2,
-	
+
 	// Performance options
 	Compression:     client.CompressionGzip,
 	MaxMessageSize:  16 * 1024 * 1024, // 16MB

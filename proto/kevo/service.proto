@@ -2,35 +2,35 @@ syntax = "proto3";
 
 package kevo;
 
-option go_package = "github.com/jeremytregunna/kevo/pkg/grpc/proto;proto";
+option go_package = "github.com/KevoDB/kevo/pkg/grpc/proto;proto";
 
 service KevoService {
   // Key-Value Operations
   rpc Get(GetRequest) returns (GetResponse);
   rpc Put(PutRequest) returns (PutResponse);
   rpc Delete(DeleteRequest) returns (DeleteResponse);
-  
+
   // Batch Operations
   rpc BatchWrite(BatchWriteRequest) returns (BatchWriteResponse);
-  
+
   // Iterator Operations
   rpc Scan(ScanRequest) returns (stream ScanResponse);
-  
+
   // Transaction Operations
   rpc BeginTransaction(BeginTransactionRequest) returns (BeginTransactionResponse);
   rpc CommitTransaction(CommitTransactionRequest) returns (CommitTransactionResponse);
   rpc RollbackTransaction(RollbackTransactionRequest) returns (RollbackTransactionResponse);
-  
+
   // Transaction Operations within an active transaction
   rpc TxGet(TxGetRequest) returns (TxGetResponse);
   rpc TxPut(TxPutRequest) returns (TxPutResponse);
   rpc TxDelete(TxDeleteRequest) returns (TxDeleteResponse);
   rpc TxScan(TxScanRequest) returns (stream TxScanResponse);
-  
+
   // Administrative Operations
   rpc GetStats(GetStatsRequest) returns (GetStatsResponse);
   rpc Compact(CompactRequest) returns (CompactResponse);
-  
+
   // Replication and Topology Operations
   rpc GetNodeInfo(GetNodeInfoRequest) returns (GetNodeInfoResponse);
 }
@@ -176,7 +176,7 @@ message GetStatsResponse {
   int32 sstable_count = 4;
   double write_amplification = 5;
   double read_amplification = 6;
-  
+
   // Operation counts
   map<string, uint64> operation_counts = 7;
   // Latency statistics
@@ -214,7 +214,7 @@ message CompactResponse {
   bool success = 1;
 }
 
-// Node information and topology 
+// Node information and topology
 message GetNodeInfoRequest {
   // No parameters needed for now
 }
@@ -227,11 +227,11 @@ message GetNodeInfoResponse {
     REPLICA = 2;
   }
   NodeRole node_role = 1;
-  
+
   // Connection information
   string primary_address = 2;  // Empty if standalone
   repeated ReplicaInfo replicas = 3;  // Empty if standalone
-  
+
   // Node status
   uint64 last_sequence = 4;  // Last applied sequence number
   bool read_only = 5;        // Whether the node is in read-only mode
