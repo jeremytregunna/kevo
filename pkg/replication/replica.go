@@ -6,6 +6,7 @@ import (
 	"io"
 	"math/rand"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/KevoDB/kevo/pkg/wal"
@@ -17,6 +18,81 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
+
+// ReplicaStats tracks statistics for a replica node
+type ReplicaStats struct {
+	entriesReceived atomic.Uint64 // Number of WAL entries received
+	entriesApplied  atomic.Uint64 // Number of WAL entries successfully applied
+	bytesReceived   atomic.Uint64 // Number of bytes received from the primary
+	batchCount      atomic.Uint64 // Number of batches received
+	errors          atomic.Uint64 // Number of errors during replication
+	lastBatchTime   atomic.Int64  // Timestamp of the last batch received (Unix nanos)
+}
+
+// TrackEntriesReceived increments the count of received entries
+func (s *ReplicaStats) TrackEntriesReceived(count uint64) {
+	s.entriesReceived.Add(count)
+}
+
+// TrackEntriesApplied increments the count of applied entries
+func (s *ReplicaStats) TrackEntriesApplied(count uint64) {
+	s.entriesApplied.Add(count)
+}
+
+// TrackBytesReceived increments the count of bytes received
+func (s *ReplicaStats) TrackBytesReceived(bytes uint64) {
+	s.bytesReceived.Add(bytes)
+}
+
+// TrackBatchReceived increments the batch count and updates the last batch time
+func (s *ReplicaStats) TrackBatchReceived() {
+	s.batchCount.Add(1)
+	s.lastBatchTime.Store(time.Now().UnixNano())
+}
+
+// TrackError increments the error count
+func (s *ReplicaStats) TrackError() {
+	s.errors.Add(1)
+}
+
+// GetEntriesReceived returns the number of entries received
+func (s *ReplicaStats) GetEntriesReceived() uint64 {
+	return s.entriesReceived.Load()
+}
+
+// GetEntriesApplied returns the number of entries applied
+func (s *ReplicaStats) GetEntriesApplied() uint64 {
+	return s.entriesApplied.Load()
+}
+
+// GetBytesReceived returns the number of bytes received
+func (s *ReplicaStats) GetBytesReceived() uint64 {
+	return s.bytesReceived.Load()
+}
+
+// GetBatchCount returns the number of batches received
+func (s *ReplicaStats) GetBatchCount() uint64 {
+	return s.batchCount.Load()
+}
+
+// GetErrorCount returns the number of errors encountered
+func (s *ReplicaStats) GetErrorCount() uint64 {
+	return s.errors.Load()
+}
+
+// GetLastBatchTime returns the timestamp of the last batch
+func (s *ReplicaStats) GetLastBatchTime() int64 {
+	return s.lastBatchTime.Load()
+}
+
+// GetLastBatchTimeDuration returns the duration since the last batch
+func (s *ReplicaStats) GetLastBatchTimeDuration() time.Duration {
+	lastBatch := s.lastBatchTime.Load()
+	if lastBatch == 0 {
+		return 0
+	}
+	return time.Since(time.Unix(0, lastBatch))
+}
 
 // WALEntryApplier interface is defined in interfaces.go
 
@@ -111,6 +187,9 @@ type Replica struct {
 
 	// Stream client for receiving WAL entries
 	streamClient replication_proto.WALReplicationService_StreamWALClient
+	
+	// Statistics for the replica
+	stats *ReplicaStats
 
 	// Session ID for communication with primary
 	sessionID string
@@ -169,6 +248,7 @@ func NewReplica(lastAppliedSeq uint64, applier WALEntryApplier, config *ReplicaC
 		cancel:         cancel,
 		shutdown:       false,
 		connector:      &DefaultPrimaryConnector{},
+		stats:          &ReplicaStats{}, // Initialize statistics tracker
 	}
 
 	return replica, nil
@@ -781,7 +861,21 @@ func (r *Replica) connectToPrimary() error {
 // processEntriesWithoutStateTransitions processes a batch of WAL entries without attempting state transitions
 // This function is called from handleStreamingState and skips the state transitions at the end
 func (r *Replica) processEntriesWithoutStateTransitions(response *replication_proto.WALStreamResponse) error {
-	fmt.Printf("Processing %d entries (no state transitions)\n", len(response.Entries))
+	entryCount := len(response.Entries)
+	fmt.Printf("Processing %d entries (no state transitions)\n", entryCount)
+	
+	// Track statistics
+	if r.stats != nil {
+		r.stats.TrackBatchReceived()
+		r.stats.TrackEntriesReceived(uint64(entryCount))
+		
+		// Calculate total bytes received
+		var totalBytes uint64
+		for _, entry := range response.Entries {
+			totalBytes += uint64(len(entry.Payload))
+		}
+		r.stats.TrackBytesReceived(totalBytes)
+	}
 
 	// Check if entries are compressed
 	entries := response.Entries
@@ -839,6 +933,18 @@ func (r *Replica) processEntriesWithoutStateTransitions(response *replication_pr
 	r.mu.Lock()
 	r.lastAppliedSeq = maxSeq
 	r.mu.Unlock()
+	
+	// Track applied entries in statistics
+	if r.stats != nil {
+		// Calculate the number of entries that were successfully applied
+		appliedCount := uint64(0)
+		for _, entry := range entries {
+			if entry.SequenceNumber <= maxSeq {
+				appliedCount++
+			}
+		}
+		r.stats.TrackEntriesApplied(appliedCount)
+	}
 
 	// Perform fsync directly without transitioning state
 	fmt.Printf("Performing direct fsync to ensure entries are persisted\n")
@@ -853,7 +959,21 @@ func (r *Replica) processEntriesWithoutStateTransitions(response *replication_pr
 
 // processEntries processes a batch of WAL entries
 func (r *Replica) processEntries(response *replication_proto.WALStreamResponse) error {
-	fmt.Printf("Processing %d entries\n", len(response.Entries))
+	entryCount := len(response.Entries)
+	fmt.Printf("Processing %d entries\n", entryCount)
+	
+	// Track statistics
+	if r.stats != nil {
+		r.stats.TrackBatchReceived()
+		r.stats.TrackEntriesReceived(uint64(entryCount))
+		
+		// Calculate total bytes received
+		var totalBytes uint64
+		for _, entry := range response.Entries {
+			totalBytes += uint64(len(entry.Payload))
+		}
+		r.stats.TrackBytesReceived(totalBytes)
+	}
 
 	// Check if entries are compressed
 	entries := response.Entries
@@ -911,6 +1031,18 @@ func (r *Replica) processEntries(response *replication_proto.WALStreamResponse) 
 	r.mu.Lock()
 	r.lastAppliedSeq = maxSeq
 	r.mu.Unlock()
+	
+	// Track applied entries in statistics
+	if r.stats != nil {
+		// Calculate the number of entries that were successfully applied
+		appliedCount := uint64(0)
+		for _, entry := range entries {
+			if entry.SequenceNumber <= maxSeq {
+				appliedCount++
+			}
+		}
+		r.stats.TrackEntriesApplied(appliedCount)
+	}
 
 	// Move to fsync state
 	fmt.Printf("Moving to FSYNC_PENDING state\n")

@@ -168,6 +168,155 @@ func (m *Manager) Stop() error {
 	return nil
 }
 
+// getPrimaryStatus returns detailed status information for a primary node
+func (m *Manager) getPrimaryStatus(status map[string]interface{}) map[string]interface{} {
+	if m.primary == nil {
+		return status
+	}
+
+	status["listen_address"] = m.config.ListenAddr
+	
+	// Get detailed primary status
+	m.primary.mu.RLock()
+	defer m.primary.mu.RUnlock()
+	
+	// Add information about connected replicas
+	replicaCount := len(m.primary.sessions)
+	activeReplicas := 0
+	connectedReplicas := 0
+	
+	// Create a replicas list with detailed information
+	replicas := make([]map[string]interface{}, 0, replicaCount)
+	
+	for id, session := range m.primary.sessions {
+		// Track active and connected counts
+		if session.Connected {
+			connectedReplicas++
+		}
+		if session.Active && session.Connected {
+			activeReplicas++
+		}
+		
+		// Create detailed replica info
+		replicaInfo := map[string]interface{}{
+			"id":                id,
+			"connected":         session.Connected,
+			"active":            session.Active,
+			"last_activity":     session.LastActivity.UnixNano() / int64(time.Millisecond),
+			"last_ack_sequence": session.LastAckSequence,
+			"listener_address":  session.ListenerAddress,
+			"start_sequence":    session.StartSequence,
+			"idle_time_seconds": time.Since(session.LastActivity).Seconds(),
+		}
+		
+		replicas = append(replicas, replicaInfo)
+	}
+	
+	// Get WAL sequence information
+	currentWalSeq := uint64(0)
+	if m.primary.wal != nil {
+		currentWalSeq = m.primary.wal.GetNextSequence() - 1 // Last used sequence
+	}
+	
+	// Add primary-specific information to status
+	status["replica_count"] = replicaCount
+	status["connected_replica_count"] = connectedReplicas
+	status["active_replica_count"] = activeReplicas
+	status["replicas"] = replicas
+	status["current_wal_sequence"] = currentWalSeq
+	status["last_synced_sequence"] = m.primary.lastSyncedSeq
+	status["retention_config"] = map[string]interface{}{
+		"max_age_hours":     m.primary.retentionConfig.MaxAgeHours,
+		"min_sequence_keep": m.primary.retentionConfig.MinSequenceKeep,
+	}
+	status["compression_enabled"] = m.primary.enableCompression
+	status["default_codec"] = m.primary.defaultCodec.String()
+	
+	return status
+}
+
+// getReplicaStatus returns detailed status information for a replica node
+func (m *Manager) getReplicaStatus(status map[string]interface{}) map[string]interface{} {
+	if m.replica == nil {
+		return status
+	}
+
+	// Basic replica information
+	status["primary_address"] = m.config.PrimaryAddr
+	status["last_applied_sequence"] = m.lastApplied
+	
+	// Detailed state information
+	currentState := m.replica.GetStateString()
+	status["state"] = currentState
+	
+	// Get the state tracker for more detailed information
+	stateTracker := m.replica.stateTracker
+	if stateTracker != nil {
+		// Add state duration
+		stateTime := stateTracker.GetStateDuration()
+		status["state_duration_seconds"] = stateTime.Seconds()
+		
+		// Add error information if in error state
+		if currentState == "ERROR" {
+			if err := stateTracker.GetError(); err != nil {
+				status["last_error"] = err.Error()
+			}
+		}
+		
+		// Get state transitions
+		transitions := stateTracker.GetTransitions()
+		if len(transitions) > 0 {
+			stateHistory := make([]map[string]interface{}, 0, len(transitions))
+			
+			for _, t := range transitions {
+				stateHistory = append(stateHistory, map[string]interface{}{
+					"from":      t.From.String(),
+					"to":        t.To.String(),
+					"timestamp": t.Timestamp.UnixNano() / int64(time.Millisecond),
+				})
+			}
+			
+			// Only include the last 10 transitions to keep the response size reasonable
+			if len(stateHistory) > 10 {
+				stateHistory = stateHistory[len(stateHistory)-10:]
+			}
+			
+			status["state_history"] = stateHistory
+		}
+	}
+	
+	// Add connection information
+	if m.replica.conn != nil {
+		status["connection_status"] = "connected"
+	} else {
+		status["connection_status"] = "disconnected"
+	}
+	
+	// Add replication listener information
+	status["replication_listener_address"] = m.config.ListenAddr
+	
+	// Include statistics
+	if m.replica.stats != nil {
+		status["entries_received"] = m.replica.stats.GetEntriesReceived()
+		status["entries_applied"] = m.replica.stats.GetEntriesApplied()
+		status["bytes_received"] = m.replica.stats.GetBytesReceived()
+		status["batch_count"] = m.replica.stats.GetBatchCount()
+		status["errors"] = m.replica.stats.GetErrorCount()
+		
+		// Add last batch time information
+		lastBatchTime := m.replica.stats.GetLastBatchTime()
+		if lastBatchTime > 0 {
+			status["last_batch_time"] = lastBatchTime
+			status["seconds_since_last_batch"] = m.replica.stats.GetLastBatchTimeDuration().Seconds()
+		}
+	}
+	
+	// Add configuration information
+	status["force_read_only"] = m.config.ForceReadOnly
+	
+	return status
+}
+
 // Status returns the current status of the replication service
 func (m *Manager) Status() map[string]interface{} {
 	m.mu.RLock()
@@ -182,18 +331,9 @@ func (m *Manager) Status() map[string]interface{} {
 	// Add mode-specific status
 	switch m.config.Mode {
 	case ReplicationModePrimary:
-		if m.primary != nil {
-			// Add information about connected replicas, etc.
-			status["listen_address"] = m.config.ListenAddr
-			// TODO: Add more detailed primary status
-		}
+		status = m.getPrimaryStatus(status)
 	case ReplicationModeReplica:
-		if m.replica != nil {
-			status["primary_address"] = m.config.PrimaryAddr
-			status["last_applied_sequence"] = m.lastApplied
-			status["state"] = m.replica.GetStateString()
-			// TODO: Add more detailed replica status
-		}
+		status = m.getReplicaStatus(status)
 	}
 
 	return status
