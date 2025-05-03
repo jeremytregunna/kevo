@@ -96,21 +96,6 @@ func (tx *Transaction) Get(key []byte) ([]byte, error) {
 	// Not in the buffer, get from the underlying storage
 	val, err := tx.storage.Get(key)
 
-	// Debug print on error to help diagnose key encoding issues
-	if err != nil {
-		// Log in both ASCII and hex for debugging
-		if len(key) < 100 {
-			strKey := string(key)
-			hexKey := ""
-			for _, b := range key {
-				hexKey += string("0123456789abcdef"[b>>4])
-				hexKey += string("0123456789abcdef"[b&0xF])
-			}
-			// Log both representations
-			println("Transaction key not found:", strKey, "(hex:", hexKey, ")")
-		}
-	}
-
 	return val, err
 }
 
@@ -124,17 +109,6 @@ func (tx *Transaction) Put(key, value []byte) error {
 	// Check if transaction is read-only
 	if tx.readOnly {
 		return ErrReadOnlyTransaction
-	}
-
-	// Debug print key being stored
-	if len(key) < 100 {
-		strKey := string(key)
-		hexKey := ""
-		for _, b := range key {
-			hexKey += string("0123456789abcdef"[b>>4])
-			hexKey += string("0123456789abcdef"[b&0xF])
-		}
-		println("Transaction storing key:", strKey, "(hex:", hexKey, ")")
 	}
 
 	// Buffer the change - it will be applied on commit

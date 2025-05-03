@@ -72,21 +72,6 @@ func (b *Buffer) Get(key []byte) ([]byte, bool) {
 	encodedKey := base64.StdEncoding.EncodeToString(key)
 	op, ok := b.operations[encodedKey]
 
-	// Debug info for key lookup
-	if !ok && len(key) < 100 {
-		strKey := string(key)
-		println("Buffer key miss:", strKey, ", base64:", encodedKey)
-
-		// Print all keys in map for debugging
-		if len(b.operations) < 10 {
-			println("Available keys in buffer:")
-			for k := range b.operations {
-				keyData, _ := base64.StdEncoding.DecodeString(k)
-				println("  -", string(keyData), "(base64:", k, ")")
-			}
-		}
-	}
-
 	if !ok {
 		return nil, false
 	}
