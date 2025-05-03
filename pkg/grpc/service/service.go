@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/KevoDB/kevo/pkg/common/iterator"
+	"github.com/KevoDB/kevo/pkg/common/log"
 	"github.com/KevoDB/kevo/pkg/engine/interfaces"
 	"github.com/KevoDB/kevo/pkg/replication"
 	pb "github.com/KevoDB/kevo/proto/kevo"
@@ -442,7 +443,7 @@ func (s *KevoServiceServer) BeginTransaction(ctx context.Context, req *pb.BeginT
 func (s *KevoServiceServer) CommitTransaction(ctx context.Context, req *pb.CommitTransactionRequest) (*pb.CommitTransactionResponse, error) {
 	tx, exists := s.txRegistry.Get(req.TransactionId)
 	if !exists {
-		fmt.Printf("Commit failed - transaction not found: %s\n", req.TransactionId)
+		log.Warn("Commit failed - transaction not found: %s", req.TransactionId)
 		return nil, fmt.Errorf("transaction not found: %s", req.TransactionId)
 	}
 
@@ -452,11 +453,11 @@ func (s *KevoServiceServer) CommitTransaction(ctx context.Context, req *pb.Commi
 	}()
 
 	if err := tx.Commit(); err != nil {
-		fmt.Printf("Failed to commit transaction %s: %v\n", req.TransactionId, err)
+		log.Error("Failed to commit transaction %s: %v", req.TransactionId, err)
 		return &pb.CommitTransactionResponse{Success: false}, err
 	}
 
-	fmt.Printf("Successfully committed transaction: %s\n", req.TransactionId)
+	log.Debug("Successfully committed transaction: %s", req.TransactionId)
 	return &pb.CommitTransactionResponse{Success: true}, nil
 }
 
@@ -464,7 +465,7 @@ func (s *KevoServiceServer) CommitTransaction(ctx context.Context, req *pb.Commi
 func (s *KevoServiceServer) RollbackTransaction(ctx context.Context, req *pb.RollbackTransactionRequest) (*pb.RollbackTransactionResponse, error) {
 	tx, exists := s.txRegistry.Get(req.TransactionId)
 	if !exists {
-		fmt.Printf("Rollback failed - transaction not found: %s\n", req.TransactionId)
+		log.Warn("Rollback failed - transaction not found: %s", req.TransactionId)
 		return nil, fmt.Errorf("transaction not found: %s", req.TransactionId)
 	}
 
@@ -474,11 +475,11 @@ func (s *KevoServiceServer) RollbackTransaction(ctx context.Context, req *pb.Rol
 	}()
 
 	if err := tx.Rollback(); err != nil {
-		fmt.Printf("Failed to roll back transaction %s: %v\n", req.TransactionId, err)
+		log.Error("Failed to roll back transaction %s: %v", req.TransactionId, err)
 		return &pb.RollbackTransactionResponse{Success: false}, err
 	}
 
-	fmt.Printf("Successfully rolled back transaction: %s\n", req.TransactionId)
+	log.Debug("Successfully rolled back transaction: %s", req.TransactionId)
 	return &pb.RollbackTransactionResponse{Success: true}, nil
 }
 
@@ -486,7 +487,7 @@ func (s *KevoServiceServer) RollbackTransaction(ctx context.Context, req *pb.Rol
 func (s *KevoServiceServer) TxGet(ctx context.Context, req *pb.TxGetRequest) (*pb.TxGetResponse, error) {
 	tx, exists := s.txRegistry.Get(req.TransactionId)
 	if !exists {
-		fmt.Printf("TxGet failed - transaction not found: %s\n", req.TransactionId)
+		log.Warn("TxGet failed - transaction not found: %s", req.TransactionId)
 		return nil, fmt.Errorf("transaction not found: %s", req.TransactionId)
 	}
 
@@ -506,7 +507,7 @@ func (s *KevoServiceServer) TxGet(ctx context.Context, req *pb.TxGetRequest) (*p
 			keyStr = fmt.Sprintf("%x", req.Key)
 		}
 
-		fmt.Printf("Transaction get failed for key %s: %v\n", keyStr, err)
+		log.Debug("Transaction get failed for key %s: %v", keyStr, err)
 
 		// Return a specific "not found" response
 		return &pb.TxGetResponse{

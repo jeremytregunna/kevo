@@ -124,13 +124,11 @@ func NewSkipList() *SkipList {
 }
 
 // randomHeight generates a random height for a new node
-// Uses a geometric distribution with p=0.5 for better balanced trees
+// Each level has a 1/BranchingFactor chance of promotion to the next level
 func (s *SkipList) randomHeight() int {
 	s.rndMtx.Lock()
 	defer s.rndMtx.Unlock()
 
-	// Use a geometric distribution with p=0.5
-	// Each level has 50% chance of promotion to next level
 	height := 1
 	for height < MaxHeight && s.rnd.Int31n(BranchingFactor) == 0 {
 		height++
