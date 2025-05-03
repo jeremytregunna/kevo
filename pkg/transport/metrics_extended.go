@@ -1,7 +1,6 @@
 package transport
 
 import (
-	"context"
 	"sync/atomic"
 	"time"
 )
@@ -14,21 +13,6 @@ type ServerMetrics struct {
 	ServerStopped uint64
 }
 
-// Connection represents a connection to a remote endpoint
-type Connection interface {
-	// Execute executes a function with the underlying connection
-	Execute(func(interface{}) error) error
-
-	// Close closes the connection
-	Close() error
-
-	// Address returns the remote endpoint address
-	Address() string
-
-	// Status returns the connection status
-	Status() ConnectionStatus
-}
-
 // ConnectionStatus represents the status of a connection
 type ConnectionStatus struct {
 	Connected    bool
@@ -36,18 +20,6 @@ type ConnectionStatus struct {
 	ErrorCount   int
 	RequestCount int
 	LatencyAvg   time.Duration
-}
-
-// TransportManager is an interface for managing transport layer operations
-type TransportManager interface {
-	// Start starts the transport manager
-	Start() error
-
-	// Stop stops the transport manager
-	Stop(ctx context.Context) error
-
-	// Connect connects to a remote endpoint
-	Connect(ctx context.Context, address string) (Connection, error)
 }
 
 // ExtendedMetricsCollector extends the basic metrics collector with server metrics
@@ -95,7 +67,7 @@ func (c *ExtendedMetricsCollector) ConnectionFailed() {
 
 // ConnectionClosed records a connection closed event
 func (c *ExtendedMetricsCollector) ConnectionClosed() {
-	// No specific counter for closed connections yet
+	atomic.AddUint64(&c.connections, ^uint64(0)) // Decrement active connections count
 }
 
 // GetExtendedMetrics returns the current extended metrics
