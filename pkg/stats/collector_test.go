@@ -7,7 +7,7 @@ import (
 )
 
 func TestCollector_TrackOperation(t *testing.T) {
-	collector := NewCollector()
+	collector := NewAtomicCollector()
 
 	// Track operations
 	collector.TrackOperation(OpPut)
@@ -37,7 +37,7 @@ func TestCollector_TrackOperation(t *testing.T) {
 }
 
 func TestCollector_TrackOperationWithLatency(t *testing.T) {
-	collector := NewCollector()
+	collector := NewAtomicCollector()
 
 	// Track operations with latency
 	collector.TrackOperationWithLatency(OpGet, 100)
@@ -71,7 +71,7 @@ func TestCollector_TrackOperationWithLatency(t *testing.T) {
 }
 
 func TestCollector_ConcurrentAccess(t *testing.T) {
-	collector := NewCollector()
+	collector := NewAtomicCollector()
 	const numGoroutines = 10
 	const opsPerGoroutine = 1000
 
@@ -126,7 +126,7 @@ func TestCollector_ConcurrentAccess(t *testing.T) {
 }
 
 func TestCollector_GetStatsFiltered(t *testing.T) {
-	collector := NewCollector()
+	collector := NewAtomicCollector()
 
 	// Track different operations
 	collector.TrackOperation(OpPut)
@@ -161,7 +161,7 @@ func TestCollector_GetStatsFiltered(t *testing.T) {
 }
 
 func TestCollector_TrackBytes(t *testing.T) {
-	collector := NewCollector()
+	collector := NewAtomicCollector()
 
 	// Track read and write bytes
 	collector.TrackBytes(true, 1000) // write
@@ -179,7 +179,7 @@ func TestCollector_TrackBytes(t *testing.T) {
 }
 
 func TestCollector_TrackMemTableSize(t *testing.T) {
-	collector := NewCollector()
+	collector := NewAtomicCollector()
 
 	// Track memtable size
 	collector.TrackMemTableSize(2048)
@@ -201,7 +201,7 @@ func TestCollector_TrackMemTableSize(t *testing.T) {
 }
 
 func TestCollector_RecoveryStats(t *testing.T) {
-	collector := NewCollector()
+	collector := NewAtomicCollector()
 
 	// Start recovery
 	startTime := collector.StartRecovery()

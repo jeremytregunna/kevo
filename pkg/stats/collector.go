@@ -72,17 +72,7 @@ type LatencyTracker struct {
 	min   atomic.Uint64 // min in nanoseconds (initialized to max uint64)
 }
 
-// NewCollector creates a new statistics collector
-func NewCollector() *AtomicCollector {
-	return &AtomicCollector{
-		counts:     make(map[OperationType]*atomic.Uint64),
-		lastOpTime: make(map[OperationType]time.Time),
-		errors:     make(map[string]*atomic.Uint64),
-		latencies:  make(map[OperationType]*LatencyTracker),
-	}
-}
-
-// NewAtomicCollector creates a new atomic statistics collector
+// NewAtomicCollector creates a new statistics collector
 // This is the recommended collector implementation for production use
 func NewAtomicCollector() *AtomicCollector {
 	return &AtomicCollector{
