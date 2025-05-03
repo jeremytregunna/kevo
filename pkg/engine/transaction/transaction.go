@@ -10,6 +10,7 @@ import (
 	"github.com/KevoDB/kevo/pkg/common/iterator/composite"
 	"github.com/KevoDB/kevo/pkg/engine/interfaces"
 	engineIterator "github.com/KevoDB/kevo/pkg/engine/iterator"
+	tx "github.com/KevoDB/kevo/pkg/transaction"
 	"github.com/KevoDB/kevo/pkg/wal"
 )
 
@@ -32,7 +33,7 @@ type Transaction struct {
 	readOnly bool
 
 	// Buffer for transaction operations
-	buffer *Buffer
+	buffer *tx.Buffer
 
 	// Transaction state
 	active atomic.Bool
@@ -56,7 +57,7 @@ func NewTransaction(manager interfaces.TransactionManager, storage interfaces.St
 		manager:     manager,
 		storage:     storage,
 		readOnly:    readOnly,
-		buffer:      NewBuffer(),
+		buffer:      tx.NewBuffer(),
 		iterFactory: engineIterator.NewFactory(),
 		startTime:   time.Now(),
 	}

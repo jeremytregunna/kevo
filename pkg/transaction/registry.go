@@ -9,22 +9,28 @@ import (
 
 // Registry manages transaction lifecycle and connections
 type RegistryImpl struct {
-	mu            sync.RWMutex
-	transactions  map[string]Transaction
-	nextID        uint64
-	cleanupTicker *time.Ticker
-	stopCleanup   chan struct{}
-	connectionTxs map[string]map[string]struct{}
-	txTTL         time.Duration
+	mu                 sync.RWMutex
+	transactions       map[string]Transaction
+	nextID             uint64
+	cleanupTicker      *time.Ticker
+	stopCleanup        chan struct{}
+	connectionTxs      map[string]map[string]struct{}
+	txTTL              time.Duration
+	txWarningThreshold int
+	txCriticalThreshold int
+	idleTxTTL          time.Duration
 }
 
-// NewRegistry creates a new transaction registry
+// NewRegistry creates a new transaction registry with default settings
 func NewRegistry() Registry {
 	r := &RegistryImpl{
-		transactions:  make(map[string]Transaction),
-		connectionTxs: make(map[string]map[string]struct{}),
-		stopCleanup:   make(chan struct{}),
-		txTTL:         5 * time.Minute, // Default TTL
+		transactions:       make(map[string]Transaction),
+		connectionTxs:      make(map[string]map[string]struct{}),
+		stopCleanup:        make(chan struct{}),
+		txTTL:              5 * time.Minute,  // Default TTL
+		idleTxTTL:          30 * time.Second, // Idle timeout
+		txWarningThreshold: 75,               // 75% of TTL
+		txCriticalThreshold: 90,              // 90% of TTL
 	}
 
 	// Start periodic cleanup
@@ -35,12 +41,15 @@ func NewRegistry() Registry {
 }
 
 // NewRegistryWithTTL creates a new transaction registry with a specific TTL
-func NewRegistryWithTTL(ttl time.Duration) Registry {
+func NewRegistryWithTTL(ttl time.Duration, idleTimeout time.Duration, warningThreshold, criticalThreshold int) Registry {
 	r := &RegistryImpl{
-		transactions:  make(map[string]Transaction),
-		connectionTxs: make(map[string]map[string]struct{}),
-		stopCleanup:   make(chan struct{}),
-		txTTL:         ttl,
+		transactions:       make(map[string]Transaction),
+		connectionTxs:      make(map[string]map[string]struct{}),
+		stopCleanup:        make(chan struct{}),
+		txTTL:              ttl,
+		idleTxTTL:          idleTimeout,
+		txWarningThreshold: warningThreshold,
+		txCriticalThreshold: criticalThreshold,
 	}
 
 	// Start periodic cleanup
@@ -68,18 +77,71 @@ func (r *RegistryImpl) cleanupStaleTransactions() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// Use the configured TTL (TODO: Add TTL tracking)
-
-	// Find stale transactions
+	now := time.Now()
 	var staleIDs []string
-	for id := range r.transactions {
-		// For simplicity, we don't check the creation time for now
-		// A more sophisticated implementation would track last activity time
-		staleIDs = append(staleIDs, id)
+	var warningIDs []string
+	var criticalIDs []string
+
+	// Find stale, warning, and critical transactions
+	for id, tx := range r.transactions {
+		// Skip if not a TransactionImpl
+		txImpl, ok := tx.(*TransactionImpl)
+		if !ok {
+			continue
+		}
+
+		// Check transaction age
+		txAge := now.Sub(txImpl.creationTime)
+		if txAge > txImpl.ttl {
+			staleIDs = append(staleIDs, id)
+			continue
+		}
+
+		// Check idle time
+		idleTime := now.Sub(txImpl.lastActiveTime)
+		if idleTime > r.idleTxTTL {
+			staleIDs = append(staleIDs, id)
+			continue
+		}
+
+		// Check warning threshold
+		warningThresholdDuration := time.Duration(float64(txImpl.ttl) * (float64(r.txWarningThreshold) / 100.0))
+		if txAge > warningThresholdDuration && txAge <= txImpl.ttl {
+			warningIDs = append(warningIDs, id)
+		}
+
+		// Check critical threshold
+		criticalThresholdDuration := time.Duration(float64(txImpl.ttl) * (float64(r.txCriticalThreshold) / 100.0))
+		if txAge > criticalThresholdDuration && txAge <= txImpl.ttl {
+			criticalIDs = append(criticalIDs, id)
+		}
 	}
 
+	// Log warnings
+	for _, id := range warningIDs {
+		if tx, exists := r.transactions[id]; exists {
+			if txImpl, ok := tx.(*TransactionImpl); ok {
+				fmt.Printf("WARNING: Transaction %s has been running for %s (%.1f%% of TTL)\n",
+					id, now.Sub(txImpl.creationTime).String(), 
+					(float64(now.Sub(txImpl.creationTime)) / float64(txImpl.ttl)) * 100)
+			}
+		}
+	}
+
+	// Log critical warnings
+	for _, id := range criticalIDs {
+		if tx, exists := r.transactions[id]; exists {
+			if txImpl, ok := tx.(*TransactionImpl); ok {
+				fmt.Printf("CRITICAL: Transaction %s has been running for %s (%.1f%% of TTL)\n",
+					id, now.Sub(txImpl.creationTime).String(), 
+					(float64(now.Sub(txImpl.creationTime)) / float64(txImpl.ttl)) * 100)
+			}
+		}
+	}
+
+	// Log stale transactions
 	if len(staleIDs) > 0 {
-		fmt.Printf("Cleaning up %d potentially stale transactions\n", len(staleIDs))
+		fmt.Printf("Cleaning up %d stale transactions\n", len(staleIDs))
 	}
 
 	// Clean up stale transactions

@@ -3,6 +3,7 @@ package transaction
 import (
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/KevoDB/kevo/pkg/stats"
 )
@@ -22,13 +23,32 @@ type Manager struct {
 	txStarted   atomic.Uint64
 	txCompleted atomic.Uint64
 	txAborted   atomic.Uint64
+
+	// TTL settings
+	readOnlyTxTTL  time.Duration
+	readWriteTxTTL time.Duration
+	idleTxTimeout  time.Duration
 }
 
-// NewManager creates a new transaction manager
+// NewManager creates a new transaction manager with default TTL settings
 func NewManager(storage StorageBackend, stats stats.Collector) *Manager {
 	return &Manager{
-		storage: storage,
-		stats:   stats,
+		storage:        storage,
+		stats:          stats,
+		readOnlyTxTTL:  3 * time.Minute,  // 3 minutes
+		readWriteTxTTL: 1 * time.Minute,  // 1 minute
+		idleTxTimeout:  30 * time.Second, // 30 seconds
+	}
+}
+
+// NewManagerWithTTL creates a new transaction manager with custom TTL settings
+func NewManagerWithTTL(storage StorageBackend, stats stats.Collector, readOnlyTTL, readWriteTTL, idleTimeout time.Duration) *Manager {
+	return &Manager{
+		storage:        storage,
+		stats:          stats,
+		readOnlyTxTTL:  readOnlyTTL,
+		readWriteTxTTL: readWriteTTL,
+		idleTxTimeout:  idleTimeout,
 	}
 }
 
@@ -47,12 +67,25 @@ func (m *Manager) BeginTransaction(readOnly bool) (Transaction, error) {
 	}
 
 	// Create a new transaction
+	now := time.Now()
+	
+	// Set TTL based on transaction mode
+	var ttl time.Duration
+	if mode == ReadOnly {
+		ttl = m.readOnlyTxTTL
+	} else {
+		ttl = m.readWriteTxTTL
+	}
+	
 	tx := &TransactionImpl{
-		storage: m.storage,
-		mode:    mode,
-		buffer:  NewBuffer(),
-		rwLock:  &m.txLock,
-		stats:   m,
+		storage:       m.storage,
+		mode:          mode,
+		buffer:        NewBuffer(),
+		rwLock:        &m.txLock,
+		stats:         m,
+		creationTime:  now,
+		lastActiveTime: now,
+		ttl:           ttl,
 	}
 
 	// Set transaction as active

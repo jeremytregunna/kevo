@@ -57,6 +57,14 @@ type Config struct {
 	CompactionInterval     int64   `json:"compaction_interval"`
 	MaxLevelWithTombstones int     `json:"max_level_with_tombstones"` // Levels higher than this discard tombstones
 
+	// Transaction configuration
+	ReadOnlyTxTTL       int64 `json:"read_only_tx_ttl"`        // Time-to-live for read-only transactions in seconds (default: 180s)
+	ReadWriteTxTTL      int64 `json:"read_write_tx_ttl"`       // Time-to-live for read-write transactions in seconds (default: 60s)
+	IdleTxTimeout       int64 `json:"idle_tx_timeout"`         // Time after which an inactive transaction is considered idle in seconds (default: 30s)
+	TxCleanupInterval   int64 `json:"tx_cleanup_interval"`     // Interval for checking transaction TTLs in seconds (default: 30s)
+	TxWarningThreshold  int   `json:"tx_warning_threshold"`    // Percentage of TTL after which to log warnings (default: 75)
+	TxCriticalThreshold int   `json:"tx_critical_threshold"`   // Percentage of TTL after which to log critical warnings (default: 90)
+
 	mu sync.RWMutex
 }
 
@@ -92,6 +100,14 @@ func NewDefaultConfig(dbPath string) *Config {
 		CompactionThreads:      2,
 		CompactionInterval:     30, // 30 seconds
 		MaxLevelWithTombstones: 1,  // Keep tombstones in levels 0 and 1
+
+		// Transaction defaults
+		ReadOnlyTxTTL:       180, // 3 minutes
+		ReadWriteTxTTL:      60,  // 1 minute
+		IdleTxTimeout:       30,  // 30 seconds
+		TxCleanupInterval:   30,  // 30 seconds
+		TxWarningThreshold:  75,  // 75% of TTL
+		TxCriticalThreshold: 90,  // 90% of TTL
 	}
 }
 
@@ -134,6 +150,31 @@ func (c *Config) Validate() error {
 
 	if c.CompactionRatio <= 1.0 {
 		return fmt.Errorf("%w: Compaction ratio must be greater than 1.0", ErrInvalidConfig)
+	}
+
+	// Validate Transaction settings
+	if c.ReadOnlyTxTTL <= 0 {
+		return fmt.Errorf("%w: Read-only transaction TTL must be positive", ErrInvalidConfig)
+	}
+
+	if c.ReadWriteTxTTL <= 0 {
+		return fmt.Errorf("%w: Read-write transaction TTL must be positive", ErrInvalidConfig)
+	}
+
+	if c.IdleTxTimeout <= 0 {
+		return fmt.Errorf("%w: Idle transaction timeout must be positive", ErrInvalidConfig)
+	}
+
+	if c.TxCleanupInterval <= 0 {
+		return fmt.Errorf("%w: Transaction cleanup interval must be positive", ErrInvalidConfig)
+	}
+
+	if c.TxWarningThreshold <= 0 || c.TxWarningThreshold >= 100 {
+		return fmt.Errorf("%w: Transaction warning threshold must be between 1 and 99", ErrInvalidConfig)
+	}
+
+	if c.TxCriticalThreshold <= c.TxWarningThreshold || c.TxCriticalThreshold >= 100 {
+		return fmt.Errorf("%w: Transaction critical threshold must be between warning threshold and 99", ErrInvalidConfig)
 	}
 
 	return nil

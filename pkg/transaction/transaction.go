@@ -3,6 +3,7 @@ package transaction
 import (
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/KevoDB/kevo/pkg/common/iterator"
 	"github.com/KevoDB/kevo/pkg/common/iterator/bounded"
@@ -38,6 +39,11 @@ type TransactionImpl struct {
 
 	// Stats collector
 	stats StatsCollector
+
+	// TTL tracking
+	creationTime   time.Time
+	lastActiveTime time.Time
+	ttl            time.Duration
 }
 
 // StatsCollector defines the interface for collecting transaction statistics
@@ -56,6 +62,9 @@ func (tx *TransactionImpl) Get(key []byte) ([]byte, error) {
 	if !tx.active.Load() {
 		return nil, ErrTransactionClosed
 	}
+	
+	// Update last active time
+	tx.lastActiveTime = time.Now()
 
 	// First check the transaction buffer for any pending changes
 	if val, found := tx.buffer.Get(key); found {
@@ -80,6 +89,9 @@ func (tx *TransactionImpl) Put(key, value []byte) error {
 	if !tx.active.Load() {
 		return ErrTransactionClosed
 	}
+	
+	// Update last active time
+	tx.lastActiveTime = time.Now()
 
 	// Check if transaction is read-only
 	if tx.mode == ReadOnly {
@@ -101,6 +113,9 @@ func (tx *TransactionImpl) Delete(key []byte) error {
 	if !tx.active.Load() {
 		return ErrTransactionClosed
 	}
+	
+	// Update last active time
+	tx.lastActiveTime = time.Now()
 
 	// Check if transaction is read-only
 	if tx.mode == ReadOnly {
@@ -123,6 +138,9 @@ func (tx *TransactionImpl) NewIterator() iterator.Iterator {
 		// Return an empty iterator
 		return &emptyIterator{}
 	}
+	
+	// Update last active time
+	tx.lastActiveTime = time.Now()
 
 	// Get the storage iterator
 	storageIter, err := tx.storage.GetIterator()
@@ -154,6 +172,9 @@ func (tx *TransactionImpl) NewRangeIterator(startKey, endKey []byte) iterator.It
 		// Return an empty iterator
 		return &emptyIterator{}
 	}
+	
+	// Update last active time
+	tx.lastActiveTime = time.Now()
 
 	// Get the storage iterator for the range
 	storageIter, err := tx.storage.GetRangeIterator(startKey, endKey)
