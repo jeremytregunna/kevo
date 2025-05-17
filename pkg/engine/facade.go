@@ -12,8 +12,8 @@ import (
 	"github.com/KevoDB/kevo/pkg/engine/compaction"
 	"github.com/KevoDB/kevo/pkg/engine/interfaces"
 	"github.com/KevoDB/kevo/pkg/engine/storage"
-	"github.com/KevoDB/kevo/pkg/engine/transaction"
 	"github.com/KevoDB/kevo/pkg/stats"
+	"github.com/KevoDB/kevo/pkg/transaction"
 	"github.com/KevoDB/kevo/pkg/wal"
 )
 
@@ -30,7 +30,7 @@ type EngineFacade struct {
 
 	// Core components
 	storage    interfaces.StorageManager
-	txManager  interfaces.TransactionManager
+	txManager  *transaction.Manager
 	compaction interfaces.CompactionManager
 	stats      stats.Collector
 
@@ -346,23 +346,6 @@ func (e *EngineFacade) BeginTransaction(readOnly bool) (interfaces.Transaction, 
 	// Track the operation start
 	e.stats.TrackOperation(stats.OpTxBegin)
 
-	// Check if we have a registered transaction creator for legacy compatibility
-	creator := GetRegisteredTransactionCreator()
-	if creator != nil {
-		// For backward compatibility with existing code that might be using the legacy transaction system
-		// Try to use the registered creator
-		legacyTx, err := CreateTransactionWithCreator(e, readOnly)
-		if err == nil {
-			// Track that we successfully created a transaction
-			e.stats.TrackOperation(stats.OpTxBegin)
-			// We need to adapt between the legacy and new interfaces
-			// Both have the same methods, so we can use type assertion safely if we're
-			// sure the LegacyTransaction also implements interfaces.Transaction
-			return legacyTx.(interfaces.Transaction), nil
-		}
-		// If legacy creator fails, fall back to the new implementation
-	}
-
 	// Track operation latency
 	start := time.Now()
 	tx, err := e.txManager.BeginTransaction(readOnly)
@@ -561,7 +544,7 @@ func (e *EngineFacade) GetStats() map[string]interface{} {
 }
 
 // GetTransactionManager returns the transaction manager
-func (e *EngineFacade) GetTransactionManager() interfaces.TransactionManager {
+func (e *EngineFacade) GetTransactionManager() transaction.TransactionManager {
 	return e.txManager
 }
 
@@ -591,6 +574,11 @@ func (e *EngineFacade) GetCompactionStats() (map[string]interface{}, error) {
 	return map[string]interface{}{
 		"enabled": false,
 	}, nil
+}
+
+// IsReadOnly returns true if the engine is in read-only mode
+func (e *EngineFacade) IsReadOnly() bool {
+	return e.readOnly.Load()
 }
 
 // Close closes the storage engine

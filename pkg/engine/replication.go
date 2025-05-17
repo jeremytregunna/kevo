@@ -36,7 +36,4 @@ func (e *EngineFacade) SetReadOnly(readOnly bool) {
 	log.Info("Engine read-only mode set to: %v", readOnly)
 }
 
-// IsReadOnly returns whether the engine is in read-only mode
-func (e *EngineFacade) IsReadOnly() bool {
-	return e.readOnly.Load()
-}
+// IsReadOnly moved to facade.go

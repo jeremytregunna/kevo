@@ -3,8 +3,11 @@ package transaction
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"sync"
 	"time"
+	
+	"github.com/KevoDB/kevo/pkg/common/log"
 )
 
 // Registry manages transaction lifecycle and connections
@@ -64,7 +67,7 @@ func (r *RegistryImpl) cleanupStaleTx() {
 	for {
 		select {
 		case <-r.cleanupTicker.C:
-			r.cleanupStaleTransactions()
+			r.CleanupStaleTransactions()
 		case <-r.stopCleanup:
 			r.cleanupTicker.Stop()
 			return
@@ -72,8 +75,9 @@ func (r *RegistryImpl) cleanupStaleTx() {
 	}
 }
 
-// cleanupStaleTransactions removes transactions that have been idle for too long
-func (r *RegistryImpl) cleanupStaleTransactions() {
+// CleanupStaleTransactions removes transactions that have been idle for too long
+// This is exported so that the service can call it directly
+func (r *RegistryImpl) CleanupStaleTransactions() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -193,11 +197,37 @@ func (r *RegistryImpl) Begin(ctx context.Context, engine interface{}, readOnly b
 		var tx Transaction
 		var err error
 
-		// Attempt to cast to different engine types
-		if manager, ok := engine.(TransactionManager); ok {
-			tx, err = manager.BeginTransaction(readOnly)
+		// Check for different types of engines
+		if engine != nil {
+			// Just directly try to get a transaction, without complex type checking
+			// The only real requirement is that the engine has a BeginTransaction method
+			// that returns a transaction that matches our Transaction interface
+			
+			// Get the method using reflection to avoid type compatibility issues
+			val := reflect.ValueOf(engine)
+			method := val.MethodByName("BeginTransaction")
+			
+			if !method.IsValid() {
+				err = fmt.Errorf("engine does not have BeginTransaction method")
+				return
+			}
+			
+			// Call the method
+			log.Debug("Calling BeginTransaction via reflection")
+			args := []reflect.Value{reflect.ValueOf(readOnly)}
+			results := method.Call(args)
+			
+			// Check for errors
+			if !results[1].IsNil() {
+				err = results[1].Interface().(error)
+				return
+			}
+			
+			// Get the transaction
+			txVal := results[0].Interface()
+			tx = txVal.(Transaction)
 		} else {
-			err = fmt.Errorf("unsupported engine type for transactions")
+			err = fmt.Errorf("nil engine provided to transaction registry")
 		}
 
 		select {

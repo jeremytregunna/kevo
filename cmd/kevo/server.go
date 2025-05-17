@@ -7,10 +7,10 @@ import (
 	"net"
 	"time"
 
-	"github.com/KevoDB/kevo/pkg/engine/interfaces"
-	"github.com/KevoDB/kevo/pkg/engine/transaction"
+	"github.com/KevoDB/kevo/pkg/engine"
 	grpcservice "github.com/KevoDB/kevo/pkg/grpc/service"
 	"github.com/KevoDB/kevo/pkg/replication"
+	"github.com/KevoDB/kevo/pkg/transaction"
 	pb "github.com/KevoDB/kevo/proto/kevo"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -19,8 +19,8 @@ import (
 
 // Server represents the Kevo server
 type Server struct {
-	eng                interfaces.Engine
-	txRegistry         interfaces.TxRegistry
+	eng                *engine.EngineFacade
+	txRegistry         transaction.Registry
 	listener           net.Listener
 	grpcServer         *grpc.Server
 	kevoService        *grpcservice.KevoServiceServer
@@ -29,10 +29,14 @@ type Server struct {
 }
 
 // NewServer creates a new server instance
-func NewServer(eng interfaces.Engine, config Config) *Server {
+func NewServer(eng *engine.EngineFacade, config Config) *Server {
+	// Create a transaction registry directly from the transaction package
+	// The transaction registry can work with any type that implements BeginTransaction
+	txRegistry := transaction.NewRegistry()
+	
 	return &Server{
 		eng:        eng,
-		txRegistry: transaction.NewRegistry(),
+		txRegistry: txRegistry,
 		config:     config,
 	}
 }

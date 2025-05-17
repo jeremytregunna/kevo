@@ -105,7 +105,7 @@ func main() {
 	config := parseFlags()
 
 	// Open database if path provided
-	var eng *engine.Engine
+	var eng *engine.EngineFacade
 	var err error
 
 	if config.DBPath != "" {
@@ -210,7 +210,7 @@ func parseFlags() Config {
 }
 
 // runServer initializes and runs the Kevo server
-func runServer(eng *engine.Engine, config Config) {
+func runServer(eng *engine.EngineFacade, config Config) {
 	// Set up daemon mode if requested
 	if config.DaemonMode {
 		setupDaemonMode()
@@ -274,7 +274,7 @@ func setupDaemonMode() {
 }
 
 // setupGracefulShutdown configures graceful shutdown on signals
-func setupGracefulShutdown(server *Server, eng *engine.Engine) {
+func setupGracefulShutdown(server *Server, eng *engine.EngineFacade) {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
@@ -299,7 +299,7 @@ func setupGracefulShutdown(server *Server, eng *engine.Engine) {
 }
 
 // runInteractive starts the interactive CLI mode
-func runInteractive(eng *engine.Engine, dbPath string) {
+func runInteractive(eng *engine.EngineFacade, dbPath string) {
 	fmt.Println("Kevo (kevo) version 1.0.2")
 	fmt.Println("Enter .help for usage hints.")
 

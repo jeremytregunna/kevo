@@ -10,23 +10,18 @@ import (
 	"github.com/KevoDB/kevo/pkg/common/log"
 	"github.com/KevoDB/kevo/pkg/engine/interfaces"
 	"github.com/KevoDB/kevo/pkg/replication"
+	"github.com/KevoDB/kevo/pkg/transaction"
 	pb "github.com/KevoDB/kevo/proto/kevo"
 )
 
-// TxRegistry is the interface we need for the transaction registry
-type TxRegistry interface {
-	Begin(ctx context.Context, eng interfaces.Engine, readOnly bool) (string, error)
-	Get(txID string) (interfaces.Transaction, bool)
-	Remove(txID string)
-	CleanupConnection(connectionID string)
-}
+// Using the transaction registry directly
 
 // KevoServiceServer implements the gRPC KevoService interface
 type KevoServiceServer struct {
 	pb.UnimplementedKevoServiceServer
 	engine             interfaces.Engine
-	txRegistry         TxRegistry
-	activeTx           sync.Map // map[string]interfaces.Transaction
+	txRegistry         transaction.Registry
+	activeTx           sync.Map // map[string]transaction.Transaction
 	txMu               sync.Mutex
 	compactionSem      chan struct{}           // Semaphore for limiting concurrent compactions
 	maxKeySize         int                     // Maximum allowed key size
@@ -58,7 +53,7 @@ type ReplicationInfoProvider interface {
 type ReplicaInfo = replication.ReplicationNodeInfo
 
 // NewKevoServiceServer creates a new KevoServiceServer
-func NewKevoServiceServer(engine interfaces.Engine, txRegistry TxRegistry, replicationManager ReplicationInfoProvider) *KevoServiceServer {
+func NewKevoServiceServer(engine interfaces.Engine, txRegistry transaction.Registry, replicationManager ReplicationInfoProvider) *KevoServiceServer {
 	return &KevoServiceServer{
 		engine:             engine,
 		txRegistry:         txRegistry,
@@ -249,8 +244,8 @@ func (s *KevoServiceServer) Scan(req *pb.ScanRequest, stream pb.KevoService_Scan
 // BeginTransaction starts a new transaction
 func (s *KevoServiceServer) BeginTransaction(ctx context.Context, req *pb.BeginTransactionRequest) (*pb.BeginTransactionResponse, error) {
 	// Force clean up of old transactions before creating new ones
-	if cleaner, ok := s.txRegistry.(interface{ removeStaleTransactions() }); ok {
-		cleaner.removeStaleTransactions()
+	if cleaner, ok := s.txRegistry.(*transaction.RegistryImpl); ok {
+		cleaner.CleanupStaleTransactions()
 	}
 
 	txID, err := s.txRegistry.Begin(ctx, s.engine, req.ReadOnly)
