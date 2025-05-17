@@ -357,11 +357,11 @@ func (m *Manager) startPrimary() error {
 	// Configure gRPC server options
 	opts := []grpc.ServerOption{
 		grpc.KeepaliveParams(keepalive.ServerParameters{
-			Time:    10 * time.Second, // Send pings every 10 seconds if there is no activity
-			Timeout: 5 * time.Second,  // Wait 5 seconds for ping ack before assuming connection is dead
+			Time:    30 * time.Second, // Send pings every 30 seconds if there is no activity
+			Timeout: 10 * time.Second,  // Wait 10 seconds for ping ack before assuming connection is dead
 		}),
 		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
-			MinTime:             5 * time.Second, // Minimum time a client should wait before sending a ping
+			MinTime:             10 * time.Second, // Minimum time a client should wait between pings
 			PermitWithoutStream: true,            // Allow pings even when there are no active streams
 		}),
 		grpc.MaxRecvMsgSize(16 * 1024 * 1024), // 16MB max message size

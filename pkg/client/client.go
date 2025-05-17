@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/KevoDB/kevo/pkg/transport"
+	"google.golang.org/grpc/keepalive"
 )
 
 // CompressionType represents a compression algorithm
@@ -46,24 +47,30 @@ type ClientOptions struct {
 	// Performance options
 	Compression    CompressionType // Compression algorithm
 	MaxMessageSize int             // Maximum message size
+	
+	// Keepalive options
+	KeepaliveTime    time.Duration // Time between keepalive pings (0 for default)
+	KeepaliveTimeout time.Duration // Time to wait for ping ack (0 for default)
 }
 
 // DefaultClientOptions returns sensible default client options
 func DefaultClientOptions() ClientOptions {
 	return ClientOptions{
-		Endpoint:       "localhost:50051",
-		ConnectTimeout: time.Second * 5,
-		RequestTimeout: time.Second * 10,
-		TransportType:  "grpc",
-		PoolSize:       5,
-		TLSEnabled:     false,
-		MaxRetries:     3,
-		InitialBackoff: time.Millisecond * 100,
-		MaxBackoff:     time.Second * 2,
-		BackoffFactor:  1.5,
-		RetryJitter:    0.2,
-		Compression:    CompressionNone,
-		MaxMessageSize: 16 * 1024 * 1024, // 16MB
+		Endpoint:         "localhost:50051",
+		ConnectTimeout:   time.Second * 5,
+		RequestTimeout:   time.Second * 10,
+		TransportType:    "grpc",
+		PoolSize:         5,
+		TLSEnabled:       false,
+		MaxRetries:       3,
+		InitialBackoff:   time.Millisecond * 100,
+		MaxBackoff:       time.Second * 2,
+		BackoffFactor:    1.5,
+		RetryJitter:      0.2,
+		Compression:      CompressionNone,
+		MaxMessageSize:   16 * 1024 * 1024, // 16MB
+		KeepaliveTime:    30 * time.Second, // 30 seconds keepalive time
+		KeepaliveTimeout: 10 * time.Second, // 10 seconds timeout
 	}
 }
 
@@ -101,6 +108,16 @@ func NewClient(options ClientOptions) (*Client, error) {
 		return nil, errors.New("endpoint is required")
 	}
 
+	// Configure keepalive parameters if specified
+	var keepaliveParams *keepalive.ClientParameters
+	if options.KeepaliveTime > 0 && options.KeepaliveTimeout > 0 {
+		keepaliveParams = &keepalive.ClientParameters{
+			Time:                options.KeepaliveTime,
+			Timeout:             options.KeepaliveTimeout,
+			PermitWithoutStream: true, // Allow pings even when there are no active streams
+		}
+	}
+	
 	transportOpts := transport.TransportOptions{
 		Timeout:        options.ConnectTimeout,
 		MaxMessageSize: options.MaxMessageSize,
@@ -109,6 +126,7 @@ func NewClient(options ClientOptions) (*Client, error) {
 		CertFile:       options.CertFile,
 		KeyFile:        options.KeyFile,
 		CAFile:         options.CAFile,
+		KeepaliveParams: keepaliveParams,
 		RetryPolicy: transport.RetryPolicy{
 			MaxRetries:     options.MaxRetries,
 			InitialBackoff: options.InitialBackoff,
@@ -216,6 +234,16 @@ func (c *Client) discoverTopology(ctx context.Context) error {
 
 // createTransportOptions converts client options to transport options
 func (c *Client) createTransportOptions(options ClientOptions) transport.TransportOptions {
+	// Configure keepalive parameters if specified
+	var keepaliveParams *keepalive.ClientParameters
+	if options.KeepaliveTime > 0 && options.KeepaliveTimeout > 0 {
+		keepaliveParams = &keepalive.ClientParameters{
+			Time:                options.KeepaliveTime,
+			Timeout:             options.KeepaliveTimeout,
+			PermitWithoutStream: true, // Allow pings even when there are no active streams
+		}
+	}
+	
 	return transport.TransportOptions{
 		Timeout:        options.ConnectTimeout,
 		MaxMessageSize: options.MaxMessageSize,
@@ -224,6 +252,7 @@ func (c *Client) createTransportOptions(options ClientOptions) transport.Transpo
 		CertFile:       options.CertFile,
 		KeyFile:        options.KeyFile,
 		CAFile:         options.CAFile,
+		KeepaliveParams: keepaliveParams,
 		RetryPolicy: transport.RetryPolicy{
 			MaxRetries:     options.MaxRetries,
 			InitialBackoff: options.InitialBackoff,

@@ -3,6 +3,8 @@ package transport
 import (
 	"context"
 	"time"
+	
+	"google.golang.org/grpc/keepalive"
 )
 
 // CompressionType defines the compression algorithm used
@@ -34,6 +36,7 @@ type TransportOptions struct {
 	CertFile       string
 	KeyFile        string
 	CAFile         string
+	KeepaliveParams *keepalive.ClientParameters // Optional keepalive parameters for gRPC clients
 }
 
 // TransportStatus contains information about the current transport state

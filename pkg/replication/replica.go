@@ -15,6 +15,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
@@ -818,6 +819,11 @@ func (c *DefaultPrimaryConnector) Connect(r *Replica) error {
 	opts := []grpc.DialOption{
 		grpc.WithBlock(),
 		grpc.WithTimeout(r.config.Connection.DialTimeout),
+		grpc.WithKeepaliveParams(keepalive.ClientParameters{
+			Time:                30 * time.Second, // Send pings every 30 seconds if there is no activity
+			Timeout:             10 * time.Second, // Wait 10 seconds for ping ack before assuming connection is dead
+			PermitWithoutStream: true,             // Allow pings even when there are no active streams
+		}),
 	}
 
 	// Set up transport security

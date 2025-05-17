@@ -80,13 +80,13 @@ func (s *Server) Start() error {
 		MaxConnectionIdle:     60 * time.Second,
 		MaxConnectionAge:      5 * time.Minute,
 		MaxConnectionAgeGrace: 5 * time.Second,
-		Time:                  15 * time.Second,
-		Timeout:               5 * time.Second,
+		Time:                  30 * time.Second, // Send pings every 30 seconds if there is no activity
+		Timeout:               10 * time.Second, // Wait 10 seconds for ping ack before assuming connection is dead
 	}
 
 	kaPolicy := keepalive.EnforcementPolicy{
-		MinTime:             5 * time.Second,
-		PermitWithoutStream: true,
+		MinTime:             10 * time.Second, // Minimum time a client should wait between pings
+		PermitWithoutStream: true,            // Allow pings even when there are no active streams
 	}
 
 	serverOpts = append(serverOpts,
