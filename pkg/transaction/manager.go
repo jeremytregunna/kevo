@@ -68,7 +68,7 @@ func (m *Manager) BeginTransaction(readOnly bool) (Transaction, error) {
 
 	// Create a new transaction
 	now := time.Now()
-	
+
 	// Set TTL based on transaction mode
 	var ttl time.Duration
 	if mode == ReadOnly {
@@ -76,16 +76,16 @@ func (m *Manager) BeginTransaction(readOnly bool) (Transaction, error) {
 	} else {
 		ttl = m.readWriteTxTTL
 	}
-	
+
 	tx := &TransactionImpl{
-		storage:       m.storage,
-		mode:          mode,
-		buffer:        NewBuffer(),
-		rwLock:        &m.txLock,
-		stats:         m,
-		creationTime:  now,
+		storage:        m.storage,
+		mode:           mode,
+		buffer:         NewBuffer(),
+		rwLock:         &m.txLock,
+		stats:          m,
+		creationTime:   now,
 		lastActiveTime: now,
-		ttl:           ttl,
+		ttl:            ttl,
 	}
 
 	// Set transaction as active

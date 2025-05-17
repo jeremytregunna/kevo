@@ -637,32 +637,59 @@ func (m *Manager) flushMemTable(mem *memtable.MemTable) error {
 	count := 0
 	var bytesWritten uint64
 
-	// Since memtable's skiplist returns keys in sorted order,
-	// but possibly with duplicates (newer versions of same key first),
-	// we need to track all processed keys (including tombstones)
-	processedKeys := make(map[string]struct{})
+	// Structure to store information about keys as we iterate
+	type keyEntry struct {
+		key    []byte
+		value  []byte
+		seqNum uint64
+	}
 
+	// Collect keys in sorted order while tracking the newest version of each key
+	var entries []keyEntry
+	var previousKey []byte
+
+	// First iterate through memtable (already in sorted order)
 	for iter.SeekToFirst(); iter.Valid(); iter.Next() {
-		key := iter.Key()
-		keyStr := string(key) // Use as map key
+		currentKey := iter.Key()
+		currentValue := iter.Value()
+		currentSeqNum := iter.SequenceNumber()
 
-		// Skip keys we've already processed (including tombstones)
-		if _, seen := processedKeys[keyStr]; seen {
+		// If this is a tombstone (deletion marker), we skip it
+		if currentValue == nil {
 			continue
 		}
 
-		// Mark this key as processed regardless of whether it's a value or tombstone
-		processedKeys[keyStr] = struct{}{}
-
-		// Only write non-tombstone entries to the SSTable
-		if value := iter.Value(); value != nil {
-			bytesWritten += uint64(len(key) + len(value))
-			if err := writer.Add(key, value); err != nil {
-				writer.Abort()
-				return fmt.Errorf("failed to add entry to SSTable: %w", err)
+		// If this is the first key or a different key than the previous one
+		if previousKey == nil || !bytes.Equal(currentKey, previousKey) {
+			// Add this as a new entry
+			entries = append(entries, keyEntry{
+				key:    append([]byte(nil), currentKey...),
+				value:  append([]byte(nil), currentValue...),
+				seqNum: currentSeqNum,
+			})
+			previousKey = currentKey
+		} else {
+			// Same key as previous, check sequence number
+			lastIndex := len(entries) - 1
+			if currentSeqNum > entries[lastIndex].seqNum {
+				// This is a newer version of the same key, replace the previous entry
+				entries[lastIndex] = keyEntry{
+					key:    append([]byte(nil), currentKey...),
+					value:  append([]byte(nil), currentValue...),
+					seqNum: currentSeqNum,
+				}
 			}
-			count++
 		}
+	}
+
+	// Now write all collected entries to the SSTable
+	for _, entry := range entries {
+		bytesWritten += uint64(len(entry.key) + len(entry.value))
+		if err := writer.AddWithSequence(entry.key, entry.value, entry.seqNum); err != nil {
+			writer.Abort()
+			return fmt.Errorf("failed to add entry with sequence number to SSTable: %w", err)
+		}
+		count++
 	}
 
 	if count == 0 {
@@ -856,4 +883,21 @@ func (m *Manager) recoverFromWAL() error {
 	m.stats.FinishRecovery(startTime, filesRecovered, entriesRecovered, corruptedEntries)
 
 	return nil
+}
+
+// RetryOnWALRotating retries operations with ErrWALRotating
+func (m *Manager) RetryOnWALRotating(operation func() error) error {
+	maxRetries := 3
+	for attempts := 0; attempts < maxRetries; attempts++ {
+		err := operation()
+		if err != wal.ErrWALRotating {
+			// Either success or a different error
+			return err
+		}
+
+		// Wait a bit before retrying to allow the rotation to complete
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	return fmt.Errorf("operation failed after %d retries: %w", maxRetries, wal.ErrWALRotating)
 }

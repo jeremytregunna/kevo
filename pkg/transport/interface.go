@@ -3,7 +3,7 @@ package transport
 import (
 	"context"
 	"time"
-	
+
 	"google.golang.org/grpc/keepalive"
 )
 
@@ -28,14 +28,14 @@ type RetryPolicy struct {
 
 // TransportOptions contains common configuration across all transport types
 type TransportOptions struct {
-	Timeout        time.Duration
-	RetryPolicy    RetryPolicy
-	Compression    CompressionType
-	MaxMessageSize int
-	TLSEnabled     bool
-	CertFile       string
-	KeyFile        string
-	CAFile         string
+	Timeout         time.Duration
+	RetryPolicy     RetryPolicy
+	Compression     CompressionType
+	MaxMessageSize  int
+	TLSEnabled      bool
+	CertFile        string
+	KeyFile         string
+	CAFile          string
 	KeepaliveParams *keepalive.ClientParameters // Optional keepalive parameters for gRPC clients
 }
 

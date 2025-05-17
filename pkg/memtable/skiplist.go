@@ -317,3 +317,11 @@ func (it *Iterator) Entry() *entry {
 	}
 	return it.current.entry
 }
+
+// SequenceNumber returns the sequence number of the current entry
+func (it *Iterator) SequenceNumber() uint64 {
+	if !it.Valid() {
+		return 0
+	}
+	return it.current.entry.seqNum
+}

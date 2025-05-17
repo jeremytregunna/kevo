@@ -23,12 +23,11 @@ func DefaultRetryConfig() *RetryConfig {
 	}
 }
 
-// RetryOnWALRotating retries the operation if it fails with ErrWALRotating
-func (m *Manager) RetryOnWALRotating(operation func() error) error {
-	config := DefaultRetryConfig()
-	return m.RetryWithConfig(operation, config, isWALRotating)
-}
-
+// Commented out due to duplicate declaration with the one in manager.go
+// func (m *Manager) RetryOnWALRotating(operation func() error) error {
+// 	config := DefaultRetryConfig()
+// 	return m.RetryWithConfig(operation, config, isWALRotating)
+// }
 
 // RetryWithConfig retries an operation with the given configuration
 func (m *Manager) RetryWithConfig(operation func() error, config *RetryConfig, isRetryable func(error) bool) error {

@@ -58,12 +58,12 @@ type Config struct {
 	MaxLevelWithTombstones int     `json:"max_level_with_tombstones"` // Levels higher than this discard tombstones
 
 	// Transaction configuration
-	ReadOnlyTxTTL       int64 `json:"read_only_tx_ttl"`        // Time-to-live for read-only transactions in seconds (default: 180s)
-	ReadWriteTxTTL      int64 `json:"read_write_tx_ttl"`       // Time-to-live for read-write transactions in seconds (default: 60s)
-	IdleTxTimeout       int64 `json:"idle_tx_timeout"`         // Time after which an inactive transaction is considered idle in seconds (default: 30s)
-	TxCleanupInterval   int64 `json:"tx_cleanup_interval"`     // Interval for checking transaction TTLs in seconds (default: 30s)
-	TxWarningThreshold  int   `json:"tx_warning_threshold"`    // Percentage of TTL after which to log warnings (default: 75)
-	TxCriticalThreshold int   `json:"tx_critical_threshold"`   // Percentage of TTL after which to log critical warnings (default: 90)
+	ReadOnlyTxTTL       int64 `json:"read_only_tx_ttl"`      // Time-to-live for read-only transactions in seconds (default: 180s)
+	ReadWriteTxTTL      int64 `json:"read_write_tx_ttl"`     // Time-to-live for read-write transactions in seconds (default: 60s)
+	IdleTxTimeout       int64 `json:"idle_tx_timeout"`       // Time after which an inactive transaction is considered idle in seconds (default: 30s)
+	TxCleanupInterval   int64 `json:"tx_cleanup_interval"`   // Interval for checking transaction TTLs in seconds (default: 30s)
+	TxWarningThreshold  int   `json:"tx_warning_threshold"`  // Percentage of TTL after which to log warnings (default: 75)
+	TxCriticalThreshold int   `json:"tx_critical_threshold"` // Percentage of TTL after which to log critical warnings (default: 90)
 
 	mu sync.RWMutex
 }

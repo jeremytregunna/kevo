@@ -62,7 +62,7 @@ func (tx *TransactionImpl) Get(key []byte) ([]byte, error) {
 	if !tx.active.Load() {
 		return nil, ErrTransactionClosed
 	}
-	
+
 	// Update last active time
 	tx.lastActiveTime = time.Now()
 
@@ -89,7 +89,7 @@ func (tx *TransactionImpl) Put(key, value []byte) error {
 	if !tx.active.Load() {
 		return ErrTransactionClosed
 	}
-	
+
 	// Update last active time
 	tx.lastActiveTime = time.Now()
 
@@ -113,7 +113,7 @@ func (tx *TransactionImpl) Delete(key []byte) error {
 	if !tx.active.Load() {
 		return ErrTransactionClosed
 	}
-	
+
 	// Update last active time
 	tx.lastActiveTime = time.Now()
 
@@ -138,7 +138,7 @@ func (tx *TransactionImpl) NewIterator() iterator.Iterator {
 		// Return an empty iterator
 		return &emptyIterator{}
 	}
-	
+
 	// Update last active time
 	tx.lastActiveTime = time.Now()
 
@@ -172,7 +172,7 @@ func (tx *TransactionImpl) NewRangeIterator(startKey, endKey []byte) iterator.It
 		// Return an empty iterator
 		return &emptyIterator{}
 	}
-	
+
 	// Update last active time
 	tx.lastActiveTime = time.Now()
 
