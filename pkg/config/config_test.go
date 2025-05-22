@@ -30,6 +30,15 @@ func TestNewDefaultConfig(t *testing.T) {
 	if cfg.MemTableSize != 32*1024*1024 {
 		t.Errorf("expected memtable size %d, got %d", 32*1024*1024, cfg.MemTableSize)
 	}
+
+	// Test telemetry defaults
+	if cfg.Telemetry.ServiceName != "kevo" {
+		t.Errorf("expected telemetry service name 'kevo', got '%s'", cfg.Telemetry.ServiceName)
+	}
+
+	if !cfg.Telemetry.Enabled {
+		t.Error("expected telemetry to be enabled by default")
+	}
 }
 
 func TestConfigValidate(t *testing.T) {
@@ -163,5 +172,49 @@ func TestConfigUpdate(t *testing.T) {
 
 	if cfg.MaxMemTables != 8 {
 		t.Errorf("expected max memtables %d, got %d", 8, cfg.MaxMemTables)
+	}
+}
+
+func TestLoadTelemetryFromEnv(t *testing.T) {
+	// Save original environment
+	originalServiceName := os.Getenv("KEVO_TELEMETRY_SERVICE_NAME")
+	originalEnabled := os.Getenv("KEVO_TELEMETRY_ENABLED")
+
+	defer func() {
+		os.Setenv("KEVO_TELEMETRY_SERVICE_NAME", originalServiceName)
+		os.Setenv("KEVO_TELEMETRY_ENABLED", originalEnabled)
+	}()
+
+	// Set test environment variables
+	os.Setenv("KEVO_TELEMETRY_SERVICE_NAME", "test-service")
+	os.Setenv("KEVO_TELEMETRY_ENABLED", "false")
+
+	cfg := NewDefaultConfig("/tmp/test")
+	cfg.LoadTelemetryFromEnv()
+
+	if cfg.Telemetry.ServiceName != "test-service" {
+		t.Errorf("expected service name 'test-service', got '%s'", cfg.Telemetry.ServiceName)
+	}
+
+	if cfg.Telemetry.Enabled {
+		t.Error("expected telemetry to be disabled")
+	}
+}
+
+func TestConfigTelemetryValidation(t *testing.T) {
+	cfg := NewDefaultConfig("/tmp/test")
+
+	// Test with invalid telemetry config
+	cfg.Telemetry.ServiceName = ""
+	err := cfg.Validate()
+	if err == nil {
+		t.Error("expected validation error for empty telemetry service name")
+	}
+
+	// Test with valid telemetry config
+	cfg.Telemetry.ServiceName = "valid-service"
+	err = cfg.Validate()
+	if err != nil {
+		t.Errorf("expected valid config, got error: %v", err)
 	}
 }

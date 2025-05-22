@@ -13,6 +13,7 @@ import (
 	"github.com/KevoDB/kevo/pkg/engine/interfaces"
 	"github.com/KevoDB/kevo/pkg/engine/storage"
 	"github.com/KevoDB/kevo/pkg/stats"
+	"github.com/KevoDB/kevo/pkg/telemetry"
 	"github.com/KevoDB/kevo/pkg/transaction"
 	"github.com/KevoDB/kevo/pkg/wal"
 )
@@ -33,6 +34,7 @@ type EngineFacade struct {
 	txManager  *transaction.Manager
 	compaction interfaces.CompactionManager
 	stats      stats.Collector
+	telemetry  telemetry.Telemetry
 
 	// State
 	closed   atomic.Bool
@@ -70,6 +72,15 @@ func NewEngineFacade(dataDir string) (*EngineFacade, error) {
 		}
 	}
 
+	// Load telemetry configuration from environment variables (overrides config file)
+	cfg.LoadTelemetryFromEnv()
+
+	// Create telemetry instance from configuration
+	telemetryInstance, err := telemetry.New(cfg.Telemetry)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create telemetry: %w", err)
+	}
+
 	// Create the statistics collector
 	statsCollector := stats.NewAtomicCollector()
 
@@ -98,6 +109,7 @@ func NewEngineFacade(dataDir string) (*EngineFacade, error) {
 		txManager:  txManager,
 		compaction: compactionManager,
 		stats:      statsCollector,
+		telemetry:  telemetryInstance,
 	}
 
 	// Start the compaction manager
@@ -612,6 +624,16 @@ func (e *EngineFacade) Close() error {
 				err = storageErr
 			}
 			e.stats.TrackError("close_storage_error")
+		}
+	}
+
+	// 3. Shutdown telemetry
+	if e.telemetry != nil {
+		if telErr := e.telemetry.Shutdown(nil); telErr != nil {
+			if err == nil {
+				err = telErr
+			}
+			e.stats.TrackError("close_telemetry_error")
 		}
 	}
 
