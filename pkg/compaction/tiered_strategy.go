@@ -2,6 +2,7 @@ package compaction
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -16,6 +17,9 @@ type TieredCompactionStrategy struct {
 	// Executor for compacting files
 	executor CompactionExecutor
 
+	// Telemetry metrics for compaction operations
+	metrics CompactionMetrics
+
 	// Next file sequence number
 	nextFileSeq uint64
 }
@@ -25,22 +29,37 @@ func NewTieredCompactionStrategy(cfg *config.Config, sstableDir string, executor
 	return &TieredCompactionStrategy{
 		BaseCompactionStrategy: NewBaseCompactionStrategy(cfg, sstableDir),
 		executor:               executor,
+		metrics:                NewNoopCompactionMetrics(), // Default to no-op, will be replaced by SetTelemetry
 		nextFileSeq:            1,
+	}
+}
+
+// SetTelemetry allows post-creation telemetry injection from coordinator
+func (s *TieredCompactionStrategy) SetTelemetry(tel interface{}) {
+	if compactionMetrics, ok := tel.(CompactionMetrics); ok {
+		s.metrics = compactionMetrics
 	}
 }
 
 // SelectCompaction selects files for tiered compaction
 func (s *TieredCompactionStrategy) SelectCompaction() (*CompactionTask, error) {
+	ctx := context.Background()
+
+	// Calculate level sizes for strategy decision recording
+	levelSizes := make(map[int]int64)
+
 	// Determine the maximum level
 	maxLevel := 0
 	for level := range s.levels {
 		if level > maxLevel {
 			maxLevel = level
 		}
+		levelSizes[level] = s.GetLevelSize(level)
 	}
 
 	// Check L0 first (special case due to potential overlaps)
 	if len(s.levels[0]) >= s.cfg.MaxMemTables {
+		s.recordStrategyDecisionMetrics(ctx, "tiered", "l0_file_count", "high", levelSizes)
 		return s.selectL0Compaction()
 	}
 
@@ -57,17 +76,24 @@ func (s *TieredCompactionStrategy) SelectCompaction() (*CompactionTask, error) {
 
 		// If next level is empty, promote a file
 		if nextLevelSize == 0 && len(s.levels[level]) > 0 {
+			s.recordStrategyDecisionMetrics(ctx, "tiered", "level_promotion", "medium", levelSizes)
 			return s.selectPromotionCompaction(level)
 		}
 
 		// Check size ratio
 		sizeRatio := float64(thisLevelSize) / float64(nextLevelSize)
 		if sizeRatio >= s.cfg.CompactionRatio {
+			urgency := "medium"
+			if sizeRatio >= s.cfg.CompactionRatio*2 {
+				urgency = "high"
+			}
+			s.recordStrategyDecisionMetrics(ctx, "tiered", "size_ratio", urgency, levelSizes)
 			return s.selectOverlappingCompaction(level)
 		}
 	}
 
-	// No compaction needed
+	// No compaction needed - record level stats
+	s.recordLevelStatsMetrics(ctx, levelSizes)
 	return nil, nil
 }
 
@@ -265,4 +291,41 @@ func (s *TieredCompactionStrategy) CompactRange(minKey, maxKey []byte) error {
 	}
 
 	return nil
+}
+
+// Helper methods for telemetry recording with panic protection
+
+// recordStrategyDecisionMetrics records telemetry for strategy decisions
+func (s *TieredCompactionStrategy) recordStrategyDecisionMetrics(ctx context.Context, strategy string, trigger string, urgency string, levelSizes map[int]int64) {
+	if s.metrics == nil {
+		return
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			// Log telemetry panic but don't fail the operation
+		}
+	}()
+	s.metrics.RecordStrategyDecision(ctx, strategy, trigger, urgency, levelSizes)
+}
+
+// recordLevelStatsMetrics records telemetry for level statistics
+func (s *TieredCompactionStrategy) recordLevelStatsMetrics(ctx context.Context, levelSizes map[int]int64) {
+	if s.metrics == nil {
+		return
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			// Log telemetry panic but don't fail the operation
+		}
+	}()
+
+	// Record stats for each level
+	for level, size := range levelSizes {
+		fileCount := int64(len(s.levels[level]))
+		keyCount := int64(0) // TODO: Could calculate from SSTable metadata
+
+		if fileCount > 0 {
+			s.metrics.RecordLevelStats(ctx, level, fileCount, size, keyCount)
+		}
+	}
 }
