@@ -15,7 +15,7 @@ type MemTable struct {
 	nextSeqNum   uint64
 	creationTime time.Time
 	immutable    atomic.Bool
-	size         int64
+	entryCount   int64 // atomic access only
 	mu           sync.RWMutex
 }
 
@@ -40,6 +40,9 @@ func (m *MemTable) Put(key, value []byte, seqNum uint64) {
 	e := newEntry(key, value, TypeValue, seqNum)
 	m.skipList.Insert(e)
 
+	// Update entry count atomically
+	atomic.AddInt64(&m.entryCount, 1)
+
 	// Update maximum sequence number
 	if seqNum > m.nextSeqNum {
 		m.nextSeqNum = seqNum + 1
@@ -58,6 +61,9 @@ func (m *MemTable) Delete(key []byte, seqNum uint64) {
 
 	e := newEntry(key, nil, TypeDeletion, seqNum)
 	m.skipList.Insert(e)
+
+	// Update entry count atomically
+	atomic.AddInt64(&m.entryCount, 1)
 
 	// Update maximum sequence number
 	if seqNum > m.nextSeqNum {
@@ -120,6 +126,7 @@ func (m *MemTable) Contains(key []byte) bool {
 
 // ApproximateSize returns the approximate size of the MemTable in bytes
 func (m *MemTable) ApproximateSize() int64 {
+	// Use the SkipList's built-in size tracking
 	return m.skipList.ApproximateSize()
 }
 
@@ -191,4 +198,17 @@ func (m *MemTable) ProcessWALEntry(entry *wal.Entry) error {
 		}
 	}
 	return nil
+}
+
+// EntryCount returns the number of entries in the MemTable
+func (m *MemTable) EntryCount() int64 {
+	return atomic.LoadInt64(&m.entryCount)
+}
+
+// GetSizeDelta calculates the size delta for a Put/Delete operation
+func (m *MemTable) GetSizeDelta(key, value []byte, isDelete bool) int64 {
+	if isDelete {
+		return int64(len(key) + 16) // key + metadata overhead (matches entry.size())
+	}
+	return int64(len(key) + len(value) + 16) // key + value + metadata overhead (matches entry.size())
 }
