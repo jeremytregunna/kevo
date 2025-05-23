@@ -115,11 +115,12 @@ const (
 	StatusTimeout = "timeout"
 
 	// Component names
-	ComponentWAL        = "wal"
-	ComponentMemTable   = "memtable"
-	ComponentSSTable    = "sstable"
-	ComponentCompaction = "compaction"
-	ComponentStorage    = "storage"
-	ComponentEngine     = "engine"
-	ComponentIterator   = "iterator"
+	ComponentWAL         = "wal"
+	ComponentMemTable    = "memtable"
+	ComponentSSTable     = "sstable"
+	ComponentCompaction  = "compaction"
+	ComponentStorage     = "storage"
+	ComponentEngine      = "engine"
+	ComponentIterator    = "iterator"
+	ComponentTransaction = "transaction"
 )

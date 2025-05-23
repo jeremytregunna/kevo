@@ -1,6 +1,7 @@
 package transaction
 
 import (
+	"context"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -40,6 +41,9 @@ type TransactionImpl struct {
 	// Stats collector
 	stats StatsCollector
 
+	// Telemetry metrics for transaction operations
+	metrics TransactionMetrics
+
 	// TTL tracking
 	creationTime   time.Time
 	lastActiveTime time.Time
@@ -54,12 +58,16 @@ type StatsCollector interface {
 
 // Get retrieves a value for the given key
 func (tx *TransactionImpl) Get(key []byte) ([]byte, error) {
+	start := time.Now()
+	ctx := context.Background()
+
 	// Use transaction lock for consistent view
 	tx.mu.Lock()
 	defer tx.mu.Unlock()
 
 	// Check if transaction is still active
 	if !tx.active.Load() {
+		tx.recordOperationMetrics(ctx, "get", start, false)
 		return nil, ErrTransactionClosed
 	}
 
@@ -70,23 +78,31 @@ func (tx *TransactionImpl) Get(key []byte) ([]byte, error) {
 	if val, found := tx.buffer.Get(key); found {
 		if val == nil {
 			// This is a deletion marker
+			tx.recordOperationMetrics(ctx, "get", start, false)
 			return nil, ErrKeyNotFound
 		}
+		tx.recordOperationMetrics(ctx, "get", start, true)
 		return val, nil
 	}
 
 	// Not in the buffer, get from the underlying storage
-	return tx.storage.Get(key)
+	result, err := tx.storage.Get(key)
+	tx.recordOperationMetrics(ctx, "get", start, err == nil)
+	return result, err
 }
 
 // Put adds or updates a key-value pair
 func (tx *TransactionImpl) Put(key, value []byte) error {
+	start := time.Now()
+	ctx := context.Background()
+
 	// Use transaction lock for consistent view
 	tx.mu.Lock()
 	defer tx.mu.Unlock()
 
 	// Check if transaction is still active
 	if !tx.active.Load() {
+		tx.recordOperationMetrics(ctx, "put", start, false)
 		return ErrTransactionClosed
 	}
 
@@ -95,22 +111,28 @@ func (tx *TransactionImpl) Put(key, value []byte) error {
 
 	// Check if transaction is read-only
 	if tx.mode == ReadOnly {
+		tx.recordOperationMetrics(ctx, "put", start, false)
 		return ErrReadOnlyTransaction
 	}
 
 	// Buffer the change - it will be applied on commit
 	tx.buffer.Put(key, value)
+	tx.recordOperationMetrics(ctx, "put", start, true)
 	return nil
 }
 
 // Delete removes a key
 func (tx *TransactionImpl) Delete(key []byte) error {
+	start := time.Now()
+	ctx := context.Background()
+
 	// Use transaction lock for consistent view
 	tx.mu.Lock()
 	defer tx.mu.Unlock()
 
 	// Check if transaction is still active
 	if !tx.active.Load() {
+		tx.recordOperationMetrics(ctx, "delete", start, false)
 		return ErrTransactionClosed
 	}
 
@@ -119,11 +141,13 @@ func (tx *TransactionImpl) Delete(key []byte) error {
 
 	// Check if transaction is read-only
 	if tx.mode == ReadOnly {
+		tx.recordOperationMetrics(ctx, "delete", start, false)
 		return ErrReadOnlyTransaction
 	}
 
 	// Buffer the deletion - it will be applied on commit
 	tx.buffer.Delete(key)
+	tx.recordOperationMetrics(ctx, "delete", start, true)
 	return nil
 }
 
@@ -211,12 +235,16 @@ func (it *emptyIterator) IsTombstone() bool { return false }
 
 // Commit makes all changes permanent
 func (tx *TransactionImpl) Commit() error {
+	start := time.Now()
+	ctx := context.Background()
+
 	// Use transaction lock for consistent view
 	tx.mu.Lock()
 	defer tx.mu.Unlock()
 
 	// Only proceed if the transaction is still active
 	if !tx.active.CompareAndSwap(true, false) {
+		tx.recordTransactionDurationMetrics(ctx, start, "rollback", 0, false)
 		return ErrTransactionClosed
 	}
 
@@ -231,6 +259,8 @@ func (tx *TransactionImpl) Commit() error {
 			tx.stats.IncrementTxCompleted()
 		}
 
+		// Record transaction duration telemetry
+		tx.recordTransactionDurationMetrics(ctx, start, "commit", 0, true)
 		return nil
 	}
 
@@ -272,19 +302,33 @@ func (tx *TransactionImpl) Commit() error {
 		tx.stats.IncrementTxCompleted()
 	}
 
+	// Record transaction duration telemetry
+	operationCount := int64(tx.buffer.Size())
+	outcome := "commit"
+	if err != nil {
+		outcome = "rollback" // Failed commit becomes rollback
+	}
+	tx.recordTransactionDurationMetrics(ctx, start, outcome, operationCount, false)
+
 	return err
 }
 
 // Rollback discards all transaction changes
 func (tx *TransactionImpl) Rollback() error {
+	start := time.Now()
+	ctx := context.Background()
+
 	// Use transaction lock for consistent view
 	tx.mu.Lock()
 	defer tx.mu.Unlock()
 
 	// Only proceed if the transaction is still active
 	if !tx.active.CompareAndSwap(true, false) {
+		tx.recordTransactionDurationMetrics(ctx, start, "rollback", 0, false)
 		return ErrTransactionClosed
 	}
+
+	operationCount := int64(tx.buffer.Size())
 
 	// Clear the buffer
 	tx.buffer.Clear()
@@ -300,6 +344,9 @@ func (tx *TransactionImpl) Rollback() error {
 	if tx.stats != nil {
 		tx.stats.IncrementTxAborted()
 	}
+
+	// Record transaction duration telemetry
+	tx.recordTransactionDurationMetrics(ctx, start, "rollback", operationCount, tx.mode == ReadOnly)
 
 	return nil
 }
@@ -320,5 +367,42 @@ func (tx *TransactionImpl) releaseReadLock() {
 func (tx *TransactionImpl) releaseWriteLock() {
 	if tx.hasWriteLock.CompareAndSwap(true, false) {
 		tx.rwLock.Unlock()
+	}
+}
+
+// Helper methods for telemetry recording with panic protection
+
+// recordOperationMetrics records telemetry for individual transaction operations
+func (tx *TransactionImpl) recordOperationMetrics(ctx context.Context, operation string, start time.Time, success bool) {
+	if tx.metrics == nil {
+		return
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			// Log telemetry panic but don't fail the operation
+		}
+	}()
+	tx.metrics.RecordOperation(ctx, operation, time.Since(start), success)
+}
+
+// recordTransactionDurationMetrics records telemetry for transaction lifecycle
+func (tx *TransactionImpl) recordTransactionDurationMetrics(ctx context.Context, start time.Time, outcome string, operationCount int64, readOnly bool) {
+	if tx.metrics == nil {
+		return
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			// Log telemetry panic but don't fail the operation
+		}
+	}()
+
+	// Calculate transaction duration from creation time
+	duration := time.Since(tx.creationTime)
+	tx.metrics.RecordTransactionDuration(ctx, duration, outcome, operationCount, readOnly)
+
+	// Record buffer usage if this is a write transaction
+	if !readOnly && operationCount > 0 {
+		bufferSize := int64(tx.buffer.Size()) * 64 // Rough estimate of buffer memory usage
+		tx.metrics.RecordBufferUsage(ctx, bufferSize, operationCount)
 	}
 }

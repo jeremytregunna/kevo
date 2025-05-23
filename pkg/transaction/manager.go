@@ -1,6 +1,7 @@
 package transaction
 
 import (
+	"context"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -15,6 +16,9 @@ type Manager struct {
 
 	// Statistics collector
 	stats stats.Collector
+
+	// Telemetry metrics for transaction operations
+	metrics TransactionMetrics
 
 	// Transaction isolation lock
 	txLock sync.RWMutex
@@ -35,9 +39,10 @@ func NewManager(storage StorageBackend, stats stats.Collector) *Manager {
 	return &Manager{
 		storage:        storage,
 		stats:          stats,
-		readOnlyTxTTL:  3 * time.Minute,  // 3 minutes
-		readWriteTxTTL: 1 * time.Minute,  // 1 minute
-		idleTxTimeout:  30 * time.Second, // 30 seconds
+		metrics:        NewNoopTransactionMetrics(), // Default to no-op, will be replaced by SetTelemetry
+		readOnlyTxTTL:  3 * time.Minute,             // 3 minutes
+		readWriteTxTTL: 1 * time.Minute,             // 1 minute
+		idleTxTimeout:  30 * time.Second,            // 30 seconds
 	}
 }
 
@@ -46,19 +51,35 @@ func NewManagerWithTTL(storage StorageBackend, stats stats.Collector, readOnlyTT
 	return &Manager{
 		storage:        storage,
 		stats:          stats,
+		metrics:        NewNoopTransactionMetrics(), // Default to no-op, will be replaced by SetTelemetry
 		readOnlyTxTTL:  readOnlyTTL,
 		readWriteTxTTL: readWriteTTL,
 		idleTxTimeout:  idleTimeout,
 	}
 }
 
+// SetTelemetry allows post-creation telemetry injection from engine facade
+func (m *Manager) SetTelemetry(tel interface{}) {
+	if txMetrics, ok := tel.(TransactionMetrics); ok {
+		m.metrics = txMetrics
+	}
+}
+
 // BeginTransaction starts a new transaction
 func (m *Manager) BeginTransaction(readOnly bool) (Transaction, error) {
+	ctx := context.Background()
+	lockWaitStart := time.Now()
+
 	// Track transaction start
 	if m.stats != nil {
 		m.stats.TrackOperation(stats.OpTxBegin)
 	}
 	m.txStarted.Add(1)
+
+	// Record transaction start telemetry
+	if m.metrics != nil {
+		m.recordTransactionStartMetrics(ctx, readOnly)
+	}
 
 	// Convert to transaction mode
 	mode := ReadWrite
@@ -83,6 +104,7 @@ func (m *Manager) BeginTransaction(readOnly bool) (Transaction, error) {
 		buffer:         NewBuffer(),
 		rwLock:         &m.txLock,
 		stats:          m,
+		metrics:        m.metrics, // Pass telemetry to transaction
 		creationTime:   now,
 		lastActiveTime: now,
 		ttl:            ttl,
@@ -91,13 +113,19 @@ func (m *Manager) BeginTransaction(readOnly bool) (Transaction, error) {
 	// Set transaction as active
 	tx.active.Store(true)
 
-	// Acquire appropriate lock
+	// Acquire appropriate lock and record lock wait time
 	if mode == ReadOnly {
 		m.txLock.RLock()
 		tx.hasReadLock.Store(true)
+		if m.metrics != nil {
+			m.recordLockWaitMetrics(ctx, lockWaitStart, "read")
+		}
 	} else {
 		m.txLock.Lock()
 		tx.hasWriteLock.Store(true)
+		if m.metrics != nil {
+			m.recordLockWaitMetrics(ctx, lockWaitStart, "write")
+		}
 	}
 
 	return tx, nil
@@ -141,4 +169,26 @@ func (m *Manager) GetTransactionStats() map[string]interface{} {
 	stats["tx_active"] = active
 
 	return stats
+}
+
+// Helper methods for telemetry recording with panic protection
+
+// recordTransactionStartMetrics records telemetry for transaction start
+func (m *Manager) recordTransactionStartMetrics(ctx context.Context, readOnly bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			// Log telemetry panic but don't fail the operation
+		}
+	}()
+	m.metrics.RecordTransactionStart(ctx, readOnly)
+}
+
+// recordLockWaitMetrics records telemetry for lock wait duration
+func (m *Manager) recordLockWaitMetrics(ctx context.Context, start time.Time, lockType string) {
+	defer func() {
+		if r := recover(); r != nil {
+			// Log telemetry panic but don't fail the operation
+		}
+	}()
+	m.metrics.RecordLockWait(ctx, time.Since(start), lockType)
 }
