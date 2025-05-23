@@ -2,7 +2,9 @@ package iterator
 
 import (
 	"bytes"
+	"context"
 	"sync"
+	"time"
 
 	"github.com/KevoDB/kevo/pkg/common/iterator"
 )
@@ -22,13 +24,36 @@ type HierarchicalIterator struct {
 
 	// Mutex for thread safety
 	mu sync.Mutex
+
+	// Telemetry metrics for iterator operations (optional)
+	metrics IteratorMetrics
 }
 
 // NewHierarchicalIterator creates a new hierarchical iterator
 // Sources must be provided in newest-to-oldest order
 func NewHierarchicalIterator(iterators []iterator.Iterator) *HierarchicalIterator {
-	return &HierarchicalIterator{
+	h := &HierarchicalIterator{
 		iterators: iterators,
+		metrics:   NewNoopIteratorMetrics(), // Default to no-op, will be replaced by SetTelemetry
+	}
+
+	// Record iterator creation with telemetry
+	if h.metrics != nil {
+		h.metrics.RecordIteratorType(context.Background(), "hierarchical", len(iterators))
+	}
+
+	return h
+}
+
+// SetTelemetry allows post-creation telemetry injection from engine facade
+func (h *HierarchicalIterator) SetTelemetry(tel interface{}) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if iterMetrics, ok := tel.(IteratorMetrics); ok {
+		h.metrics = iterMetrics
+		// Re-record the iterator type with the real telemetry now
+		h.metrics.RecordIteratorType(context.Background(), "hierarchical", len(h.iterators))
 	}
 }
 
@@ -85,6 +110,9 @@ func (h *HierarchicalIterator) SeekToLast() {
 
 // Seek positions the iterator at the first key >= target
 func (h *HierarchicalIterator) Seek(target []byte) bool {
+	start := time.Now()
+	ctx := context.Background()
+
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -135,18 +163,29 @@ func (h *HierarchicalIterator) Seek(target []byte) bool {
 	if h.valid {
 		h.key = minKey
 		h.value = minValue
-		return true
 	}
 
-	return false
+	// Record seek operation telemetry
+	if h.metrics != nil {
+		h.recordSeekMetrics(ctx, start, h.valid, int64(len(h.iterators)))
+	}
+
+	return h.valid
 }
 
 // Next advances the iterator to the next key
 func (h *HierarchicalIterator) Next() bool {
+	start := time.Now()
+	ctx := context.Background()
+
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
 	if !h.valid {
+		// Record the failed next operation
+		if h.metrics != nil {
+			h.recordNextMetrics(ctx, start, false)
+		}
 		return false
 	}
 
@@ -154,7 +193,14 @@ func (h *HierarchicalIterator) Next() bool {
 	currentKey := h.key
 
 	// Find the next unique key after the current key
-	return h.findNextUniqueKey(currentKey)
+	found := h.findNextUniqueKey(currentKey)
+
+	// Record next operation telemetry
+	if h.metrics != nil {
+		h.recordNextMetrics(ctx, start, found)
+	}
+
+	return found
 }
 
 // Key returns the current key
@@ -206,6 +252,9 @@ func (h *HierarchicalIterator) IsTombstone() bool {
 // If prevKey is nil, finds the first key
 // Returns true if a valid key was found
 func (h *HierarchicalIterator) findNextUniqueKey(prevKey []byte) bool {
+	start := time.Now()
+	ctx := context.Background()
+
 	// Find the smallest key among all iterators that is > prevKey
 	var minKey []byte
 	var minValue []byte
@@ -267,8 +316,46 @@ func (h *HierarchicalIterator) findNextUniqueKey(prevKey []byte) bool {
 	if h.valid {
 		h.key = minKey
 		h.value = minValue
-		return true
 	}
 
-	return false
+	// Record hierarchical merge operation telemetry
+	if h.metrics != nil {
+		h.recordHierarchicalMerge(ctx, start)
+	}
+
+	return h.valid
+}
+
+// recordSeekMetrics records telemetry for seek operations with panic protection
+func (h *HierarchicalIterator) recordSeekMetrics(ctx context.Context, start time.Time, found bool, keysScanned int64) {
+	defer func() {
+		if r := recover(); r != nil {
+			// Log telemetry panic but don't fail the operation
+			// This follows the same pattern as other components
+		}
+	}()
+
+	h.metrics.RecordSeek(ctx, time.Since(start), found, keysScanned)
+}
+
+// recordNextMetrics records telemetry for next operations with panic protection
+func (h *HierarchicalIterator) recordNextMetrics(ctx context.Context, start time.Time, valid bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			// Log telemetry panic but don't fail the operation
+		}
+	}()
+
+	h.metrics.RecordNext(ctx, time.Since(start), valid)
+}
+
+// recordHierarchicalMerge records telemetry for hierarchical merge operations
+func (h *HierarchicalIterator) recordHierarchicalMerge(ctx context.Context, start time.Time) {
+	defer func() {
+		if r := recover(); r != nil {
+			// Log telemetry panic but don't fail the operation
+		}
+	}()
+
+	h.metrics.RecordHierarchicalMerge(ctx, len(h.iterators), time.Since(start))
 }

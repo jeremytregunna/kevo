@@ -106,6 +106,8 @@ const (
 	OpTypeScan   = "scan"
 	OpTypeFlush  = "flush"
 	OpTypeSync   = "sync"
+	OpTypeSeek   = "seek"
+	OpTypeNext   = "next"
 
 	// Status values
 	StatusSuccess = "success"
@@ -119,4 +121,5 @@ const (
 	ComponentCompaction = "compaction"
 	ComponentStorage    = "storage"
 	ComponentEngine     = "engine"
+	ComponentIterator   = "iterator"
 )
