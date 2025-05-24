@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -30,11 +31,15 @@ type EngineFacade struct {
 	dataDir string
 
 	// Core components
-	storage    interfaces.StorageManager
-	txManager  *transaction.Manager
-	compaction interfaces.CompactionManager
-	stats      stats.Collector
-	telemetry  telemetry.Telemetry
+	storage       interfaces.StorageManager
+	txManager     *transaction.Manager
+	compaction    interfaces.CompactionManager
+	stats         stats.Collector
+	telemetry     telemetry.Telemetry
+	engineMetrics EngineMetrics
+
+	// Startup tracking
+	startupTime time.Time
 
 	// State
 	closed   atomic.Bool
@@ -99,27 +104,100 @@ func NewEngineFacade(dataDir string) (*EngineFacade, error) {
 		return nil, fmt.Errorf("failed to create compaction manager: %w", err)
 	}
 
+	// Create engine-level metrics
+	var engineMetrics EngineMetrics
+	if telemetryInstance != nil {
+		engineMetrics = NewEngineMetrics(telemetryInstance)
+	} else {
+		engineMetrics = NewNoopEngineMetrics()
+	}
+
 	// Create the facade
 	facade := &EngineFacade{
 		cfg:     cfg,
 		dataDir: dataDir,
 
 		// Initialize components
-		storage:    storageManager,
-		txManager:  txManager,
-		compaction: compactionManager,
-		stats:      statsCollector,
-		telemetry:  telemetryInstance,
+		storage:       storageManager,
+		txManager:     txManager,
+		compaction:    compactionManager,
+		stats:         statsCollector,
+		telemetry:     telemetryInstance,
+		engineMetrics: engineMetrics,
+		startupTime:   time.Now(),
+	}
+
+	// Inject telemetry into all components
+	if telemetryInstance != nil {
+		facade.injectTelemetryIntoComponents()
 	}
 
 	// Start the compaction manager
+	compactionStartTime := time.Now()
 	if err := compactionManager.Start(); err != nil {
 		// If compaction fails to start, continue but log the error
 		statsCollector.TrackError("compaction_start_error")
+		engineMetrics.RecordComponentInitialization(context.Background(), "compaction", time.Since(compactionStartTime), false)
+		engineMetrics.RecordError(context.Background(), "startup_error", "compaction", "warning")
+	} else {
+		engineMetrics.RecordComponentInitialization(context.Background(), "compaction", time.Since(compactionStartTime), true)
 	}
+
+	// Record overall startup metrics
+	totalStartupTime := time.Since(facade.startupTime)
+	engineMetrics.RecordStartupMetrics(context.Background(), totalStartupTime, 4) // storage, transaction, compaction, telemetry
+
+	// Record initial resource usage
+	facade.recordResourceUsage()
 
 	// Return the fully implemented facade with no error
 	return facade, nil
+}
+
+// injectTelemetryIntoComponents sets up telemetry for all components
+func (e *EngineFacade) injectTelemetryIntoComponents() {
+	ctx := context.Background()
+
+	// Inject telemetry into storage manager components
+	if e.storage != nil {
+		storageMetrics := storage.NewStorageMetrics(e.telemetry)
+		if storageManager, ok := e.storage.(*storage.Manager); ok {
+			storageManager.SetTelemetry(storageMetrics)
+		}
+		e.engineMetrics.RecordComponentInitialization(ctx, "storage_telemetry", time.Millisecond, true)
+	}
+
+	// Inject telemetry into transaction manager
+	if e.txManager != nil {
+		txMetrics := transaction.NewTransactionMetrics(e.telemetry)
+		e.txManager.SetTelemetry(txMetrics)
+		e.engineMetrics.RecordComponentInitialization(ctx, "transaction_telemetry", time.Millisecond, true)
+	}
+
+	// Inject telemetry into compaction manager
+	if e.compaction != nil {
+		// Create compaction metrics from the core compaction package
+		if coordinator, ok := e.compaction.(*compaction.Manager); ok {
+			// The Manager will handle telemetry injection to its coordinator
+			coordinator.SetTelemetry(e.telemetry)
+		}
+		e.engineMetrics.RecordComponentInitialization(ctx, "compaction_telemetry", time.Millisecond, true)
+	}
+}
+
+// recordResourceUsage records current resource utilization
+func (e *EngineFacade) recordResourceUsage() {
+	ctx := context.Background()
+
+	// Record memory usage
+	heapAlloc, heapSys, stackInuse := GetMemoryStats()
+	e.engineMetrics.RecordMemoryUsage(ctx, "heap", heapAlloc)
+	e.engineMetrics.RecordMemoryUsage(ctx, "heap_sys", heapSys)
+	e.engineMetrics.RecordMemoryUsage(ctx, "stack", stackInuse)
+
+	// Record uptime
+	uptime := time.Since(e.startupTime)
+	e.engineMetrics.RecordSystemHealth(ctx, "healthy", uptime)
 }
 
 // Put adds a key-value pair to the database
@@ -138,18 +216,33 @@ func (e *EngineFacade) Put(key, value []byte) error {
 
 	// Track operation latency
 	start := time.Now()
+	ctx := context.Background()
 
 	// Delegate to storage component
 	err := e.storage.Put(key, value)
 
 	latencyNs := uint64(time.Since(start).Nanoseconds())
 	e.stats.TrackOperationWithLatency(stats.OpPut, latencyNs)
+	duration := time.Since(start)
+
+	// Record engine-level telemetry
+	if e.engineMetrics != nil {
+		e.engineMetrics.RecordEngineOperation(ctx, "put", duration, err == nil)
+		e.engineMetrics.RecordOperationLatency(ctx, "put", duration)
+		if err == nil {
+			bytesPerSecond := float64(len(key)+len(value)) / duration.Seconds()
+			e.engineMetrics.RecordOperationThroughput(ctx, "put", bytesPerSecond)
+		}
+	}
 
 	// Track bytes written
 	if err == nil {
 		e.stats.TrackBytes(true, uint64(len(key)+len(value)))
 	} else {
 		e.stats.TrackError("put_error")
+		if e.engineMetrics != nil {
+			e.engineMetrics.RecordError(ctx, "put_error", "storage", "error")
+		}
 	}
 
 	return err
@@ -195,12 +288,25 @@ func (e *EngineFacade) Get(key []byte) ([]byte, error) {
 
 	// Track operation latency
 	start := time.Now()
+	ctx := context.Background()
 
 	// Delegate to storage component
 	value, err := e.storage.Get(key)
 
 	latencyNs := uint64(time.Since(start).Nanoseconds())
 	e.stats.TrackOperationWithLatency(stats.OpGet, latencyNs)
+	duration := time.Since(start)
+
+	// Record engine-level telemetry
+	if e.engineMetrics != nil {
+		found := err == nil
+		e.engineMetrics.RecordEngineOperation(ctx, "get", duration, found || errors.Is(err, ErrKeyNotFound))
+		e.engineMetrics.RecordOperationLatency(ctx, "get", duration)
+		if found {
+			bytesPerSecond := float64(len(key)+len(value)) / duration.Seconds()
+			e.engineMetrics.RecordOperationThroughput(ctx, "get", bytesPerSecond)
+		}
+	}
 
 	// Track bytes read
 	if err == nil {
@@ -209,6 +315,9 @@ func (e *EngineFacade) Get(key []byte) ([]byte, error) {
 		// Not really an error, just a miss
 	} else {
 		e.stats.TrackError("get_error")
+		if e.engineMetrics != nil {
+			e.engineMetrics.RecordError(ctx, "get_error", "storage", "error")
+		}
 	}
 
 	return value, err
@@ -230,12 +339,24 @@ func (e *EngineFacade) Delete(key []byte) error {
 
 	// Track operation latency
 	start := time.Now()
+	ctx := context.Background()
 
 	// Delegate to storage component
 	err := e.storage.Delete(key)
 
 	latencyNs := uint64(time.Since(start).Nanoseconds())
 	e.stats.TrackOperationWithLatency(stats.OpDelete, latencyNs)
+	duration := time.Since(start)
+
+	// Record engine-level telemetry
+	if e.engineMetrics != nil {
+		e.engineMetrics.RecordEngineOperation(ctx, "delete", duration, err == nil)
+		e.engineMetrics.RecordOperationLatency(ctx, "delete", duration)
+		if err == nil {
+			bytesPerSecond := float64(len(key)) / duration.Seconds()
+			e.engineMetrics.RecordOperationThroughput(ctx, "delete", bytesPerSecond)
+		}
+	}
 
 	// Track bytes written (just key for deletes)
 	if err == nil {
@@ -247,6 +368,9 @@ func (e *EngineFacade) Delete(key []byte) error {
 		}
 	} else {
 		e.stats.TrackError("delete_error")
+		if e.engineMetrics != nil {
+			e.engineMetrics.RecordError(ctx, "delete_error", "storage", "error")
+		}
 	}
 
 	return err
@@ -602,38 +726,73 @@ func (e *EngineFacade) Close() error {
 
 	// Track operation latency
 	start := time.Now()
+	ctx := context.Background()
 
 	var err error
+
+	// Record final resource usage before closing
+	if e.engineMetrics != nil {
+		e.recordResourceUsage()
+	}
 
 	// Close components in reverse order of dependency
 
 	// 1. First close compaction manager (to stop background tasks)
 	if e.compaction != nil {
 		e.stats.TrackOperation(stats.OpCompact)
+		compCloseStart := time.Now()
 
 		if compErr := e.compaction.Stop(); compErr != nil {
 			err = compErr
 			e.stats.TrackError("close_compaction_error")
+			if e.engineMetrics != nil {
+				e.engineMetrics.RecordError(ctx, "close_error", "compaction", "error")
+				e.engineMetrics.RecordComponentInitialization(ctx, "compaction_close", time.Since(compCloseStart), false)
+			}
+		} else if e.engineMetrics != nil {
+			e.engineMetrics.RecordComponentInitialization(ctx, "compaction_close", time.Since(compCloseStart), true)
 		}
 	}
 
 	// 2. Close storage (which will close sstables and WAL)
 	if e.storage != nil {
+		storageCloseStart := time.Now()
 		if storageErr := e.storage.Close(); storageErr != nil {
 			if err == nil {
 				err = storageErr
 			}
 			e.stats.TrackError("close_storage_error")
+			if e.engineMetrics != nil {
+				e.engineMetrics.RecordError(ctx, "close_error", "storage", "error")
+				e.engineMetrics.RecordComponentInitialization(ctx, "storage_close", time.Since(storageCloseStart), false)
+			}
+		} else if e.engineMetrics != nil {
+			e.engineMetrics.RecordComponentInitialization(ctx, "storage_close", time.Since(storageCloseStart), true)
 		}
 	}
 
-	// 3. Shutdown telemetry
+	// 3. Close engine metrics
+	if e.engineMetrics != nil {
+		if metricsErr := e.engineMetrics.Close(); metricsErr != nil {
+			if err == nil {
+				err = metricsErr
+			}
+		}
+	}
+
+	// 4. Shutdown telemetry (last to capture all metrics)
 	if e.telemetry != nil {
+		telCloseStart := time.Now()
 		if telErr := e.telemetry.Shutdown(nil); telErr != nil {
 			if err == nil {
 				err = telErr
 			}
 			e.stats.TrackError("close_telemetry_error")
+			// Can't use engineMetrics here since it might be closed
+		} else {
+			// Record final telemetry close duration in stats
+			telCloseDuration := time.Since(telCloseStart)
+			e.stats.TrackOperationWithLatency(stats.OpFlush, uint64(telCloseDuration.Nanoseconds()))
 		}
 	}
 

@@ -80,6 +80,7 @@ const (
 	// Operation type attributes
 	AttrOperationType = "operation.type"
 	AttrOperationName = "operation.name"
+	AttrOperation     = "operation"
 
 	// Component attributes
 	AttrComponent = "component"

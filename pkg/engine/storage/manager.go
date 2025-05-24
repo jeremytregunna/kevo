@@ -150,7 +150,7 @@ func NewManager(cfg *config.Config, statsCollector stats.Collector) (*Manager, e
 func (m *Manager) Put(key, value []byte) error {
 	start := time.Now()
 	ctx := context.Background()
-	
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -190,7 +190,7 @@ func (m *Manager) Put(key, value []byte) error {
 
 	// Execute with retry mechanism
 	err := m.RetryOnWALRotating(operation)
-	
+
 	// Record metrics (even on error for observability)
 	if m.metrics != nil {
 		keySize := int64(len(key))
@@ -198,7 +198,7 @@ func (m *Manager) Put(key, value []byte) error {
 		totalBytes := keySize + valueSize
 		m.recordPutMetrics(ctx, start, totalBytes, err)
 	}
-	
+
 	return err
 }
 
@@ -206,7 +206,7 @@ func (m *Manager) Put(key, value []byte) error {
 func (m *Manager) Get(key []byte) ([]byte, error) {
 	start := time.Now()
 	ctx := context.Background()
-	
+
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -221,7 +221,7 @@ func (m *Manager) Get(key []byte) ([]byte, error) {
 			m.metrics.RecordLayerAccess(ctx, "memtable", "get", true)
 			m.recordGetMetrics(ctx, start, "memtable", true)
 		}
-		
+
 		// The key was found, but check if it's a deletion marker
 		if val == nil {
 			// This is a deletion marker - the key exists but was deleted
@@ -238,7 +238,7 @@ func (m *Manager) Get(key []byte) ([]byte, error) {
 	// Check the SSTables (searching from newest to oldest)
 	for i := len(m.sstables) - 1; i >= 0; i-- {
 		layer := getLayerName(false, i)
-		
+
 		// Create a custom iterator to check for tombstones directly
 		iter := m.sstables[i].NewIterator()
 
@@ -284,7 +284,7 @@ func (m *Manager) Get(key []byte) ([]byte, error) {
 	if m.metrics != nil {
 		m.recordGetMetrics(ctx, start, "not_found", false)
 	}
-	
+
 	return nil, ErrKeyNotFound
 }
 
@@ -292,7 +292,7 @@ func (m *Manager) Get(key []byte) ([]byte, error) {
 func (m *Manager) Delete(key []byte) error {
 	start := time.Now()
 	ctx := context.Background()
-	
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -332,12 +332,12 @@ func (m *Manager) Delete(key []byte) error {
 
 	// Execute with retry mechanism
 	err := m.RetryOnWALRotating(operation)
-	
+
 	// Record metrics (even on error for observability)
 	if m.metrics != nil {
 		m.recordDeleteMetrics(ctx, start, err)
 	}
-	
+
 	return err
 }
 
@@ -469,7 +469,7 @@ func (m *Manager) ApplyBatch(entries []*wal.Entry) error {
 func (m *Manager) FlushMemTables() error {
 	start := time.Now()
 	ctx := context.Background()
-	
+
 	m.flushMu.Lock()
 	defer m.flushMu.Unlock()
 
@@ -517,7 +517,7 @@ func (m *Manager) FlushMemTables() error {
 
 	// Track flush count
 	m.stats.TrackFlush()
-	
+
 	// Record flush metrics
 	if m.metrics != nil {
 		// Calculate total memtable size that was flushed
@@ -525,7 +525,7 @@ func (m *Manager) FlushMemTables() error {
 		for _, imMem := range m.immutableMTs {
 			totalMemTableSize += imMem.ApproximateSize()
 		}
-		
+
 		// For sstable size, we'd need to track it during flush - for now use approximation
 		m.recordFlushMetrics(ctx, start, totalMemTableSize, 0)
 	}
@@ -1001,7 +1001,7 @@ func (m *Manager) recordPutMetrics(ctx context.Context, start time.Time, bytes i
 			fmt.Printf("Warning: telemetry panic in storage Put metrics: %v\n", r)
 		}
 	}()
-	
+
 	duration := time.Since(start)
 	if err == nil {
 		m.metrics.RecordPut(ctx, duration, bytes)
@@ -1020,7 +1020,7 @@ func (m *Manager) recordGetMetrics(ctx context.Context, start time.Time, layer s
 			fmt.Printf("Warning: telemetry panic in storage Get metrics: %v\n", r)
 		}
 	}()
-	
+
 	duration := time.Since(start)
 	m.metrics.RecordGet(ctx, duration, layer, found)
 }
@@ -1033,7 +1033,7 @@ func (m *Manager) recordDeleteMetrics(ctx context.Context, start time.Time, err 
 			fmt.Printf("Warning: telemetry panic in storage Delete metrics: %v\n", r)
 		}
 	}()
-	
+
 	duration := time.Since(start)
 	// Record even on error for observability
 	m.metrics.RecordDelete(ctx, duration)
@@ -1047,7 +1047,7 @@ func (m *Manager) recordFlushMetrics(ctx context.Context, start time.Time, memTa
 			fmt.Printf("Warning: telemetry panic in storage Flush metrics: %v\n", r)
 		}
 	}()
-	
+
 	duration := time.Since(start)
 	m.metrics.RecordFlush(ctx, duration, memTableSize, sstableSize)
 }

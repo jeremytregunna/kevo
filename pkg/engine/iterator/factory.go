@@ -49,14 +49,14 @@ func (f *Factory) CreateRangeIterator(
 ) iterator.Iterator {
 	baseIter := f.createBaseIterator(memTables, ssTables)
 	boundedIter := bounded.NewBoundedIterator(baseIter, startKey, endKey)
-	
+
 	// Record range iterator creation telemetry
 	if f.metrics != nil {
 		// Note: For bounded iterators, we rely on the underlying hierarchical iterator's telemetry
 		// The bounded iterator acts as a filter on top of the hierarchical iterator
 		f.metrics.RecordIteratorType(context.Background(), "bounded_range", len(memTables)+len(ssTables))
 	}
-	
+
 	return boundedIter
 }
 
@@ -85,12 +85,12 @@ func (f *Factory) createBaseIterator(
 
 	// Create hierarchical iterator
 	hierarchicalIter := composite.NewHierarchicalIterator(iterators)
-	
+
 	// Wrap with telemetry if metrics are available
 	if f.metrics != nil {
 		return newTelemetryWrapper(hierarchicalIter, f.metrics)
 	}
-	
+
 	return hierarchicalIter
 }
 
@@ -123,12 +123,12 @@ func newTelemetryWrapper(iter iterator.Iterator, metrics iteratorpkg.IteratorMet
 		Iterator: iter,
 		metrics:  metrics,
 	}
-	
+
 	// Record iterator creation
 	if metrics != nil {
 		metrics.RecordIteratorType(context.Background(), "hierarchical_composite", 1)
 	}
-	
+
 	return wrapper
 }
 
@@ -136,14 +136,14 @@ func newTelemetryWrapper(iter iterator.Iterator, metrics iteratorpkg.IteratorMet
 func (t *telemetryWrapper) Seek(target []byte) bool {
 	start := time.Now()
 	ctx := context.Background()
-	
+
 	found := t.Iterator.Seek(target)
-	
+
 	// Record seek operation telemetry
 	if t.metrics != nil {
 		t.recordSeekMetrics(ctx, start, found, 1) // 1 as approximate keys scanned
 	}
-	
+
 	return found
 }
 
@@ -151,14 +151,14 @@ func (t *telemetryWrapper) Seek(target []byte) bool {
 func (t *telemetryWrapper) Next() bool {
 	start := time.Now()
 	ctx := context.Background()
-	
+
 	valid := t.Iterator.Next()
-	
+
 	// Record next operation telemetry
 	if t.metrics != nil {
 		t.recordNextMetrics(ctx, start, valid)
 	}
-	
+
 	return valid
 }
 

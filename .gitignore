@@ -25,3 +25,23 @@ vendor/
 
 # macOS files
 .DS_Store
+
+# Logs
+logs
+*.log
+
+# Environment variables
+.env
+
+# Editor directories and files
+.idea
+.vscode
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Task files
+tasks.json
+tasks/

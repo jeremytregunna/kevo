@@ -21,8 +21,8 @@ import (
 // mockTelemetryServer provides a test implementation of telemetry.Telemetry for capturing metrics.
 // This is infrastructure mocking only - all storage operations use real business logic.
 type mockTelemetryServer struct {
-	mu       sync.RWMutex
-	counters map[string][]mockCounterCall
+	mu         sync.RWMutex
+	counters   map[string][]mockCounterCall
 	histograms map[string][]mockHistogramCall
 }
 
@@ -128,10 +128,10 @@ func TestStorageMetrics_InterfaceMethods(t *testing.T) {
 	mockTel := newMockTelemetryServer()
 	metrics := NewStorageMetrics(mockTel)
 	ctx := context.Background()
-	
+
 	// Test RecordGet
 	metrics.RecordGet(ctx, 100*time.Millisecond, "memtable", true)
-	
+
 	// Verify histogram recording
 	histCalls := mockTel.getHistogramCalls("kevo.storage.get.duration")
 	if len(histCalls) != 1 {
@@ -146,7 +146,7 @@ func TestStorageMetrics_InterfaceMethods(t *testing.T) {
 	if !mockTel.hasAttribute(histCalls[0].attrs, telemetry.AttrLayer, "memtable") {
 		t.Error("expected layer attribute to be memtable")
 	}
-	
+
 	// Verify counter recording for operation count
 	counterCalls := mockTel.getCounterCalls("kevo.storage.operations.total")
 	if len(counterCalls) != 1 {
@@ -155,10 +155,10 @@ func TestStorageMetrics_InterfaceMethods(t *testing.T) {
 	if counterCalls[0].value != 1 {
 		t.Errorf("expected counter value 1, got %d", counterCalls[0].value)
 	}
-	
+
 	// Test RecordPut
 	metrics.RecordPut(ctx, 50*time.Millisecond, 1024)
-	
+
 	putHistCalls := mockTel.getHistogramCalls("kevo.storage.put.duration")
 	if len(putHistCalls) != 1 {
 		t.Fatalf("expected 1 put histogram call, got %d", len(putHistCalls))
@@ -166,7 +166,7 @@ func TestStorageMetrics_InterfaceMethods(t *testing.T) {
 	if putHistCalls[0].value != 0.05 { // 50ms = 0.05 seconds
 		t.Errorf("expected put histogram value 0.05, got %f", putHistCalls[0].value)
 	}
-	
+
 	putBytesCalls := mockTel.getCounterCalls("kevo.storage.put.bytes")
 	if len(putBytesCalls) != 1 {
 		t.Fatalf("expected 1 put bytes call, got %d", len(putBytesCalls))
@@ -174,10 +174,10 @@ func TestStorageMetrics_InterfaceMethods(t *testing.T) {
 	if putBytesCalls[0].value != 1024 {
 		t.Errorf("expected put bytes value 1024, got %d", putBytesCalls[0].value)
 	}
-	
+
 	// Test RecordDelete
 	metrics.RecordDelete(ctx, 25*time.Millisecond)
-	
+
 	deleteHistCalls := mockTel.getHistogramCalls("kevo.storage.delete.duration")
 	if len(deleteHistCalls) != 1 {
 		t.Fatalf("expected 1 delete histogram call, got %d", len(deleteHistCalls))
@@ -185,10 +185,10 @@ func TestStorageMetrics_InterfaceMethods(t *testing.T) {
 	if deleteHistCalls[0].value != 0.025 { // 25ms = 0.025 seconds
 		t.Errorf("expected delete histogram value 0.025, got %f", deleteHistCalls[0].value)
 	}
-	
+
 	// Test RecordFlush
 	metrics.RecordFlush(ctx, 500*time.Millisecond, 2048, 1536)
-	
+
 	flushHistCalls := mockTel.getHistogramCalls("kevo.storage.flush.duration")
 	if len(flushHistCalls) != 1 {
 		t.Fatalf("expected 1 flush histogram call, got %d", len(flushHistCalls))
@@ -196,7 +196,7 @@ func TestStorageMetrics_InterfaceMethods(t *testing.T) {
 	if flushHistCalls[0].value != 0.5 { // 500ms = 0.5 seconds
 		t.Errorf("expected flush histogram value 0.5, got %f", flushHistCalls[0].value)
 	}
-	
+
 	memTableSizeCalls := mockTel.getHistogramCalls("kevo.storage.flush.memtable_size")
 	if len(memTableSizeCalls) != 1 {
 		t.Fatalf("expected 1 memtable size call, got %d", len(memTableSizeCalls))
@@ -204,7 +204,7 @@ func TestStorageMetrics_InterfaceMethods(t *testing.T) {
 	if memTableSizeCalls[0].value != 2048.0 {
 		t.Errorf("expected memtable size value 2048.0, got %f", memTableSizeCalls[0].value)
 	}
-	
+
 	sstableSizeCalls := mockTel.getHistogramCalls("kevo.storage.flush.sstable_size")
 	if len(sstableSizeCalls) != 1 {
 		t.Fatalf("expected 1 sstable size call, got %d", len(sstableSizeCalls))
@@ -212,10 +212,10 @@ func TestStorageMetrics_InterfaceMethods(t *testing.T) {
 	if sstableSizeCalls[0].value != 1536.0 {
 		t.Errorf("expected sstable size value 1536.0, got %f", sstableSizeCalls[0].value)
 	}
-	
+
 	// Test RecordLayerAccess
 	metrics.RecordLayerAccess(ctx, "sstable_l0", "get", false)
-	
+
 	layerAccessCalls := mockTel.getCounterCalls("kevo.storage.layer.access")
 	if len(layerAccessCalls) != 1 {
 		t.Fatalf("expected 1 layer access call, got %d", len(layerAccessCalls))
@@ -226,7 +226,7 @@ func TestStorageMetrics_InterfaceMethods(t *testing.T) {
 	if !mockTel.hasAttribute(layerAccessCalls[0].attrs, telemetry.AttrLayer, "sstable_l0") {
 		t.Error("expected layer attribute to be sstable_l0")
 	}
-	
+
 	// Test Close
 	err := metrics.Close()
 	if err != nil {
@@ -238,14 +238,14 @@ func TestStorageMetrics_InterfaceMethods(t *testing.T) {
 func TestNoopStorageMetrics(t *testing.T) {
 	metrics := NewNoopStorageMetrics()
 	ctx := context.Background()
-	
+
 	// All operations should be no-op and not panic
 	defer func() {
 		if r := recover(); r != nil {
 			t.Errorf("noop metrics should not panic, but got: %v", r)
 		}
 	}()
-	
+
 	metrics.RecordGet(ctx, time.Millisecond, "memtable", true)
 	metrics.RecordPut(ctx, time.Millisecond, 100)
 	metrics.RecordDelete(ctx, time.Millisecond)
@@ -263,7 +263,7 @@ func TestNewStorageMetrics_NilTelemetry(t *testing.T) {
 	if metrics == nil {
 		t.Fatal("expected non-nil metrics")
 	}
-	
+
 	// Should be no-op implementation
 	ctx := context.Background()
 	defer func() {
@@ -271,7 +271,7 @@ func TestNewStorageMetrics_NilTelemetry(t *testing.T) {
 			t.Errorf("noop metrics should not panic, but got: %v", r)
 		}
 	}()
-	
+
 	metrics.RecordGet(ctx, time.Millisecond, "memtable", true)
 }
 
@@ -283,42 +283,42 @@ func TestStorageManager_RealOperationsWithTelemetry(t *testing.T) {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tempDir)
-	
+
 	// Create test configuration
 	cfg := &config.Config{
 		SSTDir:         filepath.Join(tempDir, "sst"),
 		WALDir:         filepath.Join(tempDir, "wal"),
 		MemTableSize:   1024 * 1024, // 1MB
 		MaxMemTables:   5,
-		MaxMemTableAge: 300, // 5 minutes
+		MaxMemTableAge: 300,         // 5 minutes
 		WALMaxSize:     1024 * 1024, // 1MB
 		WALSyncMode:    config.SyncImmediate,
 	}
-	
+
 	// Create stats collector
 	statsCollector := stats.NewAtomicCollector()
-	
+
 	// Create storage manager with real implementation
 	manager, err := NewManager(cfg, statsCollector)
 	if err != nil {
 		t.Fatalf("failed to create storage manager: %v", err)
 	}
 	defer manager.Close()
-	
+
 	// Set up telemetry monitoring
 	mockTel := newMockTelemetryServer()
 	storageMetrics := NewStorageMetrics(mockTel)
 	manager.SetTelemetry(storageMetrics)
-	
+
 	// Test Put operation with real storage
 	testKey := []byte("test-key")
 	testValue := []byte("test-value")
-	
+
 	err = manager.Put(testKey, testValue)
 	if err != nil {
 		t.Fatalf("failed to put key-value: %v", err)
 	}
-	
+
 	// Verify Put metrics were recorded
 	putHistCalls := mockTel.getHistogramCalls("kevo.storage.put.duration")
 	if len(putHistCalls) < 1 {
@@ -331,7 +331,7 @@ func TestStorageManager_RealOperationsWithTelemetry(t *testing.T) {
 			t.Error("Put should have storage component attribute")
 		}
 	}
-	
+
 	putBytesCalls := mockTel.getCounterCalls("kevo.storage.put.bytes")
 	if len(putBytesCalls) < 1 {
 		t.Error("Put bytes should be recorded")
@@ -341,7 +341,7 @@ func TestStorageManager_RealOperationsWithTelemetry(t *testing.T) {
 			t.Errorf("expected Put bytes %d, got %d", expectedBytes, putBytesCalls[0].value)
 		}
 	}
-	
+
 	// Test Get operation with real storage
 	retrievedValue, err := manager.Get(testKey)
 	if err != nil {
@@ -350,7 +350,7 @@ func TestStorageManager_RealOperationsWithTelemetry(t *testing.T) {
 	if string(retrievedValue) != string(testValue) {
 		t.Errorf("expected value %s, got %s", testValue, retrievedValue)
 	}
-	
+
 	// Verify Get metrics were recorded
 	getHistCalls := mockTel.getHistogramCalls("kevo.storage.get.duration")
 	if len(getHistCalls) < 1 {
@@ -366,19 +366,19 @@ func TestStorageManager_RealOperationsWithTelemetry(t *testing.T) {
 			t.Error("Get should have found=true attribute")
 		}
 	}
-	
+
 	// Verify layer access was recorded
 	layerAccessCalls := mockTel.getCounterCalls("kevo.storage.layer.access")
 	if len(layerAccessCalls) < 1 {
 		t.Error("Layer access should be recorded")
 	}
-	
+
 	// Test Delete operation with real storage
 	err = manager.Delete(testKey)
 	if err != nil {
 		t.Fatalf("failed to delete key: %v", err)
 	}
-	
+
 	// Verify Delete metrics were recorded
 	deleteHistCalls := mockTel.getHistogramCalls("kevo.storage.delete.duration")
 	if len(deleteHistCalls) < 1 {
@@ -388,7 +388,7 @@ func TestStorageManager_RealOperationsWithTelemetry(t *testing.T) {
 			t.Error("Delete duration should be positive")
 		}
 	}
-	
+
 	// Test Get operation after delete (should not find key)
 	_, err = manager.Get(testKey)
 	if err == nil {
@@ -407,7 +407,7 @@ func TestStorageManager_WithoutTelemetry(t *testing.T) {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tempDir)
-	
+
 	// Create test configuration
 	cfg := &config.Config{
 		SSTDir:         filepath.Join(tempDir, "sst"),
@@ -418,26 +418,26 @@ func TestStorageManager_WithoutTelemetry(t *testing.T) {
 		WALMaxSize:     1024 * 1024,
 		WALSyncMode:    config.SyncImmediate,
 	}
-	
+
 	// Create stats collector
 	statsCollector := stats.NewAtomicCollector()
-	
+
 	// Create storage manager without telemetry
 	manager, err := NewManager(cfg, statsCollector)
 	if err != nil {
 		t.Fatalf("failed to create storage manager: %v", err)
 	}
 	defer manager.Close()
-	
+
 	// Test that storage operations work normally without telemetry
 	testKey := []byte("test-key")
 	testValue := []byte("test-value")
-	
+
 	err = manager.Put(testKey, testValue)
 	if err != nil {
 		t.Fatalf("failed to put key-value: %v", err)
 	}
-	
+
 	retrievedValue, err := manager.Get(testKey)
 	if err != nil {
 		t.Fatalf("failed to get key: %v", err)
@@ -445,12 +445,12 @@ func TestStorageManager_WithoutTelemetry(t *testing.T) {
 	if string(retrievedValue) != string(testValue) {
 		t.Errorf("expected value %s, got %s", testValue, retrievedValue)
 	}
-	
+
 	err = manager.Delete(testKey)
 	if err != nil {
 		t.Fatalf("failed to delete key: %v", err)
 	}
-	
+
 	_, err = manager.Get(testKey)
 	if err == nil {
 		t.Error("expected error when getting deleted key")
@@ -468,7 +468,7 @@ func TestStorageManager_SetTelemetry_TypeAssertion(t *testing.T) {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tempDir)
-	
+
 	// Create test configuration
 	cfg := &config.Config{
 		SSTDir:         filepath.Join(tempDir, "sst"),
@@ -479,17 +479,17 @@ func TestStorageManager_SetTelemetry_TypeAssertion(t *testing.T) {
 		WALMaxSize:     1024 * 1024,
 		WALSyncMode:    config.SyncImmediate,
 	}
-	
+
 	// Create stats collector
 	statsCollector := stats.NewAtomicCollector()
-	
+
 	// Create storage manager
 	manager, err := NewManager(cfg, statsCollector)
 	if err != nil {
 		t.Fatalf("failed to create storage manager: %v", err)
 	}
 	defer manager.Close()
-	
+
 	// Test SetTelemetry with wrong type - should not panic
 	defer func() {
 		if r := recover(); r != nil {
@@ -497,24 +497,24 @@ func TestStorageManager_SetTelemetry_TypeAssertion(t *testing.T) {
 		}
 	}()
 	manager.SetTelemetry("invalid-type")
-	
+
 	// Test SetTelemetry with nil - should not panic
 	manager.SetTelemetry(nil)
-	
+
 	// Test SetTelemetry with correct type
 	mockTel := newMockTelemetryServer()
 	storageMetrics := NewStorageMetrics(mockTel)
 	manager.SetTelemetry(storageMetrics)
-	
+
 	// Verify telemetry is working after proper setup
 	testKey := []byte("test-key")
 	testValue := []byte("test-value")
-	
+
 	err = manager.Put(testKey, testValue)
 	if err != nil {
 		t.Fatalf("failed to put key-value: %v", err)
 	}
-	
+
 	// Should have recorded metrics
 	putHistCalls := mockTel.getHistogramCalls("kevo.storage.put.duration")
 	if len(putHistCalls) < 1 {
@@ -531,7 +531,7 @@ func TestStorageMetrics_HelperFunctions(t *testing.T) {
 	if getStatusFromFound(false) != "not_found" {
 		t.Errorf("expected 'not_found' for found=false, got %s", getStatusFromFound(false))
 	}
-	
+
 	// Test getLayerName
 	if getLayerName(true, 0) != "memtable" {
 		t.Errorf("expected 'memtable' for memtable layer, got %s", getLayerName(true, 0))
@@ -552,12 +552,12 @@ func TestStorageMetrics_ConcurrentAccess(t *testing.T) {
 	mockTel := newMockTelemetryServer()
 	metrics := NewStorageMetrics(mockTel)
 	ctx := context.Background()
-	
+
 	// Test concurrent metric recording
 	var wg sync.WaitGroup
 	concurrency := 10
 	operations := 100
-	
+
 	for i := 0; i < concurrency; i++ {
 		wg.Add(1)
 		go func() {
@@ -570,27 +570,27 @@ func TestStorageMetrics_ConcurrentAccess(t *testing.T) {
 			}
 		}()
 	}
-	
+
 	wg.Wait()
-	
+
 	// Verify all metrics were recorded
 	totalExpected := concurrency * operations
-	
+
 	getHistCalls := mockTel.getHistogramCalls("kevo.storage.get.duration")
 	if len(getHistCalls) != totalExpected {
 		t.Errorf("expected %d get histogram calls, got %d", totalExpected, len(getHistCalls))
 	}
-	
+
 	putHistCalls := mockTel.getHistogramCalls("kevo.storage.put.duration")
 	if len(putHistCalls) != totalExpected {
 		t.Errorf("expected %d put histogram calls, got %d", totalExpected, len(putHistCalls))
 	}
-	
+
 	deleteHistCalls := mockTel.getHistogramCalls("kevo.storage.delete.duration")
 	if len(deleteHistCalls) != totalExpected {
 		t.Errorf("expected %d delete histogram calls, got %d", totalExpected, len(deleteHistCalls))
 	}
-	
+
 	layerAccessCalls := mockTel.getCounterCalls("kevo.storage.layer.access")
 	if len(layerAccessCalls) != totalExpected {
 		t.Errorf("expected %d layer access calls, got %d", totalExpected, len(layerAccessCalls))

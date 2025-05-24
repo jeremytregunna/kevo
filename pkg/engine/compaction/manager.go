@@ -47,6 +47,14 @@ func NewManager(cfg *config.Config, sstableDir string, statsCollector stats.Coll
 	}, nil
 }
 
+// SetTelemetry sets up telemetry for the compaction manager and underlying components
+func (m *Manager) SetTelemetry(tel interface{}) {
+	// Pass telemetry to the underlying coordinator
+	if coordinator, ok := m.coordinator.(*compaction.DefaultCompactionCoordinator); ok {
+		coordinator.SetTelemetry(tel)
+	}
+}
+
 // Start begins background compaction
 func (m *Manager) Start() error {
 	// Track the operation
