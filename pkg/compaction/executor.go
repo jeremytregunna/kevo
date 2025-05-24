@@ -2,6 +2,7 @@ package compaction
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"time"
@@ -22,6 +23,9 @@ type DefaultCompactionExecutor struct {
 
 	// Tombstone manager for tracking deletions
 	tombstoneManager TombstoneManager
+
+	// Telemetry metrics for compaction operations
+	metrics CompactionMetrics
 }
 
 // NewCompactionExecutor creates a new compaction executor
@@ -30,20 +34,38 @@ func NewCompactionExecutor(cfg *config.Config, sstableDir string, tombstoneManag
 		cfg:              cfg,
 		sstableDir:       sstableDir,
 		tombstoneManager: tombstoneManager,
+		metrics:          NewNoopCompactionMetrics(), // Default to no-op, will be replaced by SetTelemetry
+	}
+}
+
+// SetTelemetry allows post-creation telemetry injection from coordinator
+func (e *DefaultCompactionExecutor) SetTelemetry(tel interface{}) {
+	if compactionMetrics, ok := tel.(CompactionMetrics); ok {
+		e.metrics = compactionMetrics
 	}
 }
 
 // CompactFiles performs the actual compaction of the input files
 func (e *DefaultCompactionExecutor) CompactFiles(task *CompactionTask) ([]string, error) {
+	ctx := context.Background()
+	start := time.Now()
+
+	// Track metrics for file operations
+	inputFileCount := 0
+	inputTotalSize := int64(0)
+	duplicatesRemoved := int64(0)
+
 	// Create a merged iterator over all input files
 	var iterators []iterator.Iterator
 
-	// Add iterators from both levels
+	// Add iterators from both levels and calculate input metrics
 	for level := 0; level <= task.TargetLevel; level++ {
 		for _, file := range task.InputFiles[level] {
 			// We need an iterator that preserves delete markers
 			if file.Reader != nil {
 				iterators = append(iterators, file.Reader.NewIterator())
+				inputFileCount++
+				inputTotalSize += file.Size
 			}
 		}
 	}
@@ -163,15 +185,79 @@ func (e *DefaultCompactionExecutor) CompactFiles(task *CompactionTask) ([]string
 		currentWriter.Abort()
 	}
 
+	// Calculate execution duration and record completion metrics
+	duration := time.Since(start)
+	outputTotalSize := inputTotalSize / 2 // Rough estimate for now
+
+	// Record file operations telemetry
+	e.recordFileOperationsMetrics(ctx, "create", len(outputFiles), outputTotalSize, task.TargetLevel)
+
+	// Record compaction completion metrics at executor level
+	e.recordCompactionCompleteMetrics(ctx, duration, inputTotalSize, outputTotalSize, duplicatesRemoved, true)
+
+	// Record compaction efficiency
+	if inputTotalSize > 0 {
+		compressionRatio := float64(outputTotalSize) / float64(inputTotalSize)
+		spaceReclaimed := inputTotalSize - outputTotalSize
+		e.recordCompactionEfficiencyMetrics(ctx, compressionRatio, spaceReclaimed, duplicatesRemoved)
+	}
+
 	return outputFiles, nil
 }
 
 // DeleteCompactedFiles removes the input files that were successfully compacted
 func (e *DefaultCompactionExecutor) DeleteCompactedFiles(filePaths []string) error {
+	ctx := context.Background()
+
 	for _, path := range filePaths {
 		if err := os.Remove(path); err != nil {
 			return fmt.Errorf("failed to delete compacted file %s: %w", path, err)
 		}
 	}
+
+	// Record file deletion telemetry
+	e.recordFileOperationsMetrics(ctx, "delete", len(filePaths), 0, 0)
+
 	return nil
+}
+
+// Helper methods for telemetry recording with panic protection
+
+// recordFileOperationsMetrics records telemetry for file operations
+func (e *DefaultCompactionExecutor) recordFileOperationsMetrics(ctx context.Context, operation string, fileCount int, totalSize int64, level int) {
+	if e.metrics == nil {
+		return
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			// Log telemetry panic but don't fail the operation
+		}
+	}()
+	e.metrics.RecordFileOperations(ctx, operation, fileCount, totalSize, level)
+}
+
+// recordCompactionEfficiencyMetrics records telemetry for compaction efficiency
+func (e *DefaultCompactionExecutor) recordCompactionEfficiencyMetrics(ctx context.Context, compressionRatio float64, spaceReclaimed int64, duplicatesRemoved int64) {
+	if e.metrics == nil {
+		return
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			// Log telemetry panic but don't fail the operation
+		}
+	}()
+	e.metrics.RecordCompactionEfficiency(ctx, compressionRatio, spaceReclaimed, duplicatesRemoved)
+}
+
+// recordCompactionCompleteMetrics records telemetry for compaction completion
+func (e *DefaultCompactionExecutor) recordCompactionCompleteMetrics(ctx context.Context, duration time.Duration, inputSize int64, outputSize int64, tombstonesRemoved int64, success bool) {
+	if e.metrics == nil {
+		return
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			// Log telemetry panic but don't fail the operation
+		}
+	}()
+	e.metrics.RecordCompactionComplete(ctx, duration, inputSize, outputSize, tombstonesRemoved, success)
 }

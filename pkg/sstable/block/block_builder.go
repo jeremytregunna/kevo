@@ -32,6 +32,12 @@ func NewBuilder() *Builder {
 // Add adds a key-value pair to the block
 // Keys must be added in sorted order
 func (b *Builder) Add(key, value []byte) error {
+	return b.AddWithSequence(key, value, 0) // Default sequence number to 0 for backward compatibility
+}
+
+// AddWithSequence adds a key-value pair to the block with a sequence number
+// Keys must be added in sorted order
+func (b *Builder) AddWithSequence(key, value []byte, seqNum uint64) error {
 	// Ensure keys are added in sorted order
 	if len(b.entries) > 0 && bytes.Compare(key, b.lastKey) <= 0 {
 		return fmt.Errorf("keys must be added in strictly increasing order, got %s after %s",
@@ -39,8 +45,9 @@ func (b *Builder) Add(key, value []byte) error {
 	}
 
 	b.entries = append(b.entries, Entry{
-		Key:   append([]byte(nil), key...),   // Make copies to avoid references
-		Value: append([]byte(nil), value...), // to external data
+		Key:         append([]byte(nil), key...),   // Make copies to avoid references
+		Value:       append([]byte(nil), value...), // to external data
+		SequenceNum: seqNum,
 	})
 
 	// Add restart point if needed
@@ -51,7 +58,7 @@ func (b *Builder) Add(key, value []byte) error {
 	b.restartIdx++
 
 	// Track the size
-	b.currentSize += uint32(len(key) + len(value) + 8) // 8 bytes for metadata
+	b.currentSize += uint32(len(key) + len(value) + 16) // 16 bytes for metadata (including sequence number)
 	b.lastKey = append([]byte(nil), key...)
 
 	return nil
@@ -94,16 +101,26 @@ func (b *Builder) Finish(w io.Writer) (uint64, error) {
 
 	// Keys are already sorted by the Add method's requirement
 
-	// Remove any duplicate keys (keeping the last one)
+	// Remove any duplicate keys (keeping the one with the highest sequence number)
 	if len(b.entries) > 1 {
-		uniqueEntries := make([]Entry, 0, len(b.entries))
-		for i := 0; i < len(b.entries); i++ {
-			// Skip if this is a duplicate of the previous entry
-			if i > 0 && bytes.Equal(b.entries[i].Key, b.entries[i-1].Key) {
-				// Replace the previous entry with this one (to keep the latest value)
-				uniqueEntries[len(uniqueEntries)-1] = b.entries[i]
-			} else {
-				uniqueEntries = append(uniqueEntries, b.entries[i])
+		// Group entries by key and find entry with highest sequence number
+		keyMap := make(map[string]Entry)
+		for _, entry := range b.entries {
+			keyStr := string(entry.Key)
+			if existing, exists := keyMap[keyStr]; !exists || entry.SequenceNum > existing.SequenceNum {
+				keyMap[keyStr] = entry
+			}
+		}
+
+		// Rebuild sorted entries from the map
+		uniqueEntries := make([]Entry, 0, len(keyMap))
+		for _, entry := range b.entries {
+			keyStr := string(entry.Key)
+			if best, exists := keyMap[keyStr]; exists {
+				if bytes.Equal(entry.Key, best.Key) && entry.SequenceNum == best.SequenceNum {
+					uniqueEntries = append(uniqueEntries, best)
+					delete(keyMap, keyStr) // Delete to avoid duplicates
+				}
 			}
 		}
 		b.entries = uniqueEntries
@@ -176,9 +193,15 @@ func (b *Builder) Finish(w io.Writer) (uint64, error) {
 			}
 		}
 
+		// Write sequence number
+		err := binary.Write(buffer, binary.LittleEndian, entry.SequenceNum)
+		if err != nil {
+			return 0, fmt.Errorf("failed to write sequence number: %w", err)
+		}
+
 		// Write value
 		valueLen := uint32(len(entry.Value))
-		err := binary.Write(buffer, binary.LittleEndian, valueLen)
+		err = binary.Write(buffer, binary.LittleEndian, valueLen)
 		if err != nil {
 			return 0, fmt.Errorf("failed to write value length: %w", err)
 		}

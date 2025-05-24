@@ -33,7 +33,7 @@ func NewServer(eng *engine.EngineFacade, config Config) *Server {
 	// Create a transaction registry directly from the transaction package
 	// The transaction registry can work with any type that implements BeginTransaction
 	txRegistry := transaction.NewRegistry()
-	
+
 	return &Server{
 		eng:        eng,
 		txRegistry: txRegistry,
@@ -86,7 +86,7 @@ func (s *Server) Start() error {
 
 	kaPolicy := keepalive.EnforcementPolicy{
 		MinTime:             10 * time.Second, // Minimum time a client should wait between pings
-		PermitWithoutStream: true,            // Allow pings even when there are no active streams
+		PermitWithoutStream: true,             // Allow pings even when there are no active streams
 	}
 
 	serverOpts = append(serverOpts,

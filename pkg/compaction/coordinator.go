@@ -1,6 +1,7 @@
 package compaction
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
@@ -45,6 +46,9 @@ type DefaultCompactionCoordinator struct {
 
 	// Tombstone manager
 	tombstoneManager TombstoneManager
+
+	// Telemetry metrics for compaction operations
+	metrics CompactionMetrics
 
 	// Next sequence number for SSTable files
 	nextSeq uint64
@@ -92,10 +96,26 @@ func NewCompactionCoordinator(cfg *config.Config, sstableDir string, options Com
 		executor:              options.Executor,
 		fileTracker:           options.FileTracker,
 		tombstoneManager:      options.TombstoneManager,
+		metrics:               NewNoopCompactionMetrics(), // Default to no-op, will be replaced by SetTelemetry
 		nextSeq:               1,
 		stopCh:                make(chan struct{}),
 		lastCompactionOutputs: make([]string, 0),
 		compactionInterval:    options.CompactionInterval,
+	}
+}
+
+// SetTelemetry allows post-creation telemetry injection from engine facade
+func (c *DefaultCompactionCoordinator) SetTelemetry(tel interface{}) {
+	if compactionMetrics, ok := tel.(CompactionMetrics); ok {
+		c.metrics = compactionMetrics
+
+		// Also set telemetry on sub-components if they support it
+		if setter, ok := c.executor.(interface{ SetTelemetry(interface{}) }); ok {
+			setter.SetTelemetry(tel)
+		}
+		if setter, ok := c.strategy.(interface{ SetTelemetry(interface{}) }); ok {
+			setter.SetTelemetry(tel)
+		}
 	}
 }
 
@@ -211,6 +231,8 @@ func (c *DefaultCompactionCoordinator) compactionWorker() {
 
 // runCompactionCycle performs a single compaction cycle
 func (c *DefaultCompactionCoordinator) runCompactionCycle() error {
+	ctx := context.Background()
+
 	// Reload SSTables to get fresh information
 	if err := c.strategy.LoadSSTables(); err != nil {
 		return fmt.Errorf("failed to load SSTables: %w", err)
@@ -224,8 +246,17 @@ func (c *DefaultCompactionCoordinator) runCompactionCycle() error {
 
 	// If no compaction needed, return
 	if task == nil {
+		// Record queue state (empty)
+		c.recordQueueStateMetrics(ctx)
 		return nil
 	}
+
+	// Calculate input metrics
+	inputFileCount, inputSize := c.calculateTaskMetrics(task)
+	strategy := "tiered" // Default strategy name
+
+	// Record compaction start
+	c.recordCompactionStartMetrics(ctx, task.TargetLevel, strategy, inputFileCount, inputSize)
 
 	// Mark files as pending
 	for _, files := range task.InputFiles {
@@ -234,8 +265,10 @@ func (c *DefaultCompactionCoordinator) runCompactionCycle() error {
 		}
 	}
 
-	// Perform compaction
+	// Perform compaction with timing
+	start := time.Now()
 	outputFiles, err := c.executor.CompactFiles(task)
+	duration := time.Since(start)
 
 	// Unmark files as pending
 	for _, files := range task.InputFiles {
@@ -244,12 +277,30 @@ func (c *DefaultCompactionCoordinator) runCompactionCycle() error {
 		}
 	}
 
+	// Calculate output metrics and record completion
+	outputSize := int64(0)
+	tombstonesRemoved := int64(0) // TODO: Get from executor if available
+	success := err == nil
+
+	if success && len(outputFiles) > 0 {
+		// Calculate output size (rough estimate)
+		outputSize = inputSize / 2 // Simplified for now
+	}
+
+	// Record compaction completion
+	c.recordCompactionCompleteMetrics(ctx, duration, inputSize, outputSize, tombstonesRemoved, success)
+
 	// Track the compaction outputs for statistics
 	if err == nil && len(outputFiles) > 0 {
 		// Record the compaction result
 		c.resultsMu.Lock()
 		c.lastCompactionOutputs = outputFiles
 		c.resultsMu.Unlock()
+
+		// Record level transition
+		for fromLevel := range task.InputFiles {
+			c.recordLevelTransitionMetrics(ctx, fromLevel, task.TargetLevel, inputSize)
+		}
 	}
 
 	// Handle compaction errors
@@ -306,4 +357,73 @@ func (c *DefaultCompactionCoordinator) GetCompactionStats() map[string]interface
 	}
 
 	return stats
+}
+
+// Helper methods for telemetry recording with panic protection
+
+// calculateTaskMetrics calculates input metrics for a compaction task
+func (c *DefaultCompactionCoordinator) calculateTaskMetrics(task *CompactionTask) (int, int64) {
+	fileCount := 0
+	totalSize := int64(0)
+
+	for _, files := range task.InputFiles {
+		fileCount += len(files)
+		for _, file := range files {
+			totalSize += file.Size
+		}
+	}
+
+	return fileCount, totalSize
+}
+
+// recordCompactionStartMetrics records telemetry for compaction start
+func (c *DefaultCompactionCoordinator) recordCompactionStartMetrics(ctx context.Context, level int, strategy string, inputFileCount int, inputSize int64) {
+	if c.metrics == nil {
+		return
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			// Log telemetry panic but don't fail the operation
+		}
+	}()
+	c.metrics.RecordCompactionStart(ctx, level, strategy, inputFileCount, inputSize)
+}
+
+// recordCompactionCompleteMetrics records telemetry for compaction completion
+func (c *DefaultCompactionCoordinator) recordCompactionCompleteMetrics(ctx context.Context, duration time.Duration, inputSize int64, outputSize int64, tombstonesRemoved int64, success bool) {
+	if c.metrics == nil {
+		return
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			// Log telemetry panic but don't fail the operation
+		}
+	}()
+	c.metrics.RecordCompactionComplete(ctx, duration, inputSize, outputSize, tombstonesRemoved, success)
+}
+
+// recordLevelTransitionMetrics records telemetry for level transitions
+func (c *DefaultCompactionCoordinator) recordLevelTransitionMetrics(ctx context.Context, fromLevel int, toLevel int, bytes int64) {
+	if c.metrics == nil {
+		return
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			// Log telemetry panic but don't fail the operation
+		}
+	}()
+	c.metrics.RecordLevelTransition(ctx, fromLevel, toLevel, bytes)
+}
+
+// recordQueueStateMetrics records telemetry for compaction queue state
+func (c *DefaultCompactionCoordinator) recordQueueStateMetrics(ctx context.Context) {
+	if c.metrics == nil {
+		return
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			// Log telemetry panic but don't fail the operation
+		}
+	}()
+	c.metrics.RecordCompactionQueue(ctx, 0, 0) // Empty queue
 }

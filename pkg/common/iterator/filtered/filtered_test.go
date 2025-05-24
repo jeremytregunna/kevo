@@ -111,60 +111,60 @@ func TestFilteredIterator(t *testing.T) {
 	}
 
 	baseIter := NewMockIterator(entries)
-	
+
 	// Filter for keys starting with 'a'
 	filter := func(key []byte) bool {
 		return bytes.HasPrefix(key, []byte("a"))
 	}
-	
+
 	filtered := NewFilteredIterator(baseIter, filter)
-	
+
 	// Test SeekToFirst and Next
 	filtered.SeekToFirst()
-	
+
 	if !filtered.Valid() {
 		t.Fatal("Expected valid position after SeekToFirst")
 	}
-	
+
 	if string(filtered.Key()) != "a1" {
 		t.Errorf("Expected key 'a1', got '%s'", string(filtered.Key()))
 	}
-	
+
 	if string(filtered.Value()) != "val1" {
 		t.Errorf("Expected value 'val1', got '%s'", string(filtered.Value()))
 	}
-	
+
 	if filtered.IsTombstone() {
 		t.Error("Expected non-tombstone for first entry")
 	}
-	
+
 	// Advance to next matching entry
 	if !filtered.Next() {
 		t.Fatal("Expected successful Next() call")
 	}
-	
+
 	if string(filtered.Key()) != "a3" {
 		t.Errorf("Expected key 'a3', got '%s'", string(filtered.Key()))
 	}
-	
+
 	if !filtered.IsTombstone() {
 		t.Error("Expected tombstone for second entry")
 	}
-	
+
 	// Advance again
 	if !filtered.Next() {
 		t.Fatal("Expected successful Next() call")
 	}
-	
+
 	if string(filtered.Key()) != "a5" {
 		t.Errorf("Expected key 'a5', got '%s'", string(filtered.Key()))
 	}
-	
+
 	// No more entries
 	if filtered.Next() {
 		t.Fatal("Expected end of iteration")
 	}
-	
+
 	if filtered.Valid() {
 		t.Fatal("Expected invalid position at end of iteration")
 	}
@@ -182,27 +182,27 @@ func TestPrefixIterator(t *testing.T) {
 
 	baseIter := NewMockIterator(entries)
 	prefixIter := NewPrefixIterator(baseIter, []byte("apple"))
-	
+
 	// Count matching entries
 	prefixIter.SeekToFirst()
-	
+
 	count := 0
 	for prefixIter.Valid() {
 		count++
 		prefixIter.Next()
 	}
-	
+
 	if count != 3 {
 		t.Errorf("Expected 3 entries with prefix 'apple', got %d", count)
 	}
-	
+
 	// Test Seek
 	prefixIter.Seek([]byte("apple3"))
-	
+
 	if !prefixIter.Valid() {
 		t.Fatal("Expected valid position after Seek")
 	}
-	
+
 	if string(prefixIter.Key()) != "apple3" {
 		t.Errorf("Expected key 'apple3', got '%s'", string(prefixIter.Key()))
 	}
@@ -220,27 +220,27 @@ func TestSuffixIterator(t *testing.T) {
 
 	baseIter := NewMockIterator(entries)
 	suffixIter := NewSuffixIterator(baseIter, []byte("_suffix"))
-	
+
 	// Count matching entries
 	suffixIter.SeekToFirst()
-	
+
 	count := 0
 	for suffixIter.Valid() {
 		count++
 		suffixIter.Next()
 	}
-	
+
 	if count != 3 {
 		t.Errorf("Expected 3 entries with suffix '_suffix', got %d", count)
 	}
-	
+
 	// Test seeking to find entries with suffix
 	suffixIter.Seek([]byte("key3"))
-	
+
 	if !suffixIter.Valid() {
 		t.Fatal("Expected valid position after Seek")
 	}
-	
+
 	if string(suffixIter.Key()) != "key3_suffix" {
 		t.Errorf("Expected key 'key3_suffix', got '%s'", string(suffixIter.Key()))
 	}

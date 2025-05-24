@@ -57,3 +57,11 @@ func (a *IteratorAdapter) Valid() bool {
 func (a *IteratorAdapter) IsTombstone() bool {
 	return a.Valid() && a.iter.IsTombstone()
 }
+
+// SequenceNumber returns the sequence number of the current entry
+func (a *IteratorAdapter) SequenceNumber() uint64 {
+	if !a.Valid() {
+		return 0
+	}
+	return a.iter.SequenceNumber()
+}

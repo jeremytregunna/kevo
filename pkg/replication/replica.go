@@ -188,7 +188,7 @@ type Replica struct {
 
 	// Stream client for receiving WAL entries
 	streamClient replication_proto.WALReplicationService_StreamWALClient
-	
+
 	// Statistics for the replica
 	stats *ReplicaStats
 
@@ -869,12 +869,12 @@ func (r *Replica) connectToPrimary() error {
 func (r *Replica) processEntriesWithoutStateTransitions(response *replication_proto.WALStreamResponse) error {
 	entryCount := len(response.Entries)
 	fmt.Printf("Processing %d entries (no state transitions)\n", entryCount)
-	
+
 	// Track statistics
 	if r.stats != nil {
 		r.stats.TrackBatchReceived()
 		r.stats.TrackEntriesReceived(uint64(entryCount))
-		
+
 		// Calculate total bytes received
 		var totalBytes uint64
 		for _, entry := range response.Entries {
@@ -939,7 +939,7 @@ func (r *Replica) processEntriesWithoutStateTransitions(response *replication_pr
 	r.mu.Lock()
 	r.lastAppliedSeq = maxSeq
 	r.mu.Unlock()
-	
+
 	// Track applied entries in statistics
 	if r.stats != nil {
 		// Calculate the number of entries that were successfully applied
@@ -967,12 +967,12 @@ func (r *Replica) processEntriesWithoutStateTransitions(response *replication_pr
 func (r *Replica) processEntries(response *replication_proto.WALStreamResponse) error {
 	entryCount := len(response.Entries)
 	fmt.Printf("Processing %d entries\n", entryCount)
-	
+
 	// Track statistics
 	if r.stats != nil {
 		r.stats.TrackBatchReceived()
 		r.stats.TrackEntriesReceived(uint64(entryCount))
-		
+
 		// Calculate total bytes received
 		var totalBytes uint64
 		for _, entry := range response.Entries {
@@ -1037,7 +1037,7 @@ func (r *Replica) processEntries(response *replication_proto.WALStreamResponse) 
 	r.mu.Lock()
 	r.lastAppliedSeq = maxSeq
 	r.mu.Unlock()
-	
+
 	// Track applied entries in statistics
 	if r.stats != nil {
 		// Calculate the number of entries that were successfully applied

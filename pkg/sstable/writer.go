@@ -99,6 +99,11 @@ func (bm *BlockManager) Add(key, value []byte) error {
 	return bm.builder.Add(key, value)
 }
 
+// AddWithSequence adds a key-value pair with a sequence number to the current block
+func (bm *BlockManager) AddWithSequence(key, value []byte, seqNum uint64) error {
+	return bm.builder.AddWithSequence(key, value, seqNum)
+}
+
 // EstimatedSize returns the estimated size of the current block
 func (bm *BlockManager) EstimatedSize() uint32 {
 	return bm.builder.EstimatedSize()
@@ -285,6 +290,12 @@ func NewWriterWithOptions(path string, options WriterOptions) (*Writer, error) {
 // Add adds a key-value pair to the SSTable
 // Keys must be added in sorted order
 func (w *Writer) Add(key, value []byte) error {
+	return w.AddWithSequence(key, value, 0) // Default to sequence number 0 for backward compatibility
+}
+
+// AddWithSequence adds a key-value pair with a sequence number to the SSTable
+// Keys must be added in sorted order
+func (w *Writer) AddWithSequence(key, value []byte, seqNum uint64) error {
 	// Keep track of first and last keys
 	if w.entriesAdded == 0 {
 		w.firstKey = append([]byte(nil), key...)
@@ -296,8 +307,8 @@ func (w *Writer) Add(key, value []byte) error {
 		w.currentBloomFilter.AddKey(key)
 	}
 
-	// Add to block
-	if err := w.blockManager.Add(key, value); err != nil {
+	// Add to block with sequence number
+	if err := w.blockManager.AddWithSequence(key, value, seqNum); err != nil {
 		return fmt.Errorf("failed to add to block: %w", err)
 	}
 

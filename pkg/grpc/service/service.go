@@ -240,7 +240,6 @@ func (s *KevoServiceServer) Scan(req *pb.ScanRequest, stream pb.KevoService_Scan
 	return nil
 }
 
-
 // BeginTransaction starts a new transaction
 func (s *KevoServiceServer) BeginTransaction(ctx context.Context, req *pb.BeginTransactionRequest) (*pb.BeginTransactionResponse, error) {
 	// Force clean up of old transactions before creating new ones
@@ -460,7 +459,7 @@ func (s *KevoServiceServer) GetStats(ctx context.Context, req *pb.GetStatsReques
 	// Collect basic stats that we know are available
 	keyCount := int64(0)
 	sstableCount := int32(0)
-	memtableCount := int32(1) // At least 1 active memtable
+	memtableCount := int32(0) // Will be updated from storage stats
 
 	// Create a read-only transaction to count keys
 	tx, err := s.engine.BeginTransaction(true)
@@ -474,15 +473,44 @@ func (s *KevoServiceServer) GetStats(ctx context.Context, req *pb.GetStatsReques
 
 	// Count keys and estimate size
 	var totalSize int64
-	for iter.Next() {
-		keyCount++
-		totalSize += int64(len(iter.Key()) + len(iter.Value()))
+
+	// Position at the first key
+	iter.SeekToFirst()
+
+	// Iterate through all keys
+	for iter.Valid() {
+		// Only count live keys (not tombstones/deleted keys)
+		if !iter.IsTombstone() {
+			keyCount++
+			totalSize += int64(len(iter.Key()) + len(iter.Value()))
+		}
+		iter.Next()
 	}
 
 	// Get statistics from the engine
 	statsProvider, ok := s.engine.(interface {
 		GetStatsProvider() interface{}
 	})
+
+	// Get storage stats from engine
+	if storageManager, ok := s.engine.(interface {
+		GetStorageStats() map[string]interface{}
+	}); ok {
+		storageStats := storageManager.GetStorageStats()
+
+		// Set memtable count: always 1 active memtable + any immutable memtables
+		memtableCount = 1 // Always have at least 1 active memtable
+
+		// Add any immutable memtables to the count
+		if count, ok := storageStats["immutable_memtable_count"].(int); ok {
+			memtableCount += int32(count)
+		}
+
+		// Update sstable count
+		if count, ok := storageStats["sstable_count"].(int); ok {
+			sstableCount = int32(count)
+		}
+	}
 
 	response := &pb.GetStatsResponse{
 		KeyCount:           keyCount,

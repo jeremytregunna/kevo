@@ -1,6 +1,7 @@
 package memtable
 
 import (
+	"context"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -18,6 +19,7 @@ type MemTablePool struct {
 	maxSize      int64
 	totalSize    int64
 	flushPending atomic.Bool
+	metrics      MemTableMetrics
 	mu           sync.RWMutex
 }
 
@@ -29,14 +31,23 @@ func NewMemTablePool(cfg *config.Config) *MemTablePool {
 		immutables: make([]*MemTable, 0, cfg.MaxMemTables-1),
 		maxAge:     time.Duration(cfg.MaxMemTableAge) * time.Second,
 		maxSize:    cfg.MemTableSize,
+		metrics:    NewNoopMemTableMetrics(), // Default to no-op, will be replaced by SetTelemetry
 	}
 }
 
 // Put adds a key-value pair to the active MemTable
 func (p *MemTablePool) Put(key, value []byte, seqNum uint64) {
+	start := time.Now()
+	ctx := context.Background()
+
 	p.mu.RLock()
 	p.active.Put(key, value, seqNum)
 	p.mu.RUnlock()
+
+	// Record operation metrics
+	if p.metrics != nil {
+		p.metrics.RecordOperation(ctx, "put", time.Since(start))
+	}
 
 	// Check if we need to flush after this write
 	p.checkFlushConditions()
@@ -44,9 +55,17 @@ func (p *MemTablePool) Put(key, value []byte, seqNum uint64) {
 
 // Delete marks a key as deleted in the active MemTable
 func (p *MemTablePool) Delete(key []byte, seqNum uint64) {
+	start := time.Now()
+	ctx := context.Background()
+
 	p.mu.RLock()
 	p.active.Delete(key, seqNum)
 	p.mu.RUnlock()
+
+	// Record operation metrics
+	if p.metrics != nil {
+		p.metrics.RecordOperation(ctx, "delete", time.Since(start))
+	}
 
 	// Check if we need to flush after this write
 	p.checkFlushConditions()
@@ -55,19 +74,35 @@ func (p *MemTablePool) Delete(key []byte, seqNum uint64) {
 // Get retrieves the value for a key from all MemTables
 // Checks the active MemTable first, then the immutables in reverse order
 func (p *MemTablePool) Get(key []byte) ([]byte, bool) {
+	start := time.Now()
+	ctx := context.Background()
+
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
 	// Check active table first
 	if value, found := p.active.Get(key); found {
+		// Record operation metrics
+		if p.metrics != nil {
+			p.metrics.RecordOperation(ctx, "get", time.Since(start))
+		}
 		return value, true
 	}
 
 	// Check immutable tables in reverse order (newest first)
 	for i := len(p.immutables) - 1; i >= 0; i-- {
 		if value, found := p.immutables[i].Get(key); found {
+			// Record operation metrics
+			if p.metrics != nil {
+				p.metrics.RecordOperation(ctx, "get", time.Since(start))
+			}
 			return value, true
 		}
+	}
+
+	// Record operation metrics for miss
+	if p.metrics != nil {
+		p.metrics.RecordOperation(ctx, "get", time.Since(start))
 	}
 
 	return nil, false
@@ -93,18 +128,27 @@ func (p *MemTablePool) checkFlushConditions() {
 	}
 
 	// Check size condition
-	if p.active.ApproximateSize() >= p.maxSize {
+	sizeTriggered := p.active.ApproximateSize() >= p.maxSize
+	if sizeTriggered {
 		needsFlush = true
 	}
 
 	// Check age condition
-	if p.maxAge > 0 && p.active.Age() > p.maxAge.Seconds() {
+	ageTriggered := p.maxAge > 0 && p.active.Age() > p.maxAge.Seconds()
+	if ageTriggered {
 		needsFlush = true
 	}
 
 	// Mark as needing flush if conditions met
 	if needsFlush {
 		p.flushPending.Store(true)
+
+		// Record flush trigger metrics
+		if p.metrics != nil {
+			ctx := context.Background()
+			reasonName := getFlushReasonName(sizeTriggered, ageTriggered, false)
+			p.metrics.RecordFlushTrigger(ctx, reasonName, p.active.ApproximateSize(), p.active.Age())
+		}
 	}
 }
 
@@ -126,6 +170,21 @@ func (p *MemTablePool) SwitchToNewMemTable() *MemTable {
 
 	// Add the old table to the immutables list
 	p.immutables = append(p.immutables, oldActive)
+
+	// Record pool state metrics (calculate total size manually to avoid deadlock)
+	if p.metrics != nil {
+		ctx := context.Background()
+		activeSize := p.active.ApproximateSize()
+		immutableCount := len(p.immutables)
+
+		// Calculate total size manually to avoid calling TotalSize() while holding lock
+		totalSize := activeSize
+		for _, m := range p.immutables {
+			totalSize += m.ApproximateSize()
+		}
+
+		p.metrics.RecordPoolState(ctx, activeSize, immutableCount, totalSize)
+	}
 
 	// Return the table that needs to be flushed
 	return oldActive
@@ -178,6 +237,16 @@ func (p *MemTablePool) TotalSize() int64 {
 	}
 
 	return total
+}
+
+// SetTelemetry allows post-creation telemetry injection from engine facade
+func (p *MemTablePool) SetTelemetry(tel interface{}) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if memTableTel, ok := tel.(MemTableMetrics); ok {
+		p.metrics = memTableTel
+	}
 }
 
 // SetActiveMemTable sets the active memtable (used for recovery)

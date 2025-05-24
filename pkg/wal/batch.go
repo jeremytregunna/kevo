@@ -1,10 +1,12 @@
 package wal
 
 import (
+	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"sync/atomic"
+	"time"
 )
 
 const (
@@ -83,6 +85,9 @@ func (b *Batch) Size() int {
 
 // Write writes the batch to the WAL
 func (b *Batch) Write(w *WAL) error {
+	start := time.Now()
+	ctx := context.Background()
+
 	if len(b.Operations) == 0 {
 		return ErrEmptyBatch
 	}
@@ -151,7 +156,18 @@ func (b *Batch) Write(w *WAL) error {
 	}
 
 	// Sync if needed
-	return w.maybeSync()
+	err := w.maybeSync()
+
+	// Record telemetry
+	if w.metrics != nil && err == nil {
+		totalBytes := int64(0)
+		for _, op := range b.Operations {
+			totalBytes += int64(len(op.Key) + len(op.Value))
+		}
+		w.metrics.RecordBatch(ctx, time.Since(start), len(b.Operations), totalBytes)
+	}
+
+	return err
 }
 
 // DecodeBatch decodes a batch entry from a WAL record

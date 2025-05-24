@@ -209,6 +209,19 @@ func (it *Iterator) IsTombstone() bool {
 	return it.dataBlockIter.Value() == nil
 }
 
+// SequenceNumber returns the sequence number of the current entry
+func (it *Iterator) SequenceNumber() uint64 {
+	it.mu.Lock()
+	defer it.mu.Unlock()
+
+	// Not valid means sequence number 0
+	if !it.initialized || it.dataBlockIter == nil || !it.dataBlockIter.Valid() {
+		return 0
+	}
+
+	return it.dataBlockIter.SequenceNumber()
+}
+
 // Error returns any error encountered during iteration
 func (it *Iterator) Error() error {
 	it.mu.Lock()

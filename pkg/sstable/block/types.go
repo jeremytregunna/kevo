@@ -2,8 +2,9 @@ package block
 
 // Entry represents a key-value pair within the block
 type Entry struct {
-	Key   []byte
-	Value []byte
+	Key         []byte
+	Value       []byte
+	SequenceNum uint64 // Sequence number for versioning
 }
 
 const (

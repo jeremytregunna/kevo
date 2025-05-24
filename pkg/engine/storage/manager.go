@@ -2,6 +2,7 @@ package storage
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -60,6 +61,9 @@ type Manager struct {
 
 	// Statistics
 	stats stats.Collector
+
+	// Telemetry
+	metrics StorageMetrics
 
 	// Concurrency control
 	mu      sync.RWMutex // Main lock for engine state
@@ -123,6 +127,7 @@ func NewManager(cfg *config.Config, statsCollector stats.Collector) (*Manager, e
 		bgFlushCh:    make(chan struct{}, 1),
 		nextFileNum:  1,
 		stats:        statsCollector,
+		metrics:      NewNoopStorageMetrics(), // Default to no-op, will be replaced by SetTelemetry
 	}
 
 	// Load existing SSTables
@@ -143,6 +148,9 @@ func NewManager(cfg *config.Config, statsCollector stats.Collector) (*Manager, e
 
 // Put adds a key-value pair to the database
 func (m *Manager) Put(key, value []byte) error {
+	start := time.Now()
+	ctx := context.Background()
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -181,11 +189,24 @@ func (m *Manager) Put(key, value []byte) error {
 	}
 
 	// Execute with retry mechanism
-	return m.RetryOnWALRotating(operation)
+	err := m.RetryOnWALRotating(operation)
+
+	// Record metrics (even on error for observability)
+	if m.metrics != nil {
+		keySize := int64(len(key))
+		valueSize := int64(len(value))
+		totalBytes := keySize + valueSize
+		m.recordPutMetrics(ctx, start, totalBytes, err)
+	}
+
+	return err
 }
 
 // Get retrieves the value for the given key
 func (m *Manager) Get(key []byte) ([]byte, error) {
+	start := time.Now()
+	ctx := context.Background()
+
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -195,6 +216,12 @@ func (m *Manager) Get(key []byte) ([]byte, error) {
 
 	// Check the MemTablePool (active + immutables)
 	if val, found := m.memTablePool.Get(key); found {
+		// Record layer access
+		if m.metrics != nil {
+			m.metrics.RecordLayerAccess(ctx, "memtable", "get", true)
+			m.recordGetMetrics(ctx, start, "memtable", true)
+		}
+
 		// The key was found, but check if it's a deletion marker
 		if val == nil {
 			// This is a deletion marker - the key exists but was deleted
@@ -203,32 +230,59 @@ func (m *Manager) Get(key []byte) ([]byte, error) {
 		return val, nil
 	}
 
+	// Record memtable miss
+	if m.metrics != nil {
+		m.metrics.RecordLayerAccess(ctx, "memtable", "get", false)
+	}
+
 	// Check the SSTables (searching from newest to oldest)
 	for i := len(m.sstables) - 1; i >= 0; i-- {
+		layer := getLayerName(false, i)
+
 		// Create a custom iterator to check for tombstones directly
 		iter := m.sstables[i].NewIterator()
 
 		// Position at the target key
 		if !iter.Seek(key) {
 			// Key not found in this SSTable, continue to the next one
+			if m.metrics != nil {
+				m.metrics.RecordLayerAccess(ctx, layer, "get", false)
+			}
 			continue
 		}
 
 		// If the keys don't match exactly, continue to the next SSTable
 		if !bytes.Equal(iter.Key(), key) {
+			if m.metrics != nil {
+				m.metrics.RecordLayerAccess(ctx, layer, "get", false)
+			}
 			continue
 		}
 
 		// If we reach here, we found the key in this SSTable
+		if m.metrics != nil {
+			m.metrics.RecordLayerAccess(ctx, layer, "get", true)
+		}
 
 		// Check if this is a tombstone
 		if iter.IsTombstone() {
 			// Found a tombstone, so this key is definitely deleted
+			if m.metrics != nil {
+				m.recordGetMetrics(ctx, start, layer, true) // Found but deleted
+			}
 			return nil, ErrKeyNotFound
 		}
 
 		// Found a non-tombstone value for this key
+		if m.metrics != nil {
+			m.recordGetMetrics(ctx, start, layer, true)
+		}
 		return iter.Value(), nil
+	}
+
+	// Key not found in any layer
+	if m.metrics != nil {
+		m.recordGetMetrics(ctx, start, "not_found", false)
 	}
 
 	return nil, ErrKeyNotFound
@@ -236,6 +290,9 @@ func (m *Manager) Get(key []byte) ([]byte, error) {
 
 // Delete removes a key from the database
 func (m *Manager) Delete(key []byte) error {
+	start := time.Now()
+	ctx := context.Background()
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -274,7 +331,14 @@ func (m *Manager) Delete(key []byte) error {
 	}
 
 	// Execute with retry mechanism
-	return m.RetryOnWALRotating(operation)
+	err := m.RetryOnWALRotating(operation)
+
+	// Record metrics (even on error for observability)
+	if m.metrics != nil {
+		m.recordDeleteMetrics(ctx, start, err)
+	}
+
+	return err
 }
 
 // IsDeleted returns true if the key exists and is marked as deleted
@@ -403,6 +467,9 @@ func (m *Manager) ApplyBatch(entries []*wal.Entry) error {
 
 // FlushMemTables flushes all immutable MemTables to disk
 func (m *Manager) FlushMemTables() error {
+	start := time.Now()
+	ctx := context.Background()
+
 	m.flushMu.Lock()
 	defer m.flushMu.Unlock()
 
@@ -450,6 +517,18 @@ func (m *Manager) FlushMemTables() error {
 
 	// Track flush count
 	m.stats.TrackFlush()
+
+	// Record flush metrics
+	if m.metrics != nil {
+		// Calculate total memtable size that was flushed
+		var totalMemTableSize int64
+		for _, imMem := range m.immutableMTs {
+			totalMemTableSize += imMem.ApproximateSize()
+		}
+
+		// For sstable size, we'd need to track it during flush - for now use approximation
+		m.recordFlushMetrics(ctx, start, totalMemTableSize, 0)
+	}
 
 	return nil
 }
@@ -588,6 +667,16 @@ func (m *Manager) Close() error {
 	return nil
 }
 
+// SetTelemetry allows post-creation telemetry injection from engine facade
+func (m *Manager) SetTelemetry(tel interface{}) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if storageTel, ok := tel.(StorageMetrics); ok {
+		m.metrics = storageTel
+	}
+}
+
 // scheduleFlush switches to a new MemTable and schedules flushing of the old one
 func (m *Manager) scheduleFlush() error {
 	// Get the MemTable that needs to be flushed
@@ -637,32 +726,59 @@ func (m *Manager) flushMemTable(mem *memtable.MemTable) error {
 	count := 0
 	var bytesWritten uint64
 
-	// Since memtable's skiplist returns keys in sorted order,
-	// but possibly with duplicates (newer versions of same key first),
-	// we need to track all processed keys (including tombstones)
-	processedKeys := make(map[string]struct{})
+	// Structure to store information about keys as we iterate
+	type keyEntry struct {
+		key    []byte
+		value  []byte
+		seqNum uint64
+	}
 
+	// Collect keys in sorted order while tracking the newest version of each key
+	var entries []keyEntry
+	var previousKey []byte
+
+	// First iterate through memtable (already in sorted order)
 	for iter.SeekToFirst(); iter.Valid(); iter.Next() {
-		key := iter.Key()
-		keyStr := string(key) // Use as map key
+		currentKey := iter.Key()
+		currentValue := iter.Value()
+		currentSeqNum := iter.SequenceNumber()
 
-		// Skip keys we've already processed (including tombstones)
-		if _, seen := processedKeys[keyStr]; seen {
+		// If this is a tombstone (deletion marker), we skip it
+		if currentValue == nil {
 			continue
 		}
 
-		// Mark this key as processed regardless of whether it's a value or tombstone
-		processedKeys[keyStr] = struct{}{}
-
-		// Only write non-tombstone entries to the SSTable
-		if value := iter.Value(); value != nil {
-			bytesWritten += uint64(len(key) + len(value))
-			if err := writer.Add(key, value); err != nil {
-				writer.Abort()
-				return fmt.Errorf("failed to add entry to SSTable: %w", err)
+		// If this is the first key or a different key than the previous one
+		if previousKey == nil || !bytes.Equal(currentKey, previousKey) {
+			// Add this as a new entry
+			entries = append(entries, keyEntry{
+				key:    append([]byte(nil), currentKey...),
+				value:  append([]byte(nil), currentValue...),
+				seqNum: currentSeqNum,
+			})
+			previousKey = currentKey
+		} else {
+			// Same key as previous, check sequence number
+			lastIndex := len(entries) - 1
+			if currentSeqNum > entries[lastIndex].seqNum {
+				// This is a newer version of the same key, replace the previous entry
+				entries[lastIndex] = keyEntry{
+					key:    append([]byte(nil), currentKey...),
+					value:  append([]byte(nil), currentValue...),
+					seqNum: currentSeqNum,
+				}
 			}
-			count++
 		}
+	}
+
+	// Now write all collected entries to the SSTable
+	for _, entry := range entries {
+		bytesWritten += uint64(len(entry.key) + len(entry.value))
+		if err := writer.AddWithSequence(entry.key, entry.value, entry.seqNum); err != nil {
+			writer.Abort()
+			return fmt.Errorf("failed to add entry with sequence number to SSTable: %w", err)
+		}
+		count++
 	}
 
 	if count == 0 {
@@ -856,4 +972,82 @@ func (m *Manager) recoverFromWAL() error {
 	m.stats.FinishRecovery(startTime, filesRecovered, entriesRecovered, corruptedEntries)
 
 	return nil
+}
+
+// RetryOnWALRotating retries operations with ErrWALRotating
+func (m *Manager) RetryOnWALRotating(operation func() error) error {
+	maxRetries := 3
+	for attempts := 0; attempts < maxRetries; attempts++ {
+		err := operation()
+		if err != wal.ErrWALRotating {
+			// Either success or a different error
+			return err
+		}
+
+		// Wait a bit before retrying to allow the rotation to complete
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	return fmt.Errorf("operation failed after %d retries: %w", maxRetries, wal.ErrWALRotating)
+}
+
+// Helper methods for recording telemetry metrics
+
+// recordPutMetrics records Put operation metrics with error handling.
+func (m *Manager) recordPutMetrics(ctx context.Context, start time.Time, bytes int64, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			// Log telemetry panic but don't fail the operation
+			fmt.Printf("Warning: telemetry panic in storage Put metrics: %v\n", r)
+		}
+	}()
+
+	duration := time.Since(start)
+	if err == nil {
+		m.metrics.RecordPut(ctx, duration, bytes)
+	} else {
+		// Record error metrics - this could be extended to categorize errors
+		// For now, just record the duration
+		m.metrics.RecordPut(ctx, duration, bytes)
+	}
+}
+
+// recordGetMetrics records Get operation metrics with error handling.
+func (m *Manager) recordGetMetrics(ctx context.Context, start time.Time, layer string, found bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			// Log telemetry panic but don't fail the operation
+			fmt.Printf("Warning: telemetry panic in storage Get metrics: %v\n", r)
+		}
+	}()
+
+	duration := time.Since(start)
+	m.metrics.RecordGet(ctx, duration, layer, found)
+}
+
+// recordDeleteMetrics records Delete operation metrics with error handling.
+func (m *Manager) recordDeleteMetrics(ctx context.Context, start time.Time, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			// Log telemetry panic but don't fail the operation
+			fmt.Printf("Warning: telemetry panic in storage Delete metrics: %v\n", r)
+		}
+	}()
+
+	duration := time.Since(start)
+	// Record even on error for observability
+	m.metrics.RecordDelete(ctx, duration)
+}
+
+// recordFlushMetrics records flush operation metrics with error handling.
+func (m *Manager) recordFlushMetrics(ctx context.Context, start time.Time, memTableSize, sstableSize int64) {
+	defer func() {
+		if r := recover(); r != nil {
+			// Log telemetry panic but don't fail the operation
+			fmt.Printf("Warning: telemetry panic in storage Flush metrics: %v\n", r)
+		}
+	}()
+
+	duration := time.Since(start)
+	m.metrics.RecordFlush(ctx, duration, memTableSize, sstableSize)
 }

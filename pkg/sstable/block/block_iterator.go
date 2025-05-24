@@ -7,13 +7,14 @@ import (
 
 // Iterator allows iterating through key-value pairs in a block
 type Iterator struct {
-	reader      *Reader
-	currentPos  uint32
-	currentKey  []byte
-	currentVal  []byte
-	restartIdx  int
-	initialized bool
-	dataEnd     uint32 // Position where the actual entries data ends (before restart points)
+	reader        *Reader
+	currentPos    uint32
+	currentKey    []byte
+	currentVal    []byte
+	currentSeqNum uint64 // Sequence number of the current entry
+	restartIdx    int
+	initialized   bool
+	dataEnd       uint32 // Position where the actual entries data ends (before restart points)
 }
 
 // SeekToFirst positions the iterator at the first entry
@@ -199,6 +200,14 @@ func (it *Iterator) IsTombstone() bool {
 	return it.Valid() && it.currentVal == nil
 }
 
+// SequenceNumber returns the sequence number of the current entry
+func (it *Iterator) SequenceNumber() uint64 {
+	if !it.Valid() {
+		return 0
+	}
+	return it.currentSeqNum
+}
+
 // decodeCurrent decodes the entry at the current position
 func (it *Iterator) decodeCurrent() ([]byte, []byte, bool) {
 	if it.currentPos >= it.dataEnd {
@@ -221,6 +230,13 @@ func (it *Iterator) decodeCurrent() ([]byte, []byte, bool) {
 	copy(key, data[:keyLen])
 	data = data[keyLen:]
 
+	// Read sequence number if format includes it (check if enough data for both seq num and value len)
+	seqNum := uint64(0)
+	if len(data) >= 12 { // 8 for seq num + 4 for value len
+		seqNum = binary.LittleEndian.Uint64(data)
+		data = data[8:]
+	}
+
 	// Read value
 	if len(data) < 4 {
 		return nil, nil, false
@@ -238,6 +254,7 @@ func (it *Iterator) decodeCurrent() ([]byte, []byte, bool) {
 
 	it.currentKey = key
 	it.currentVal = value
+	it.currentSeqNum = seqNum
 
 	return key, value, true
 }
@@ -303,6 +320,14 @@ func (it *Iterator) decodeNext() ([]byte, []byte, bool) {
 		it.currentPos += 4 + uint32(unsharedLen)
 	}
 
+	// Read sequence number if format includes it (check if enough data for both seq num and value len)
+	seqNum := uint64(0)
+	if len(data) >= 12 { // 8 for seq num + 4 for value len
+		seqNum = binary.LittleEndian.Uint64(data)
+		data = data[8:]
+		it.currentPos += 8
+	}
+
 	// Read value
 	if len(data) < 4 {
 		return nil, nil, false
@@ -318,6 +343,7 @@ func (it *Iterator) decodeNext() ([]byte, []byte, bool) {
 	value := make([]byte, valueLen)
 	copy(value, data[:valueLen])
 
+	it.currentSeqNum = seqNum
 	it.currentPos += 4 + uint32(valueLen)
 
 	return key, value, true

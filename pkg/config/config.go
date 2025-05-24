@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/KevoDB/kevo/pkg/telemetry"
 )
 
 const (
@@ -58,12 +60,15 @@ type Config struct {
 	MaxLevelWithTombstones int     `json:"max_level_with_tombstones"` // Levels higher than this discard tombstones
 
 	// Transaction configuration
-	ReadOnlyTxTTL       int64 `json:"read_only_tx_ttl"`        // Time-to-live for read-only transactions in seconds (default: 180s)
-	ReadWriteTxTTL      int64 `json:"read_write_tx_ttl"`       // Time-to-live for read-write transactions in seconds (default: 60s)
-	IdleTxTimeout       int64 `json:"idle_tx_timeout"`         // Time after which an inactive transaction is considered idle in seconds (default: 30s)
-	TxCleanupInterval   int64 `json:"tx_cleanup_interval"`     // Interval for checking transaction TTLs in seconds (default: 30s)
-	TxWarningThreshold  int   `json:"tx_warning_threshold"`    // Percentage of TTL after which to log warnings (default: 75)
-	TxCriticalThreshold int   `json:"tx_critical_threshold"`   // Percentage of TTL after which to log critical warnings (default: 90)
+	ReadOnlyTxTTL       int64 `json:"read_only_tx_ttl"`      // Time-to-live for read-only transactions in seconds (default: 180s)
+	ReadWriteTxTTL      int64 `json:"read_write_tx_ttl"`     // Time-to-live for read-write transactions in seconds (default: 60s)
+	IdleTxTimeout       int64 `json:"idle_tx_timeout"`       // Time after which an inactive transaction is considered idle in seconds (default: 30s)
+	TxCleanupInterval   int64 `json:"tx_cleanup_interval"`   // Interval for checking transaction TTLs in seconds (default: 30s)
+	TxWarningThreshold  int   `json:"tx_warning_threshold"`  // Percentage of TTL after which to log warnings (default: 75)
+	TxCriticalThreshold int   `json:"tx_critical_threshold"` // Percentage of TTL after which to log critical warnings (default: 90)
+
+	// Telemetry configuration
+	Telemetry telemetry.Config `json:"telemetry"`
 
 	mu sync.RWMutex
 }
@@ -108,6 +113,9 @@ func NewDefaultConfig(dbPath string) *Config {
 		TxCleanupInterval:   30,  // 30 seconds
 		TxWarningThreshold:  75,  // 75% of TTL
 		TxCriticalThreshold: 90,  // 90% of TTL
+
+		// Telemetry defaults
+		Telemetry: telemetry.DefaultConfig(),
 	}
 }
 
@@ -177,6 +185,11 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("%w: Transaction critical threshold must be between warning threshold and 99", ErrInvalidConfig)
 	}
 
+	// Validate telemetry configuration
+	if err := c.Telemetry.Validate(); err != nil {
+		return fmt.Errorf("%w: telemetry configuration invalid: %v", ErrInvalidConfig, err)
+	}
+
 	return nil
 }
 
@@ -233,6 +246,13 @@ func (c *Config) SaveManifest(dbPath string) error {
 	}
 
 	return nil
+}
+
+// LoadTelemetryFromEnv loads telemetry configuration from environment variables
+func (c *Config) LoadTelemetryFromEnv() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.Telemetry.LoadFromEnv()
 }
 
 // Update applies the given function to modify the configuration

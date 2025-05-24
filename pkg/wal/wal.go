@@ -2,6 +2,7 @@ package wal
 
 import (
 	"bufio"
+	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -99,6 +100,9 @@ type WAL struct {
 	// Observer-related fields
 	observers   map[string]WALEntryObserver
 	observersMu sync.RWMutex
+
+	// Telemetry
+	metrics WALMetrics
 }
 
 // NewWAL creates a new write-ahead log
@@ -136,9 +140,21 @@ func NewWAL(cfg *config.Config, dir string) (*WAL, error) {
 		lastSync:     time.Now(),
 		status:       WALStatusActive,
 		observers:    make(map[string]WALEntryObserver),
+		metrics:      NewNoopWALMetrics(), // Will be set by SetTelemetry if available
 	}
 
 	return wal, nil
+}
+
+// SetTelemetry sets the telemetry instance for the WAL.
+// This allows the engine to inject telemetry after WAL creation.
+func (w *WAL) SetTelemetry(tel interface{}) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if walTel, ok := tel.(WALMetrics); ok {
+		w.metrics = walTel
+	}
 }
 
 // ReuseWAL attempts to reuse an existing WAL file for appending
@@ -208,6 +224,7 @@ func ReuseWAL(cfg *config.Config, dir string, nextSeq uint64) (*WAL, error) {
 		lastSync:     time.Now(),
 		status:       WALStatusActive,
 		observers:    make(map[string]WALEntryObserver),
+		metrics:      NewNoopWALMetrics(), // Will be set by SetTelemetry if available
 	}
 
 	return wal, nil
@@ -215,6 +232,8 @@ func ReuseWAL(cfg *config.Config, dir string, nextSeq uint64) (*WAL, error) {
 
 // Append adds an entry to the WAL
 func (w *WAL) Append(entryType uint8, key, value []byte) (uint64, error) {
+	start := time.Now()
+	ctx := context.Background()
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -270,6 +289,11 @@ func (w *WAL) Append(entryType uint8, key, value []byte) (uint64, error) {
 		return 0, err
 	}
 
+	// Record telemetry
+	if w.metrics != nil {
+		w.recordAppendMetrics(ctx, start, entrySize, entryType, entrySize > MaxRecordSize)
+	}
+
 	return seqNum, nil
 }
 
@@ -277,6 +301,8 @@ func (w *WAL) Append(entryType uint8, key, value []byte) (uint64, error) {
 // This is primarily used for replication to ensure byte-for-byte identical WAL entries
 // between primary and replica nodes
 func (w *WAL) AppendWithSequence(entryType uint8, key, value []byte, sequenceNumber uint64) (uint64, error) {
+	start := time.Now()
+	ctx := context.Background()
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -335,6 +361,11 @@ func (w *WAL) AppendWithSequence(entryType uint8, key, value []byte, sequenceNum
 	// Sync the file if needed
 	if err := w.maybeSync(); err != nil {
 		return 0, err
+	}
+
+	// Record telemetry
+	if w.metrics != nil {
+		w.recordAppendMetrics(ctx, start, entrySize, entryType, entrySize > MaxRecordSize)
 	}
 
 	return seqNum, nil
@@ -574,6 +605,9 @@ func (w *WAL) maybeSync() error {
 
 // syncLocked performs the sync operation assuming the mutex is already held
 func (w *WAL) syncLocked() error {
+	start := time.Now()
+	ctx := context.Background()
+
 	status := atomic.LoadInt32(&w.status)
 	if status == WALStatusClosed {
 		return ErrWALClosed
@@ -595,15 +629,29 @@ func (w *WAL) syncLocked() error {
 	// Notify observers about the sync
 	w.notifySyncObservers(w.nextSequence - 1)
 
+	// Record telemetry
+	if w.metrics != nil {
+		w.metrics.RecordSync(ctx, time.Since(start), getSyncModeName(w.cfg.WALSyncMode), false)
+	}
+
 	return nil
 }
 
 // Sync flushes all buffered data to disk
 func (w *WAL) Sync() error {
+	start := time.Now()
+	ctx := context.Background()
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	return w.syncLocked()
+	err := w.syncLocked()
+
+	// Record telemetry for forced sync
+	if w.metrics != nil && err == nil {
+		w.metrics.RecordSync(ctx, time.Since(start), getSyncModeName(w.cfg.WALSyncMode), true)
+	}
+
+	return err
 }
 
 // serializeBatch prepares a batch header with common batch information
@@ -628,6 +676,8 @@ func (w *WAL) serializeBatchHeader(startSeqNum uint64, entryCount int) []byte {
 
 // AppendBatch adds a batch of entries to the WAL
 func (w *WAL) AppendBatch(entries []*Entry) (uint64, error) {
+	start := time.Now()
+	ctx := context.Background()
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -681,6 +731,15 @@ func (w *WAL) AppendBatch(entries []*Entry) (uint64, error) {
 		return 0, err
 	}
 
+	// Record telemetry
+	if w.metrics != nil {
+		totalBytes := int64(0)
+		for _, entry := range entries {
+			totalBytes += int64(len(entry.Key) + len(entry.Value))
+		}
+		w.metrics.RecordBatch(ctx, time.Since(start), len(entries), totalBytes)
+	}
+
 	return startSeqNum, nil
 }
 
@@ -688,6 +747,8 @@ func (w *WAL) AppendBatch(entries []*Entry) (uint64, error) {
 // This is primarily used for replication to ensure byte-for-byte identical WAL entries
 // between primary and replica nodes
 func (w *WAL) AppendBatchWithSequence(entries []*Entry, startSequence uint64) (uint64, error) {
+	start := time.Now()
+	ctx := context.Background()
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -776,6 +837,15 @@ func (w *WAL) AppendBatchWithSequence(entries []*Entry, startSequence uint64) (u
 	// Sync if needed
 	if err := w.maybeSync(); err != nil {
 		return 0, err
+	}
+
+	// Record telemetry
+	if w.metrics != nil {
+		totalBytes := int64(0)
+		for _, entry := range entries {
+			totalBytes += int64(len(entry.Key) + len(entry.Value))
+		}
+		w.metrics.RecordBatch(ctx, time.Since(start), len(entries), totalBytes)
 	}
 
 	return startSeqNum, nil
@@ -993,4 +1063,16 @@ func (w *WAL) getEntriesFromFile(filename string, minSequence uint64) ([]*Entry,
 	}
 
 	return entries, nil
+}
+
+// recordAppendMetrics records telemetry for append operations
+func (w *WAL) recordAppendMetrics(ctx context.Context, start time.Time, entrySize int, entryType uint8, fragmented bool) {
+	w.metrics.RecordAppend(
+		ctx,
+		time.Since(start),
+		int64(entrySize),
+		getOpTypeName(entryType),
+		fragmented,
+		getSyncModeName(w.cfg.WALSyncMode),
+	)
 }

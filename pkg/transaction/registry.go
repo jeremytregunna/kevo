@@ -6,34 +6,34 @@ import (
 	"reflect"
 	"sync"
 	"time"
-	
+
 	"github.com/KevoDB/kevo/pkg/common/log"
 )
 
 // Registry manages transaction lifecycle and connections
 type RegistryImpl struct {
-	mu                 sync.RWMutex
-	transactions       map[string]Transaction
-	nextID             uint64
-	cleanupTicker      *time.Ticker
-	stopCleanup        chan struct{}
-	connectionTxs      map[string]map[string]struct{}
-	txTTL              time.Duration
-	txWarningThreshold int
+	mu                  sync.RWMutex
+	transactions        map[string]Transaction
+	nextID              uint64
+	cleanupTicker       *time.Ticker
+	stopCleanup         chan struct{}
+	connectionTxs       map[string]map[string]struct{}
+	txTTL               time.Duration
+	txWarningThreshold  int
 	txCriticalThreshold int
-	idleTxTTL          time.Duration
+	idleTxTTL           time.Duration
 }
 
 // NewRegistry creates a new transaction registry with default settings
 func NewRegistry() Registry {
 	r := &RegistryImpl{
-		transactions:       make(map[string]Transaction),
-		connectionTxs:      make(map[string]map[string]struct{}),
-		stopCleanup:        make(chan struct{}),
-		txTTL:              5 * time.Minute,  // Default TTL
-		idleTxTTL:          30 * time.Second, // Idle timeout
-		txWarningThreshold: 75,               // 75% of TTL
-		txCriticalThreshold: 90,              // 90% of TTL
+		transactions:        make(map[string]Transaction),
+		connectionTxs:       make(map[string]map[string]struct{}),
+		stopCleanup:         make(chan struct{}),
+		txTTL:               5 * time.Minute,  // Default TTL
+		idleTxTTL:           30 * time.Second, // Idle timeout
+		txWarningThreshold:  75,               // 75% of TTL
+		txCriticalThreshold: 90,               // 90% of TTL
 	}
 
 	// Start periodic cleanup
@@ -46,12 +46,12 @@ func NewRegistry() Registry {
 // NewRegistryWithTTL creates a new transaction registry with a specific TTL
 func NewRegistryWithTTL(ttl time.Duration, idleTimeout time.Duration, warningThreshold, criticalThreshold int) Registry {
 	r := &RegistryImpl{
-		transactions:       make(map[string]Transaction),
-		connectionTxs:      make(map[string]map[string]struct{}),
-		stopCleanup:        make(chan struct{}),
-		txTTL:              ttl,
-		idleTxTTL:          idleTimeout,
-		txWarningThreshold: warningThreshold,
+		transactions:        make(map[string]Transaction),
+		connectionTxs:       make(map[string]map[string]struct{}),
+		stopCleanup:         make(chan struct{}),
+		txTTL:               ttl,
+		idleTxTTL:           idleTimeout,
+		txWarningThreshold:  warningThreshold,
 		txCriticalThreshold: criticalThreshold,
 	}
 
@@ -126,8 +126,8 @@ func (r *RegistryImpl) CleanupStaleTransactions() {
 		if tx, exists := r.transactions[id]; exists {
 			if txImpl, ok := tx.(*TransactionImpl); ok {
 				fmt.Printf("WARNING: Transaction %s has been running for %s (%.1f%% of TTL)\n",
-					id, now.Sub(txImpl.creationTime).String(), 
-					(float64(now.Sub(txImpl.creationTime)) / float64(txImpl.ttl)) * 100)
+					id, now.Sub(txImpl.creationTime).String(),
+					(float64(now.Sub(txImpl.creationTime))/float64(txImpl.ttl))*100)
 			}
 		}
 	}
@@ -137,8 +137,8 @@ func (r *RegistryImpl) CleanupStaleTransactions() {
 		if tx, exists := r.transactions[id]; exists {
 			if txImpl, ok := tx.(*TransactionImpl); ok {
 				fmt.Printf("CRITICAL: Transaction %s has been running for %s (%.1f%% of TTL)\n",
-					id, now.Sub(txImpl.creationTime).String(), 
-					(float64(now.Sub(txImpl.creationTime)) / float64(txImpl.ttl)) * 100)
+					id, now.Sub(txImpl.creationTime).String(),
+					(float64(now.Sub(txImpl.creationTime))/float64(txImpl.ttl))*100)
 			}
 		}
 	}
@@ -202,27 +202,27 @@ func (r *RegistryImpl) Begin(ctx context.Context, engine interface{}, readOnly b
 			// Just directly try to get a transaction, without complex type checking
 			// The only real requirement is that the engine has a BeginTransaction method
 			// that returns a transaction that matches our Transaction interface
-			
+
 			// Get the method using reflection to avoid type compatibility issues
 			val := reflect.ValueOf(engine)
 			method := val.MethodByName("BeginTransaction")
-			
+
 			if !method.IsValid() {
 				err = fmt.Errorf("engine does not have BeginTransaction method")
 				return
 			}
-			
+
 			// Call the method
 			log.Debug("Calling BeginTransaction via reflection")
 			args := []reflect.Value{reflect.ValueOf(readOnly)}
 			results := method.Call(args)
-			
+
 			// Check for errors
 			if !results[1].IsNil() {
 				err = results[1].Interface().(error)
 				return
 			}
-			
+
 			// Get the transaction
 			txVal := results[0].Interface()
 			tx = txVal.(Transaction)

@@ -57,7 +57,7 @@ func (fi *FilteredIterator) IsTombstone() bool {
 // SeekToFirst positions at the first key that passes the filter
 func (fi *FilteredIterator) SeekToFirst() {
 	fi.iter.SeekToFirst()
-	
+
 	// Advance to the first key that passes the filter
 	if fi.iter.Valid() && !fi.keyFilter(fi.iter.Key()) {
 		fi.Next()
@@ -67,17 +67,17 @@ func (fi *FilteredIterator) SeekToFirst() {
 // SeekToLast positions at the last key that passes the filter
 func (fi *FilteredIterator) SeekToLast() {
 	// This is a simplistic implementation that may not be efficient
-	// For a production-quality implementation, we might want a more 
+	// For a production-quality implementation, we might want a more
 	// sophisticated approach
 	fi.iter.SeekToLast()
-	
+
 	// If we're at a valid position but it doesn't pass the filter,
 	// we need to find the last key that does
 	if fi.iter.Valid() && !fi.keyFilter(fi.iter.Key()) {
 		// Inefficient but correct - scan from beginning to find last valid key
 		var lastValidKey []byte
 		fi.iter.SeekToFirst()
-		
+
 		for fi.iter.Valid() {
 			if fi.keyFilter(fi.iter.Key()) {
 				lastValidKey = make([]byte, len(fi.iter.Key()))
@@ -85,7 +85,7 @@ func (fi *FilteredIterator) SeekToLast() {
 			}
 			fi.iter.Next()
 		}
-		
+
 		// If we found a valid key, seek to it
 		if lastValidKey != nil {
 			fi.iter.Seek(lastValidKey)
@@ -102,12 +102,12 @@ func (fi *FilteredIterator) Seek(target []byte) bool {
 	if !fi.iter.Seek(target) {
 		return false
 	}
-	
+
 	// If the current position doesn't pass the filter, find the next one that does
 	if !fi.keyFilter(fi.iter.Key()) {
 		return fi.Next()
 	}
-	
+
 	return true
 }
 

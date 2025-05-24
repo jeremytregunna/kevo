@@ -47,7 +47,7 @@ type ClientOptions struct {
 	// Performance options
 	Compression    CompressionType // Compression algorithm
 	MaxMessageSize int             // Maximum message size
-	
+
 	// Keepalive options
 	KeepaliveTime    time.Duration // Time between keepalive pings (0 for default)
 	KeepaliveTimeout time.Duration // Time to wait for ping ack (0 for default)
@@ -117,15 +117,15 @@ func NewClient(options ClientOptions) (*Client, error) {
 			PermitWithoutStream: true, // Allow pings even when there are no active streams
 		}
 	}
-	
+
 	transportOpts := transport.TransportOptions{
-		Timeout:        options.ConnectTimeout,
-		MaxMessageSize: options.MaxMessageSize,
-		Compression:    options.Compression,
-		TLSEnabled:     options.TLSEnabled,
-		CertFile:       options.CertFile,
-		KeyFile:        options.KeyFile,
-		CAFile:         options.CAFile,
+		Timeout:         options.ConnectTimeout,
+		MaxMessageSize:  options.MaxMessageSize,
+		Compression:     options.Compression,
+		TLSEnabled:      options.TLSEnabled,
+		CertFile:        options.CertFile,
+		KeyFile:         options.KeyFile,
+		CAFile:          options.CAFile,
 		KeepaliveParams: keepaliveParams,
 		RetryPolicy: transport.RetryPolicy{
 			MaxRetries:     options.MaxRetries,
@@ -243,15 +243,15 @@ func (c *Client) createTransportOptions(options ClientOptions) transport.Transpo
 			PermitWithoutStream: true, // Allow pings even when there are no active streams
 		}
 	}
-	
+
 	return transport.TransportOptions{
-		Timeout:        options.ConnectTimeout,
-		MaxMessageSize: options.MaxMessageSize,
-		Compression:    options.Compression,
-		TLSEnabled:     options.TLSEnabled,
-		CertFile:       options.CertFile,
-		KeyFile:        options.KeyFile,
-		CAFile:         options.CAFile,
+		Timeout:         options.ConnectTimeout,
+		MaxMessageSize:  options.MaxMessageSize,
+		Compression:     options.Compression,
+		TLSEnabled:      options.TLSEnabled,
+		CertFile:        options.CertFile,
+		KeyFile:         options.KeyFile,
+		CAFile:          options.CAFile,
 		KeepaliveParams: keepaliveParams,
 		RetryPolicy: transport.RetryPolicy{
 			MaxRetries:     options.MaxRetries,
